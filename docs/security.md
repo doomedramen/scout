@@ -44,6 +44,14 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 - Provide MFA before enabling stored credentials and remote enrollment in a production release.
 - Audit sign-in events, policy edits, secret access, enrollment attempts, exclusions, and identity revocations. Redact sensitive payloads.
 
+### Updates
+
+- Verify signed release metadata and artifacts on the agent independently of the server, using trusted publisher keys.
+- Keep release-signing private keys outside the control plane. Define key rotation, revocation, and isolated-site recovery.
+- Restrict the privileged updater to verified version transitions; it must not become a general remote command runner.
+- Enforce compatibility and downgrade policy, stage replacements atomically, and preserve a verified rollback target.
+- Audit release import, version assignment, policy changes, update failures, and rollback. See [the update specification](agent-updates.md).
+
 ## Abuse and failure cases to test
 
 | Case | Required outcome |

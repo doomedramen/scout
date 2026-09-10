@@ -44,6 +44,12 @@ Merge identity evidence conservatively. DHCP reassignment, multiple interfaces, 
 
 Offline agents buffer a bounded amount of data, retry with backoff, and expose stale status. Ingestion handles duplicates and out-of-order samples. Server receipt time and agent observation time remain distinct.
 
+## Agent lifecycle
+
+The control server acts as the artifact source for agent upgrades. Agents receive desired-version assignments over their outbound control connection and fetch signed artifacts from the server, so they do not need internet access or inbound ports. Release acquisition supports both online synchronization and signed offline imports.
+
+Agent identity survives upgrades. A constrained local updater verifies releases, stages replacements, and supports recovery and rollback. Manual, automatic, and pinned policies share this mechanism. See [agent updates](agent-updates.md) for the trust model and acceptance criteria.
+
 ## Self-hosting
 
 The first deployment target is Docker Compose with persistent data, TLS setup, health checks, backup/restore instructions, and an explicit first-owner setup flow. A Linux VM on Proxmox VE can run the same deployment. Native Proxmox integration and LXC packaging are separate later decisions.

@@ -9,6 +9,7 @@ Scout is a self-hosted server, network, and device monitor. Distributed agents c
 - Report inaccessible machines with an actionable access request.
 - Run on infrastructure you own, starting with Docker Compose and a Linux VM suitable for Proxmox VE.
 - Treat credentials, agent identity, and installation permissions as core product concerns.
+- Keep agents current through automatic or owner-triggered, signed updates delivered by the control server, including on networks without internet access.
 
 Discovery is not permission to install. Owners define allowed networks and enrollment policies. Automatic enrollment is possible inside those explicit boundaries; targets outside them require approval.
 
@@ -16,13 +17,14 @@ Discovery is not permission to install. Owners define allowed networks and enrol
 
 One control server and one manually enrolled Linux agent, with live host metrics, health history, an inventory, and a network map that distinguishes observed relationships from inferred ones. This milestone does not collect SSH credentials or install agents remotely.
 
-Later milestones add scoped discovery, access requests, and audited SSH enrollment. The proposed sequence is in [the roadmap](docs/roadmap.md).
+The Linux-first MVP is the selected direction. It includes server-delivered agent updates before expanding into scoped discovery, access requests, and audited SSH enrollment. The sequence is in [the roadmap](docs/roadmap.md).
 
 ## Design documents
 
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
 - [UI direction](docs/interface.md)
+- [Agent updates](docs/agent-updates.md)
 - [Roadmap and acceptance criteria](docs/roadmap.md)
 
 ## Status

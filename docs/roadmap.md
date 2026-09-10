@@ -14,7 +14,13 @@ Acceptance:
 - Inventory and network views reflect actual observations and support empty and error states.
 - A documented backup can be restored successfully.
 
-## 2. Scoped discovery and topology
+## 2. Agent lifecycle within the Linux MVP
+
+Implement server-hosted signed releases, manual version assignment, offline bundle import, a constrained Linux updater, and startup rollback. Add opt-in automatic policies, pins, maintenance windows, and staged rollout once the manual path passes failure testing.
+
+Acceptance follows [the agent update specification](agent-updates.md), including updates with the agent's internet access blocked and recovery from interrupted installation. This is part of the Linux MVP, before unattended enrollment expands the fleet.
+
+## 3. Scoped discovery and topology
 
 Add owner-defined network scopes, bounded discovery, candidate devices, provenance, expiry, and access requests. Establish identity reconciliation before remote installation.
 
@@ -26,7 +32,7 @@ Acceptance:
 - Unknown, unmonitored, stale, and healthy devices remain distinct.
 - Discovery can be paused globally and disabled for individual scopes.
 
-## 3. Secure remote enrollment
+## 4. Secure remote enrollment
 
 Add isolated enrollment execution, encrypted credential storage or external references, verified SSH identities, scoped approval policies, and revocable agent certificates. Complete the security review before enabling this feature for production use.
 
@@ -39,13 +45,13 @@ Acceptance:
 - Owners can revoke identities, rotate secrets, stop enrollment, and inspect audit history.
 - The security failure cases in the threat model have implementation-level verification.
 
-## 4. Broader infrastructure coverage
+## 5. Broader infrastructure coverage
 
 Evaluate Proxmox API integration, SNMP devices, Windows agents, service checks, alerts, and notification integrations against real deployments. An agent is not appropriate for every device; agentless observations are first-class inventory sources.
 
 ## Decisions before implementation
 
-- Confirm whether the first milestone should prioritize a functioning Linux monitoring slice or a UI prototype.
+- Selected: a functioning Linux-first monitoring MVP, including agent lifecycle support.
 - Choose implementation languages, storage, and UI tooling based on deployment footprint and maintenance requirements.
 - Set the initial operating-system support and expected fleet size.
 - Decide whether the first release is single-owner or requires multi-user roles immediately.

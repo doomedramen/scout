@@ -9,6 +9,7 @@ Scout should make infrastructure understandable at a glance and let an owner tra
 - **Devices:** searchable inventory with health, monitoring method, last seen, addresses, and enrollment status.
 - **Device detail:** metric history, interfaces, observed neighbors, events, and access state.
 - **Enrollment:** a queue of discovered candidates, missing access, approvals, progress, and recoverable failures.
+- **Updates:** fleet version coverage, approved releases, rollout progress, maintenance windows, pins, and rollback results. Allow owners to import signed bundles and assign releases to machines without internet access.
 - **Administration:** discovery scopes, identities, credentials, users, audit history, and retention.
 
 ## Visual direction
