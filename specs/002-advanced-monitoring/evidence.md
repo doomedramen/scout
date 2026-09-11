@@ -182,3 +182,26 @@ For future results append: task and requirement IDs, commit, date, exact command
   still add persisted rule lineage/override resolution, durable evaluation and
   incident transitions, control/API/UI surfaces, restart integration, and the
   live US1 acceptance journey.
+
+## T007 — default rules and scoped override persistence
+
+- Requirements: FR-001, FR-002, FR-003; SC-001.
+- Date: 2026-09-11 (Europe/London); commit: `bdd4927`.
+- Added seven idempotent fleet defaults: host offline, CPU, memory,
+  filesystem, failed systemd unit, degraded collector, and explicit storage
+  fault. Numeric defaults use strict 90/85 hysteresis and 300/120-second
+  timing; no universal thermal/GPU rule is provisioned. Existing template
+  rows, including owner-disabled or retired rows, are never overwritten.
+  Rule and override writes use revisions; overrides replace the full condition
+  tuple, allow only site/device narrowing, reject cross-site device targets,
+  and resolve device before site before fleet. Rules and overrides have
+  additive SQL tables plus memory fixtures.
+- Exact verification commands and outcomes: `go test ./internal/alerts
+  ./internal/store -count=1`; `scripts/test-integration.sh` passed against
+  disposable PostgreSQL 17; `go test ./... -count=1`; `go vet ./...`; and
+  `git diff --check` passed. The SQL fixture verified idempotent provisioning,
+  compare-and-swap rejection, override persistence, and retirement filtering.
+  No production database, credential, or real device was used.
+- Remaining limits: T008–T011 still add durable evaluation state/incident
+  transitions, control handlers, UI, restart/decommission integration, and
+  the live US1 acceptance journey.
