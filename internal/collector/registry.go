@@ -42,8 +42,10 @@ type Entity struct {
 }
 
 type ServiceResult struct {
-	Entities []Entity
-	Metrics  []Metric
+	Entities   []Entity
+	Metrics    []Metric
+	Partial    bool
+	Diagnostic string
 }
 
 type HostSource struct {
@@ -210,5 +212,10 @@ func safeDiagnostic(err error) string {
 }
 
 func DefaultDescriptors() []Descriptor {
-	return []Descriptor{{ID: "host", Provider: "host", Version: runtime.Version(), RequiredPermission: []string{"proc:read", "sysfs:read"}, ConfigSchema: map[string]string{}, EntityLimit: 1, Interval: 15 * time.Second, Deadline: 5 * time.Second}, {ID: "docker", Provider: "docker", Version: "engine-api-v1", RequiredPermission: []string{"docker:read"}, ConfigSchema: map[string]string{"socketPath": "local unix socket"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second}, {ID: "proxmox", Provider: "proxmox", Version: "api-v2", RequiredPermission: []string{"proxmox:cluster-read"}, ConfigSchema: map[string]string{"baseUrl": "https URL", "clusterId": "scoped cluster"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second}}
+	return []Descriptor{
+		{ID: "host", Provider: "host", Version: runtime.Version(), RequiredPermission: []string{"proc:read", "sysfs:read"}, ConfigSchema: map[string]string{}, EntityLimit: 1, Interval: 15 * time.Second, Deadline: 5 * time.Second},
+		{ID: "systemd", Provider: "systemd", Version: "systemd-v1", RequiredPermission: []string{"systemd:read"}, ConfigSchema: map[string]string{"expectedRunning": "comma-separated service globs; * and ? only; max 100 patterns"}, EntityLimit: 1000, Interval: 30 * time.Second, Deadline: 5 * time.Second},
+		{ID: "docker", Provider: "docker", Version: "engine-api-v1", RequiredPermission: []string{"docker:read"}, ConfigSchema: map[string]string{"socketPath": "local unix socket"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second},
+		{ID: "proxmox", Provider: "proxmox", Version: "api-v2", RequiredPermission: []string{"proxmox:cluster-read"}, ConfigSchema: map[string]string{"baseUrl": "https URL", "clusterId": "scoped cluster"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second},
+	}
 }
