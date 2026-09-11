@@ -33,7 +33,7 @@ For future results append: task and requirement IDs, commit, date, exact command
 ## T002 — contracts, bounds, and compatibility targets
 
 - Requirements: FR-003, FR-008, FR-009, FR-014, FR-022, FR-032, FR-034.
-- Date: 2026-09-11 (Europe/London); implementation checkpoint pending commit.
+- Date: 2026-09-11 (Europe/London); commit: `f6a70c2`.
 - Contract outputs: `api/openapi.yaml` now covers the additive rule, incident,
   notification, suppression, monitoring-status, and retention-preview routes;
   `api/schemas/` contains strict bounded input/output schemas; and
@@ -53,11 +53,17 @@ For future results append: task and requirement IDs, commit, date, exact command
   `jq -e empty api/schemas/*.json tests/contracts/fixtures/*.json`;
   `go test ./tests/contracts -count=1`; `go test ./... -count=1`;
   `go vet ./...`; `npm run format:check`; `git diff --check`; and
-  `go mod verify`.
+  `go mod verify`. Compose interpolation was also checked with
+  `SCOUT_PORT=18080 docker-compose -f compose.quickstart.yaml config` and
+  `SCOUT_PORT=18080 SCOUT_CONTAINER_PORT=18081 docker-compose -f
+  compose.quickstart.yaml config`.
 - Expected and actual outcome: all commands passed. OpenAPI schema references
   and JSON schema references were checked for existing files. The contract
   test passed both positive fixtures and the negative executable-expression /
-  redaction assertions.
+  redaction assertions. The Compose checks resolved host port 18080 to the
+  configured container target and listener, with `SCOUT_PORT` changing only
+  the host side by default and `SCOUT_CONTAINER_PORT` changing the internal
+  side when explicitly set.
 - Remaining limits: these are executable contract and fixture checks only. No
   ntfy publication, D-Bus/systemd host, smartctl device, ZFS pool, sensor/GPU
   hardware, or live API acceptance is claimed here; those belong to later
