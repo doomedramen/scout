@@ -326,3 +326,29 @@ For future results append: task and requirement IDs, commit, date, exact command
 - Remaining limits: this is deterministic SQL/evaluator lifecycle evidence;
   no live monitored host or production rollout is claimed. T012 begins the
   notification and suppression phase.
+
+## T012 — ntfy transport safety fixtures
+
+- Requirements: FR-008, FR-009, FR-010; SC-003, SC-011.
+- Date: 2026-09-11 (Europe/London); implementation commit: `930b389`.
+- Added the ntfy HTTP boundary and a disposable `httptest` receiver. The
+  boundary accepts HTTPS by default and only permits explicitly opted-in HTTP
+  for private or loopback addresses, validates every resolved address,
+  rejects mixed forbidden DNS answers, credentials, query strings, fragments,
+  path traversal, and reserved routing topics, and pins validated IPs while
+  retaining the original host for TLS verification. It sends the token only as
+  a Bearer header, exposes masked topic/token metadata, rejects redirects,
+  bounds the UTF-8 JSON body to 4096 bytes, classifies 429/5xx/timeout and
+  response-loss as retryable, and classifies other 4xx as permanent.
+- Exact verification commands and outcomes: `go test
+  ./internal/notifications/ntfy -race -count=1`; `go test ./... -count=1`;
+  `go vet ./...`; and `git diff --check` passed. Positive fixtures covered
+  accepted bearer-authenticated HTTPS/HTTP delivery, TLS, payload truncation,
+  and Retry-After. Negative fixtures covered public/plain HTTP, unsafe DNS,
+  unsafe URL components, reserved topics, redirects, timeouts, response loss
+  after receiver acceptance, and permanent authentication failure. The
+  receiver was local and disposable; no real ntfy endpoint or credential was
+  used.
+- Remaining limits: T013 still adds encrypted destination persistence,
+  metadata-only control handlers, and delivery integration; this task does
+  not claim live ntfy acceptance or subscriber receipt.
