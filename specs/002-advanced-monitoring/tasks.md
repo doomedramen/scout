@@ -8,7 +8,7 @@ Independent gate: Verify 001 dependencies, executable contracts and SQL parity b
 
 - [X] T001 Record current commit, dirty-work boundaries, 001 prerequisite evidence and gaps in specs/002-advanced-monitoring/evidence.md; verify 001 registry/recovery/identity rather than inferring from checkboxes (FR-024, FR-032, FR-035).
 - [X] T002 Translate contracts into api/openapi.yaml and api/schemas/ fixtures under tests/contracts/; pin the systemd client and record utility/driver test targets in specs/002-advanced-monitoring/research.md (FR-003, FR-008, FR-009, FR-014, FR-022, FR-032, FR-034).
-- [ ] T003 Implement additive/checkpointed telemetry and 002 schema migrations in internal/store/migrations.go and internal/store/monitoring_migration.go, including legacy import parity and explicit cutover generation (FR-004, FR-010, FR-020, FR-024; SC-008).
+- [X] T003 Implement additive/checkpointed telemetry and 002 schema migrations in internal/store/migrations.go and internal/store/monitoring_migration.go, including legacy import parity and explicit cutover generation (FR-004, FR-010, FR-020, FR-024; SC-008).
 - [ ] T004 Move receipt/sample/current-series/dirty-work transactions into internal/store/telemetry.go and internal/store/monitoring.go; use full series identity and remove migrated samples from legacy snapshot writes (FR-004, FR-005, FR-018, FR-023, FR-024; SC-002, SC-008).
 - [ ] T005 Add rollback-on-error, replay, SQL concurrency, legacy migration interruption and disk-budget fixtures in tests/integration/monitoring_storage_test.go; replace the one-million-sample cap with configured measured budgets (FR-018, FR-023, FR-024, FR-033, FR-035; SC-008, SC-011).
 ## Automatic incidents (P1)

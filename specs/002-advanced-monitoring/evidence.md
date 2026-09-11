@@ -68,3 +68,39 @@ For future results append: task and requirement IDs, commit, date, exact command
   ntfy publication, D-Bus/systemd host, smartctl device, ZFS pool, sensor/GPU
   hardware, or live API acceptance is claimed here; those belong to later
   implementation and release-gate tasks.
+
+## T003 — checkpointed telemetry migration
+
+- Requirements: FR-004, FR-010, FR-020, FR-024; SC-008.
+- Date: 2026-09-11 (Europe/London); commit: `fe8ca9a`.
+- Migration v2 adds durable monitoring storage state, generation-scoped
+  checkpoints, metric-series identity, current-series state, receipts, global
+  sample ordinals, rollup work, and aggregate tables without removing the
+  legacy workspace snapshot. The importer reads a stable SHA-256 source
+  snapshot, sorts each stream deterministically, commits bounded row batches
+  together with their checkpoint, resumes after an interrupted batch, and
+  requires source-hash/checkpoint/count parity before explicit authoritative
+  cutover. An advisory transaction lock serializes begin, import, verification,
+  and cutover. Legacy receipt keys are imported in both the new JSON-safe form
+  and the original NUL-delimited form; new memory receipts no longer write NUL
+  bytes into JSONB-backed workspace state.
+- Exact verification commands and outcomes:
+  `go test ./internal/store ./tests/integration -count=1` passed;
+  `go vet ./internal/store ./tests/integration` passed;
+  `scripts/test-integration.sh` passed against a disposable local PostgreSQL
+  17 container; `go test ./... -count=1`; `go vet ./...`;
+  `npm run format:check`; `git diff --check`; and `go mod verify` all passed.
+  The disposable run exercised migration, one-row batches, parity, normalized
+  row counts, authoritative cutover, and rejection of a post-cutover restart.
+  The regression test also covers JSON serialization and legacy receipt-key
+  parsing.
+- Negative outcomes caught during verification and fixed before completion:
+  PostgreSQL rejected a unique index on the partitioned samples table without
+  its partition key, so global replay identity is enforced by the separate
+  unpartitioned ordinal table; PostgreSQL JSONB rejected the pre-existing NUL
+  receipt-key encoding, so the memory key format was made JSON-safe while
+  retaining backward import compatibility.
+- Remaining limits: T004 still moves live ingestion/history/current-series and
+  dirty-work transactions off the legacy snapshot; T005 still adds crash,
+  concurrency, interruption, and disk-budget fixtures. No production rollout,
+  real device, or production credential was used.
