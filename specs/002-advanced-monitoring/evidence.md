@@ -265,3 +265,33 @@ For future results append: task and requirement IDs, commit, date, exact command
   was used.
 - Remaining limits: T010 adds the incident/rule UI and T011 adds the full
   restart, target-change, cap, and decommission acceptance evidence.
+
+## T010 — incident workspace and owner rule editor
+
+- Requirements: FR-001, FR-003, FR-004, FR-005, FR-019; SC-010.
+- Date: 2026-09-11 (Europe/London); implementation commit: `972732b`.
+- Added an Incidents navigation page with an evidence-first active queue,
+  incident detail/history view, evidence freshness/unknown/unsupported
+  treatment, owner acknowledgment with explicit “acknowledgment is not
+  recovery” copy, severity/status/acknowledgment filters, and responsive
+  narrow-screen layout. Added the revision-aware rule editor for numeric and
+  state conditions, fleet/site/device targeting, bounded durations and
+  hysteresis, rule enablement, and retirement. The page explains the seven
+  automatic fleet defaults, their concrete thresholds, and that external
+  notifications remain off until explicitly configured. The frontend API
+  client now covers the rule, override, incident, transition, and
+  acknowledgment endpoints.
+- Exact verification commands and outcomes: `npm run check`; `npm run build`;
+  `npm run lint`; `npm test`; `npm run format:check`; `go test ./...
+  -count=1`; `git diff --check`; and `npm run test:e2e:browser` all passed.
+  The Playwright browser journey positively covered owner setup, sign-in,
+  navigation to Incidents, the empty incident queue, automatic-default
+  explanation, opening Rules, and creating a real alert rule through the UI.
+  Existing API tests continue to cover invalid conditions, stale revisions,
+  pagination, and repeated acknowledgment. No production database,
+  credential, receiver, or real device was used.
+- Remaining limits: T011 still owns restart, rule disable/retirement target
+  changes, admission-cap, decommission closure, and the full live US1
+  acceptance journey. No active incident was fabricated solely for this UI
+  test, so the browser run does not claim a live incident-detail screenshot
+  or acknowledgment acceptance against a monitored device.
