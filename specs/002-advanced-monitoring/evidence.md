@@ -178,10 +178,9 @@ For future results append: task and requirement IDs, commit, date, exact command
   -race -count=1`; `go test ./... -count=1`; `go vet ./...`; `npm run
   format:check`; and `git diff --check` all passed. No external receiver,
   production credential, or real device was used.
-- Remaining limits: this is the deterministic evaluator foundation. T007–T011
-  still add persisted rule lineage/override resolution, durable evaluation and
-  incident transitions, control/API/UI surfaces, restart integration, and the
-  live US1 acceptance journey.
+- Remaining limits: this is the deterministic evaluator foundation. T009–T011
+  still add control/API/UI surfaces, restart integration, and the live US1
+  acceptance journey.
 
 ## T007 — default rules and scoped override persistence
 
@@ -202,6 +201,41 @@ For future results append: task and requirement IDs, commit, date, exact command
   `git diff --check` passed. The SQL fixture verified idempotent provisioning,
   compare-and-swap rejection, override persistence, and retirement filtering.
   No production database, credential, or real device was used.
-- Remaining limits: T008–T011 still add durable evaluation state/incident
-  transitions, control handlers, UI, restart/decommission integration, and
-  the live US1 acceptance journey.
+- Remaining limits: T009–T011 still add control handlers, UI,
+  restart/decommission integration, and the live US1 acceptance journey.
+
+## T008 — durable alert work and incident transitions
+
+- Requirements: FR-002, FR-004, FR-005, FR-007, FR-033; SC-001, SC-002.
+- Date: 2026-09-11 (Europe/London); commit: `1be09f7`.
+- Added migration v4 tables for alert evaluation checkpoints, incidents,
+  append-only transitions, and leased dirty work. Telemetry ingestion marks
+  wildcard-lineage work in the same memory/SQL transaction as samples,
+  current state, observations, and rollup work. Work claims use bounded
+  leases and epochs; completion removes only an unchanged generation, so
+  telemetry arriving during evaluation remains queued. The durable evaluator
+  restores checkpoint and active-incident state after restart, runs an
+  immediate sweep followed by a 15-second cadence, emits globally unique
+  incident IDs, preserves unknown evidence without false recovery, and writes
+  the checkpoint, incident snapshot, and transition append atomically.
+- Exact verification commands and outcomes: `go test ./internal/alerts
+  ./internal/store ./internal/control ./internal/auth -count=1` passed;
+  `go test ./... -count=1` passed; `go vet ./...` passed; `npm run lint`
+  passed; `npm test` passed; `npm run check` passed; `npm run build` passed;
+  `scripts/test-integration.sh` passed against disposable PostgreSQL 17,
+  including SQL incident persistence, lease completion, and rollback on an
+  invalid transition; `npx playwright install chromium` completed; and
+  `npm run test:e2e:browser` passed the isolated browser journey through
+  owner setup, sign-in, development security state, site/scope creation,
+  scope enablement, and first-agent invitation.
+- Development friction evidence: development mode retains owner
+  authentication and CSRF checks but bypasses only the recent-MFA mutation
+  ceremony; production still enforces recent MFA. The interactive browser
+  repro that previously returned `Action not permitted` now completed the
+  same scope and invitation actions on an isolated local server without
+  that error. No real device or production credential was used.
+- Remaining limits: T009–T011 still add the owner control API, incident UI,
+  restart/decommission/admission integration, and the live US1 acceptance
+  journey. The 100,000 active-incident cap is enforced and observable as a
+  store error, but no capacity claim is made without the later workload
+  evidence task.
