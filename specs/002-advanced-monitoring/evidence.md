@@ -692,3 +692,24 @@ For future results append: task and requirement IDs, commit, date, exact command
   or deployment was used. The fixture proves presentation and contract
   behavior; live diagnostic collection remains limited to the fixture-backed
   Linux collector evidence in T022/T023.
+
+## T025 — deterministic rollup contract fixtures
+
+- Requirements: FR-020, FR-021, FR-022, FR-023; SC-007, SC-008.
+- Date: 2026-09-11 (Europe/London); implementation commit: `51733f9`.
+- Added `internal/telemetry/rollups_test.go` as a deterministic contract
+  fixture layer for UTC-aligned half-open five-minute/hourly buckets, cadence
+  changes, strict retention boundaries, valid-sample statistics, unavailable
+  samples, clipped partial query boundaries, interval-union coverage, late
+  sample recomputation without duplicate bucket keys, weighted coarser means,
+  and a 8,760-hour year grouped to 584 points while retaining a known spike
+  and the complete span. Invalid history limits below 2 or above 600 are
+  rejected in the fixture contract.
+- Exact verification commands and outcomes: `go test ./internal/telemetry
+  -count=1`; `go test ./internal/telemetry -run TestRollupFixture -count=1`;
+  `go vet ./internal/telemetry`; and `git diff --check` all passed. These
+  fixtures are intentionally independent of PostgreSQL and do not claim that
+  the production rollup worker or history tier selector is implemented yet.
+- No production database, real device, production credential, or deployment
+  was used. T026 must implement the leased generation-aware worker against
+  these semantics before this story's historical gate can pass.
