@@ -56,6 +56,8 @@ func mapError(err error) (int, string, string, bool) {
 		return http.StatusConflict, "conflict", "State conflict; refresh and retry", false
 	case errors.Is(err, store.ErrBackpressure):
 		return http.StatusServiceUnavailable, "backpressure", "Service is temporarily paused or at capacity", true
+	case errors.Is(err, store.ErrIncidentCap):
+		return http.StatusServiceUnavailable, "incident_capacity", "Incident capacity has been reached", true
 	case errors.Is(err, store.ErrInvalid):
 		return http.StatusBadRequest, "invalid_request", "Request failed validation", false
 	default:

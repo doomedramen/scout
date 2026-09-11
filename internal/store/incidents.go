@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,7 +24,19 @@ type IncidentQuery struct {
 	Acknowledged *bool
 	Severity     string
 	DeviceID     string
+	SiteID       string
+	Cursor       string
 	Limit        int
+}
+
+type IncidentPage struct {
+	Items      []Incident
+	NextCursor string
+}
+
+type IncidentTransitionPage struct {
+	Items      []IncidentTransition
+	NextCursor string
 }
 
 // MarkAlertWork records a coalesced evaluation request. A wildcard lineage is
@@ -266,17 +280,33 @@ func (s *Store) GetIncident(ctx context.Context, id string) (Incident, error) {
 }
 
 func (s *Store) ListIncidents(ctx context.Context, query IncidentQuery) ([]Incident, error) {
+	page, err := s.ListIncidentPage(ctx, query)
+	return page.Items, err
+}
+
+func (s *Store) ListIncidentPage(ctx context.Context, query IncidentQuery) (IncidentPage, error) {
 	if query.Limit <= 0 || query.Limit > 500 {
 		query.Limit = 100
 	}
+	if query.Cursor != "" {
+		if _, _, err := decodeIncidentCursor(query.Cursor); err != nil {
+			return IncidentPage{}, err
+		}
+	}
 	if s.db != nil {
-		return s.listIncidentsSQL(ctx, query)
+		return s.listIncidentsPageSQL(ctx, query)
 	}
 	result := []Incident{}
 	err := s.read(ctx, func(state *State) error {
 		for _, item := range state.Incidents {
 			if !incidentMatches(item, query) {
 				continue
+			}
+			if query.SiteID != "" {
+				device, exists := state.Devices[item.DeviceID]
+				if !exists || device.SiteID != query.SiteID {
+					continue
+				}
 			}
 			result = append(result, cloneIncident(item))
 		}
@@ -286,23 +316,48 @@ func (s *Store) ListIncidents(ctx context.Context, query IncidentQuery) ([]Incid
 			}
 			return result[left].EvaluatedAt.After(result[right].EvaluatedAt)
 		})
-		if len(result) > query.Limit {
-			result = result[:query.Limit]
-		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return IncidentPage{}, err
+	}
+	if query.Cursor != "" {
+		cursorTime, cursorID, _ := decodeIncidentCursor(query.Cursor)
+		filtered := result[:0]
+		for _, item := range result {
+			if item.EvaluatedAt.Before(cursorTime) || item.EvaluatedAt.Equal(cursorTime) && item.ID < cursorID {
+				filtered = append(filtered, item)
+			}
+		}
+		result = filtered
+	}
+	page := IncidentPage{Items: result}
+	if len(result) > query.Limit {
+		page.Items = result[:query.Limit]
+		page.NextCursor = encodeIncidentCursor(page.Items[len(page.Items)-1])
+	}
+	return page, nil
 }
 
 func (s *Store) ListIncidentTransitions(ctx context.Context, incidentID string, limit int) ([]IncidentTransition, error) {
+	page, err := s.ListIncidentTransitionPage(ctx, incidentID, "", limit)
+	return page.Items, err
+}
+
+func (s *Store) ListIncidentTransitionPage(ctx context.Context, incidentID, cursor string, limit int) (IncidentTransitionPage, error) {
 	if strings.TrimSpace(incidentID) == "" {
-		return nil, ErrInvalid
+		return IncidentTransitionPage{}, ErrInvalid
 	}
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
+	if cursor != "" {
+		if _, _, err := decodeTransitionCursor(cursor); err != nil {
+			return IncidentTransitionPage{}, err
+		}
+	}
 	if s.db != nil {
-		return s.listIncidentTransitionsSQL(ctx, incidentID, limit)
+		return s.listIncidentTransitionPageSQL(ctx, incidentID, cursor, limit)
 	}
 	result := []IncidentTransition{}
 	err := s.read(ctx, func(state *State) error {
@@ -312,9 +367,71 @@ func (s *Store) ListIncidentTransitions(ctx context.Context, incidentID string, 
 			}
 		}
 		sort.Slice(result, func(left, right int) bool { return result[left].Sequence < result[right].Sequence })
-		if len(result) > limit {
-			result = result[:limit]
+		return nil
+	})
+	if err != nil {
+		return IncidentTransitionPage{}, err
+	}
+	if cursor != "" {
+		cursorSequence, cursorID, _ := decodeTransitionCursor(cursor)
+		filtered := result[:0]
+		for _, item := range result {
+			if item.Sequence > cursorSequence || item.Sequence == cursorSequence && item.ID > cursorID {
+				filtered = append(filtered, item)
+			}
 		}
+		result = filtered
+	}
+	page := IncidentTransitionPage{Items: result}
+	if len(result) > limit {
+		page.Items = result[:limit]
+		page.NextCursor = encodeTransitionCursor(page.Items[len(page.Items)-1])
+	}
+	return page, nil
+}
+
+// AcknowledgeIncident records acknowledgment as an append-only transition.
+// Repeating an acknowledgment is deliberately a read of the existing state so
+// clients can safely retry after a lost response.
+func (s *Store) AcknowledgeIncident(ctx context.Context, id string, expectedRevision int64, actor string) (Incident, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(actor) == "" {
+		return Incident{}, ErrInvalid
+	}
+	if s.db != nil {
+		return s.acknowledgeIncidentSQL(ctx, id, expectedRevision, actor)
+	}
+	var result Incident
+	err := s.mutate(ctx, func(state *State) error {
+		incident, exists := state.Incidents[id]
+		if !exists {
+			return ErrNotFound
+		}
+		if incident.AcknowledgedAt != nil {
+			result = cloneIncident(incident)
+			return nil
+		}
+		if expectedRevision > 0 && incident.Revision != expectedRevision {
+			return ErrConflict
+		}
+		when := s.now().UTC()
+		incident.AcknowledgedAt = &when
+		incident.AcknowledgedBy = boundedIncidentText(actor, 128)
+		incident.Revision++
+		transition := IncidentTransition{
+			ID: NewID(), IncidentID: incident.ID, Sequence: nextTransitionSequence(state.IncidentTransitions, incident.ID),
+			Kind: "acknowledged", Actor: incident.AcknowledgedBy, EvidenceState: incident.EvidenceState,
+			Value: cloneAlertFloat(incident.Value), OccurredAt: when, RuleRevision: incident.RuleRevision,
+		}
+		if !incident.ObservedAt.IsZero() {
+			observedAt := incident.ObservedAt
+			transition.ObservedAt = &observedAt
+		}
+		if transition.Sequence > MaxIncidentTransitions {
+			return ErrBackpressure
+		}
+		state.Incidents[id] = cloneIncident(incident)
+		state.IncidentTransitions[transition.ID] = cloneIncidentTransition(transition)
+		result = cloneIncident(incident)
 		return nil
 	})
 	return result, err
@@ -553,6 +670,11 @@ func (s *Store) getIncidentSQL(ctx context.Context, id string) (Incident, error)
 }
 
 func (s *Store) listIncidentsSQL(ctx context.Context, query IncidentQuery) ([]Incident, error) {
+	page, err := s.listIncidentsPageSQL(ctx, query)
+	return page.Items, err
+}
+
+func (s *Store) listIncidentsPageSQL(ctx context.Context, query IncidentQuery) (IncidentPage, error) {
 	args := []any{}
 	where := []string{}
 	add := func(expression string, value any) {
@@ -560,57 +682,147 @@ func (s *Store) listIncidentsSQL(ctx context.Context, query IncidentQuery) ([]In
 		where = append(where, fmt.Sprintf(expression, len(args)))
 	}
 	if query.Status != "" {
-		add("status=$%d", query.Status)
+		add("incidents.status=$%d", query.Status)
 	}
 	if query.Severity != "" {
-		add("severity=$%d", query.Severity)
+		add("incidents.severity=$%d", query.Severity)
 	}
 	if query.DeviceID != "" {
-		add("device_id=$%d", query.DeviceID)
+		add("incidents.device_id=$%d", query.DeviceID)
+	}
+	if query.SiteID != "" {
+		add("EXISTS (SELECT 1 FROM devices AS incident_devices WHERE incident_devices.id = incidents.device_id AND incident_devices.site_id = $%d)", query.SiteID)
 	}
 	if query.Acknowledged != nil {
 		if *query.Acknowledged {
-			where = append(where, "acknowledged_at IS NOT NULL")
+			where = append(where, "incidents.acknowledged_at IS NOT NULL")
 		} else {
-			where = append(where, "acknowledged_at IS NULL")
+			where = append(where, "incidents.acknowledged_at IS NULL")
 		}
+	}
+	if query.Cursor != "" {
+		cursorTime, cursorID, err := decodeIncidentCursor(query.Cursor)
+		if err != nil {
+			return IncidentPage{}, err
+		}
+		args = append(args, cursorTime, cursorID)
+		where = append(where, fmt.Sprintf("(incidents.evaluated_at, incidents.id) < ($%d, $%d)", len(args)-1, len(args)))
 	}
 	sqlQuery := incidentSelect
 	if len(where) > 0 {
 		sqlQuery += " WHERE " + strings.Join(where, " AND ")
 	}
-	sqlQuery += fmt.Sprintf(" ORDER BY evaluated_at DESC, id DESC LIMIT %d", query.Limit)
+	sqlQuery += fmt.Sprintf(" ORDER BY incidents.evaluated_at DESC, incidents.id DESC LIMIT %d", query.Limit+1)
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list incidents: %w", err)
+		return IncidentPage{}, fmt.Errorf("list incidents: %w", err)
 	}
 	defer rows.Close()
 	result := []Incident{}
 	for rows.Next() {
 		item, scanErr := scanIncident(rows)
 		if scanErr != nil {
-			return nil, fmt.Errorf("scan incident: %w", scanErr)
+			return IncidentPage{}, fmt.Errorf("scan incident: %w", scanErr)
 		}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return IncidentPage{}, err
+	}
+	page := IncidentPage{Items: result}
+	if len(result) > query.Limit {
+		page.Items = result[:query.Limit]
+		page.NextCursor = encodeIncidentCursor(page.Items[len(page.Items)-1])
+	}
+	return page, nil
 }
 
 func (s *Store) listIncidentTransitionsSQL(ctx context.Context, incidentID string, limit int) ([]IncidentTransition, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, incident_id, sequence, kind, actor, evidence_state, reason, value, observed_at, occurred_at, rule_revision FROM incident_transitions WHERE incident_id=$1 ORDER BY sequence LIMIT $2`, incidentID, limit)
+	page, err := s.listIncidentTransitionPageSQL(ctx, incidentID, "", limit)
+	return page.Items, err
+}
+
+func (s *Store) listIncidentTransitionPageSQL(ctx context.Context, incidentID, cursor string, limit int) (IncidentTransitionPage, error) {
+	args := []any{incidentID}
+	where := "incident_id=$1"
+	if cursor != "" {
+		sequence, id, err := decodeTransitionCursor(cursor)
+		if err != nil {
+			return IncidentTransitionPage{}, err
+		}
+		args = append(args, sequence, id)
+		where += fmt.Sprintf(" AND (sequence, id) > ($%d, $%d)", len(args)-1, len(args))
+	}
+	query := fmt.Sprintf(`SELECT id, incident_id, sequence, kind, actor, evidence_state, reason, value, observed_at, occurred_at, rule_revision FROM incident_transitions WHERE %s ORDER BY sequence, id LIMIT %d`, where, limit+1)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list incident transitions: %w", err)
+		return IncidentTransitionPage{}, fmt.Errorf("list incident transitions: %w", err)
 	}
 	defer rows.Close()
 	result := []IncidentTransition{}
 	for rows.Next() {
 		item, scanErr := scanIncidentTransition(rows)
 		if scanErr != nil {
-			return nil, fmt.Errorf("scan incident transition: %w", scanErr)
+			return IncidentTransitionPage{}, fmt.Errorf("scan incident transition: %w", scanErr)
 		}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return IncidentTransitionPage{}, err
+	}
+	page := IncidentTransitionPage{Items: result}
+	if len(result) > limit {
+		page.Items = result[:limit]
+		page.NextCursor = encodeTransitionCursor(page.Items[len(page.Items)-1])
+	}
+	return page, nil
+}
+
+func (s *Store) acknowledgeIncidentSQL(ctx context.Context, id string, expectedRevision int64, actor string) (Incident, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Incident{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	incident, err := scanIncident(tx.QueryRowContext(ctx, incidentSelect+` WHERE id=$1 FOR UPDATE`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Incident{}, ErrNotFound
+	}
+	if err != nil {
+		return Incident{}, fmt.Errorf("read incident for acknowledgment: %w", err)
+	}
+	if incident.AcknowledgedAt != nil {
+		return incident, nil
+	}
+	if expectedRevision > 0 && incident.Revision != expectedRevision {
+		return Incident{}, ErrConflict
+	}
+	when := s.now().UTC()
+	incident.AcknowledgedAt = &when
+	incident.AcknowledgedBy = boundedIncidentText(actor, 128)
+	incident.Revision++
+	transitionID := NewID()
+	var sequence int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) + 1 FROM incident_transitions WHERE incident_id=$1`, id).Scan(&sequence); err != nil {
+		return Incident{}, fmt.Errorf("read acknowledgment sequence: %w", err)
+	}
+	if sequence > MaxIncidentTransitions {
+		return Incident{}, ErrBackpressure
+	}
+	var observedAt any
+	if !incident.ObservedAt.IsZero() {
+		observedAt = incident.ObservedAt.UTC()
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE incidents SET acknowledged_at=$1, acknowledged_by=$2, revision=$3 WHERE id=$4`, incident.AcknowledgedAt, incident.AcknowledgedBy, incident.Revision, id); err != nil {
+		return Incident{}, mapIncidentSQLError(err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO incident_transitions(id, incident_id, sequence, kind, actor, evidence_state, reason, value, observed_at, occurred_at, rule_revision) VALUES ($1,$2,$3,'acknowledged',$4,$5,'',$6,$7,$8,$9)`, transitionID, id, sequence, incident.AcknowledgedBy, incident.EvidenceState, incident.Value, observedAt, when, incident.RuleRevision); err != nil {
+		return Incident{}, mapIncidentSQLError(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Incident{}, fmt.Errorf("commit incident acknowledgment: %w", err)
+	}
+	return incident, nil
 }
 
 const incidentSelect = `SELECT id, lineage_id, entity_id, device_id, rule_revision, rule_snapshot, severity, status, evidence_state, value, unit, source, opened_at, observed_at, evaluated_at, acknowledged_at, acknowledged_by, closed_at, close_reason, revision FROM incidents`
@@ -805,4 +1017,52 @@ func mapIncidentSQLError(err error) error {
 		return ErrConflict
 	}
 	return err
+}
+
+func encodeIncidentCursor(item Incident) string {
+	value := item.EvaluatedAt.UTC().Format(time.RFC3339Nano) + "\x00" + item.ID
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeIncidentCursor(value string) (time.Time, string, error) {
+	if len(value) > 512 {
+		return time.Time{}, "", ErrInvalid
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return time.Time{}, "", ErrInvalid
+	}
+	parts := strings.SplitN(string(raw), "\x00", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return time.Time{}, "", ErrInvalid
+	}
+	when, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return time.Time{}, "", ErrInvalid
+	}
+	return when.UTC(), parts[1], nil
+}
+
+func encodeTransitionCursor(item IncidentTransition) string {
+	value := fmt.Sprintf("%d\x00%s", item.Sequence, item.ID)
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeTransitionCursor(value string) (int64, string, error) {
+	if len(value) > 512 {
+		return 0, "", ErrInvalid
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return 0, "", ErrInvalid
+	}
+	parts := strings.SplitN(string(raw), "\x00", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return 0, "", ErrInvalid
+	}
+	sequence, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || sequence < 1 {
+		return 0, "", ErrInvalid
+	}
+	return sequence, parts[1], nil
 }

@@ -177,6 +177,8 @@ type AlertRule struct {
 	ClearValue                *float64   `json:"clearValue,omitempty"`
 	TriggerState              string     `json:"triggerState,omitempty"`
 	ClearState                string     `json:"clearState,omitempty"`
+	ServicePattern            string     `json:"servicePattern,omitempty"`
+	CollectorID               string     `json:"collectorId,omitempty"`
 	TriggerSeconds            int        `json:"triggerSeconds"`
 	ClearSeconds              int        `json:"clearSeconds"`
 	MinimumConsecutiveSamples int        `json:"minimumConsecutiveSamples"`
@@ -203,6 +205,8 @@ type AlertOverride struct {
 	ClearValue                *float64  `json:"clearValue,omitempty"`
 	TriggerState              string    `json:"triggerState,omitempty"`
 	ClearState                string    `json:"clearState,omitempty"`
+	ServicePattern            string    `json:"servicePattern,omitempty"`
+	CollectorID               string    `json:"collectorId,omitempty"`
 	TriggerSeconds            int       `json:"triggerSeconds"`
 	ClearSeconds              int       `json:"clearSeconds"`
 	MinimumConsecutiveSamples int       `json:"minimumConsecutiveSamples"`

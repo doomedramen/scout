@@ -209,6 +209,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/owner/recovery-codes", a.recoveryCodes)
 	a.registerInventoryRoutes(mux)
 	a.registerAccessRoutes(mux)
+	a.registerAlertRoutes(mux)
 	a.registerAgentRoutes(mux)
 	a.registerOperationsRoutes(mux)
 	a.registerEnrollmentRoutes(mux)

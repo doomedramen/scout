@@ -234,8 +234,34 @@ For future results append: task and requirement IDs, commit, date, exact command
   repro that previously returned `Action not permitted` now completed the
   same scope and invitation actions on an isolated local server without
   that error. No real device or production credential was used.
-- Remaining limits: T009–T011 still add the owner control API, incident UI,
-  restart/decommission/admission integration, and the live US1 acceptance
+- Remaining limits: T010–T011 still add the incident UI and
+  restart/decommission/admission integration before the live US1 acceptance
   journey. The 100,000 active-incident cap is enforced and observable as a
   store error, but no capacity claim is made without the later workload
   evidence task.
+
+## T009 — owner alert and incident control API
+
+- Requirements: FR-003, FR-004, FR-005, FR-007, FR-009; SC-002, SC-011.
+- Date: 2026-09-11 (Europe/London); validation was run against the
+  implementation that is being committed with this evidence entry.
+- Added authenticated owner CRUD for alert rules and site/device overrides,
+  nested contract DTOs with catalog metric/state validation, immutable lineage
+  identity on PATCH, bounded opaque pagination for rules, overrides, incidents,
+  and transition history, site/device incident filtering, and redacted bounded
+  incident/evidence responses. Acknowledgment is a revision-checked durable
+  mutation that appends exactly one transition and returns the existing state
+  on repeated requests, including after a stale retry. Development keeps the
+  agreed MFA bypass while retaining session and CSRF checks; production uses
+  the existing recent-MFA gate. Alert condition service-pattern and collector
+  fields are retained through an additive migration.
+- Exact verification commands and outcomes: `go test ./internal/control
+  ./internal/store ./internal/alerts -count=1`; `go test ./... -count=1`; `go
+  vet ./...`; `scripts/test-integration.sh` against disposable PostgreSQL 17;
+  and `git diff --check` passed. Endpoint tests covered successful CRUD,
+  stale rule revisions, nested conditions, invalid catalog states,
+  site-filtered incidents, transition cursors, and repeated acknowledgment.
+  No production database, credential, notification receiver, or real device
+  was used.
+- Remaining limits: T010 adds the incident/rule UI and T011 adds the full
+  restart, target-change, cap, and decommission acceptance evidence.

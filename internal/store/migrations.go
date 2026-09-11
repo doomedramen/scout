@@ -47,6 +47,7 @@ func migrations() []migration {
 		{version: 2, sql: monitoringMigrationSQL},
 		{version: 3, sql: alertRulesMigrationSQL},
 		{version: 4, sql: incidentsMigrationSQL},
+		{version: 5, sql: alertConditionFieldsMigrationSQL},
 	}
 }
 
@@ -343,4 +344,11 @@ CREATE TABLE IF NOT EXISTS alert_work (
   PRIMARY KEY (lineage_id, entity_id)
 );
 CREATE INDEX IF NOT EXISTS alert_work_ready_idx ON alert_work(lease_until, updated_at, lineage_id, entity_id);
+`
+
+const alertConditionFieldsMigrationSQL = `
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS service_pattern text NOT NULL DEFAULT '';
+ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS collector_id text NOT NULL DEFAULT '';
+ALTER TABLE alert_overrides ADD COLUMN IF NOT EXISTS service_pattern text NOT NULL DEFAULT '';
+ALTER TABLE alert_overrides ADD COLUMN IF NOT EXISTS collector_id text NOT NULL DEFAULT '';
 `

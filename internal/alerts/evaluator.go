@@ -52,6 +52,7 @@ type Rule struct {
 	ID                        string
 	LineageID                 string
 	Revision                  int64
+	Name                      string
 	Kind                      RuleKind
 	Metric                    string
 	EntityID                  string
@@ -60,6 +61,8 @@ type Rule struct {
 	ClearValue                float64
 	TriggerState              string
 	ClearState                string
+	ServicePattern            string
+	CollectorID               string
 	TriggerFor                time.Duration
 	ClearFor                  time.Duration
 	MinimumConsecutiveSamples int

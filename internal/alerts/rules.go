@@ -221,7 +221,7 @@ func ValidateOverride(base store.AlertRule, override store.AlertOverride) error 
 	rule := store.AlertRule{
 		ID: override.LineageID, Name: base.Name, Kind: override.Kind, Metric: override.Metric,
 		EntityID: override.EntityID, Operator: override.Operator, TriggerValue: cloneFloatPointer(override.TriggerValue), ClearValue: cloneFloatPointer(override.ClearValue),
-		TriggerState: override.TriggerState, ClearState: override.ClearState, TriggerSeconds: override.TriggerSeconds, ClearSeconds: override.ClearSeconds,
+		TriggerState: override.TriggerState, ClearState: override.ClearState, ServicePattern: override.ServicePattern, CollectorID: override.CollectorID, TriggerSeconds: override.TriggerSeconds, ClearSeconds: override.ClearSeconds,
 		MinimumConsecutiveSamples: override.MinimumConsecutiveSamples, Severity: override.Severity, TargetKind: base.TargetKind, TargetID: base.TargetID, Enabled: override.Enabled,
 	}
 	if err := ValidateRule(rule); err != nil {
@@ -258,9 +258,9 @@ func (rule EffectiveRule) EvaluatorRule() (Rule, error) {
 		return Rule{}, err
 	}
 	result := Rule{
-		ID: rule.Rule.ID, LineageID: rule.Rule.ID, Revision: rule.Rule.Revision, Kind: RuleKind(rule.Rule.Kind), Metric: rule.Rule.Metric, EntityID: rule.Rule.EntityID,
+		ID: rule.Rule.ID, LineageID: rule.Rule.ID, Revision: rule.Rule.Revision, Name: rule.Rule.Name, Kind: RuleKind(rule.Rule.Kind), Metric: rule.Rule.Metric, EntityID: rule.Rule.EntityID,
 		Operator: Operator(rule.Rule.Operator), TriggerFor: time.Duration(rule.Rule.TriggerSeconds) * time.Second, ClearFor: time.Duration(rule.Rule.ClearSeconds) * time.Second,
-		TriggerState: rule.Rule.TriggerState, ClearState: rule.Rule.ClearState, MinimumConsecutiveSamples: rule.Rule.MinimumConsecutiveSamples, Severity: rule.Rule.Severity, Enabled: rule.Rule.Enabled,
+		TriggerState: rule.Rule.TriggerState, ClearState: rule.Rule.ClearState, ServicePattern: rule.Rule.ServicePattern, CollectorID: rule.Rule.CollectorID, MinimumConsecutiveSamples: rule.Rule.MinimumConsecutiveSamples, Severity: rule.Rule.Severity, Enabled: rule.Rule.Enabled,
 	}
 	if rule.Rule.TriggerValue != nil {
 		result.TriggerValue = *rule.Rule.TriggerValue
@@ -304,6 +304,8 @@ func applyOverride(base store.AlertRule, override store.AlertOverride) store.Ale
 	base.ClearValue = cloneFloatPointer(override.ClearValue)
 	base.TriggerState = override.TriggerState
 	base.ClearState = override.ClearState
+	base.ServicePattern = override.ServicePattern
+	base.CollectorID = override.CollectorID
 	base.TriggerSeconds = override.TriggerSeconds
 	base.ClearSeconds = override.ClearSeconds
 	base.MinimumConsecutiveSamples = override.MinimumConsecutiveSamples

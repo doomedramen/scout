@@ -241,7 +241,7 @@ func (s *Store) DeleteAlertOverride(ctx context.Context, id string, expectedRevi
 }
 
 func validateAlertRule(rule AlertRule) error {
-	if strings.TrimSpace(rule.Name) == "" || len(rule.Name) > 120 || len(rule.TemplateKey) > 64 {
+	if strings.TrimSpace(rule.Name) == "" || len(rule.Name) > 120 || len(rule.TemplateKey) > 64 || len(rule.ServicePattern) > 128 || len(rule.CollectorID) > 128 {
 		return ErrInvalid
 	}
 	if rule.Kind != "numeric" && rule.Kind != "state" {
@@ -260,6 +260,9 @@ func validateAlertRule(rule AlertRule) error {
 		return ErrInvalid
 	}
 	if rule.Kind == "numeric" {
+		if rule.ServicePattern != "" || rule.CollectorID != "" {
+			return ErrInvalid
+		}
 		if strings.TrimSpace(rule.Metric) == "" || (rule.Operator != "gt" && rule.Operator != "lt") || rule.TriggerValue == nil || rule.ClearValue == nil || !finiteAlertValue(*rule.TriggerValue) || !finiteAlertValue(*rule.ClearValue) {
 			return ErrInvalid
 		}
@@ -269,6 +272,9 @@ func validateAlertRule(rule AlertRule) error {
 		return nil
 	}
 	if strings.TrimSpace(rule.TriggerState) == "" || strings.TrimSpace(rule.ClearState) == "" || rule.TriggerState == rule.ClearState {
+		return ErrInvalid
+	}
+	if rule.ServicePattern != "" && !validServicePattern(rule.ServicePattern) {
 		return ErrInvalid
 	}
 	return nil
@@ -284,6 +290,7 @@ func validateAlertOverride(base AlertRule, override AlertOverride) error {
 	candidate := AlertRule{
 		ID: base.ID, Name: base.Name, Kind: override.Kind, Metric: override.Metric, EntityID: override.EntityID, Operator: override.Operator,
 		TriggerValue: override.TriggerValue, ClearValue: override.ClearValue, TriggerState: override.TriggerState, ClearState: override.ClearState,
+		ServicePattern: override.ServicePattern, CollectorID: override.CollectorID,
 		TriggerSeconds: override.TriggerSeconds, ClearSeconds: override.ClearSeconds, MinimumConsecutiveSamples: override.MinimumConsecutiveSamples,
 		Severity: override.Severity, TargetKind: base.TargetKind, TargetID: base.TargetID, Enabled: override.Enabled,
 	}
@@ -344,6 +351,16 @@ func finiteAlertValue(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
+func validServicePattern(value string) bool {
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("_.@?*:-", char) {
+			continue
+		}
+		return false
+	}
+	return value != ""
+}
+
 func sortedAlertRules(values map[string]AlertRule, includeRetired bool) []AlertRule {
 	result := make([]AlertRule, 0, len(values))
 	for _, rule := range values {
@@ -382,7 +399,7 @@ func cloneAlertFloat(value *float64) *float64 {
 	return &copy
 }
 
-const alertRuleSelectColumns = `id, template_key, name, kind, metric, entity_id, operator, trigger_value, clear_value, trigger_state, clear_state, trigger_seconds, clear_seconds, minimum_consecutive_samples, severity, target_kind, target_id, enabled, revision, retired_at, created_at, updated_at`
+const alertRuleSelectColumns = `id, template_key, name, kind, metric, entity_id, operator, trigger_value, clear_value, trigger_state, clear_state, service_pattern, collector_id, trigger_seconds, clear_seconds, minimum_consecutive_samples, severity, target_kind, target_id, enabled, revision, retired_at, created_at, updated_at`
 
 type alertRuleScanner interface {
 	Scan(...any) error
@@ -393,7 +410,7 @@ func scanAlertRule(scanner alertRuleScanner) (AlertRule, error) {
 	var templateKey sql.NullString
 	var retiredAt sql.NullTime
 	var triggerNumber, clearNumber sql.NullFloat64
-	if err := scanner.Scan(&rule.ID, &templateKey, &rule.Name, &rule.Kind, &rule.Metric, &rule.EntityID, &rule.Operator, &triggerNumber, &clearNumber, &rule.TriggerState, &rule.ClearState, &rule.TriggerSeconds, &rule.ClearSeconds, &rule.MinimumConsecutiveSamples, &rule.Severity, &rule.TargetKind, &rule.TargetID, &rule.Enabled, &rule.Revision, &retiredAt, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+	if err := scanner.Scan(&rule.ID, &templateKey, &rule.Name, &rule.Kind, &rule.Metric, &rule.EntityID, &rule.Operator, &triggerNumber, &clearNumber, &rule.TriggerState, &rule.ClearState, &rule.ServicePattern, &rule.CollectorID, &rule.TriggerSeconds, &rule.ClearSeconds, &rule.MinimumConsecutiveSamples, &rule.Severity, &rule.TargetKind, &rule.TargetID, &rule.Enabled, &rule.Revision, &retiredAt, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
 		return AlertRule{}, err
 	}
 	if templateKey.Valid {
@@ -415,7 +432,7 @@ func scanAlertRule(scanner alertRuleScanner) (AlertRule, error) {
 }
 
 func alertRuleArgs(rule AlertRule) []any {
-	return []any{rule.ID, nullableAlertString(rule.TemplateKey), rule.Name, rule.Kind, rule.Metric, rule.EntityID, rule.Operator, rule.TriggerValue, rule.ClearValue, rule.TriggerState, rule.ClearState, rule.TriggerSeconds, rule.ClearSeconds, rule.MinimumConsecutiveSamples, rule.Severity, rule.TargetKind, rule.TargetID, rule.Enabled, rule.Revision, rule.RetiredAt, rule.CreatedAt.UTC(), rule.UpdatedAt.UTC()}
+	return []any{rule.ID, nullableAlertString(rule.TemplateKey), rule.Name, rule.Kind, rule.Metric, rule.EntityID, rule.Operator, rule.TriggerValue, rule.ClearValue, rule.TriggerState, rule.ClearState, rule.ServicePattern, rule.CollectorID, rule.TriggerSeconds, rule.ClearSeconds, rule.MinimumConsecutiveSamples, rule.Severity, rule.TargetKind, rule.TargetID, rule.Enabled, rule.Revision, rule.RetiredAt, rule.CreatedAt.UTC(), rule.UpdatedAt.UTC()}
 }
 
 func nullableAlertString(value string) any {
@@ -444,7 +461,7 @@ func (s *Store) ensureDefaultAlertRulesSQL(ctx context.Context, defaults []Alert
 		if candidate.UpdatedAt.IsZero() {
 			candidate.UpdatedAt = candidate.CreatedAt
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO alert_rules (`+alertRuleSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) ON CONFLICT (template_key) DO NOTHING`, alertRuleArgs(candidate)...); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO alert_rules (`+alertRuleSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) ON CONFLICT (template_key) DO NOTHING`, alertRuleArgs(candidate)...); err != nil {
 			return nil, mapAlertRuleSQLError(err)
 		}
 	}
@@ -543,9 +560,9 @@ func (s *Store) putAlertRuleSQL(ctx context.Context, rule AlertRule, expectedRev
 	}
 	rule.UpdatedAt = s.now().UTC()
 	if exists {
-		_, err = tx.ExecContext(ctx, `UPDATE alert_rules SET template_key=$1, name=$2, kind=$3, metric=$4, entity_id=$5, operator=$6, trigger_value=$7, clear_value=$8, trigger_state=$9, clear_state=$10, trigger_seconds=$11, clear_seconds=$12, minimum_consecutive_samples=$13, severity=$14, target_kind=$15, target_id=$16, enabled=$17, revision=$18, retired_at=$19, updated_at=$20 WHERE id=$21`, nullableAlertString(rule.TemplateKey), rule.Name, rule.Kind, rule.Metric, rule.EntityID, rule.Operator, rule.TriggerValue, rule.ClearValue, rule.TriggerState, rule.ClearState, rule.TriggerSeconds, rule.ClearSeconds, rule.MinimumConsecutiveSamples, rule.Severity, rule.TargetKind, rule.TargetID, rule.Enabled, rule.Revision, rule.RetiredAt, rule.UpdatedAt.UTC(), rule.ID)
+		_, err = tx.ExecContext(ctx, `UPDATE alert_rules SET template_key=$1, name=$2, kind=$3, metric=$4, entity_id=$5, operator=$6, trigger_value=$7, clear_value=$8, trigger_state=$9, clear_state=$10, service_pattern=$11, collector_id=$12, trigger_seconds=$13, clear_seconds=$14, minimum_consecutive_samples=$15, severity=$16, target_kind=$17, target_id=$18, enabled=$19, revision=$20, retired_at=$21, updated_at=$22 WHERE id=$23`, nullableAlertString(rule.TemplateKey), rule.Name, rule.Kind, rule.Metric, rule.EntityID, rule.Operator, rule.TriggerValue, rule.ClearValue, rule.TriggerState, rule.ClearState, rule.ServicePattern, rule.CollectorID, rule.TriggerSeconds, rule.ClearSeconds, rule.MinimumConsecutiveSamples, rule.Severity, rule.TargetKind, rule.TargetID, rule.Enabled, rule.Revision, rule.RetiredAt, rule.UpdatedAt.UTC(), rule.ID)
 	} else {
-		_, err = tx.ExecContext(ctx, `INSERT INTO alert_rules (`+alertRuleSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`, alertRuleArgs(rule)...)
+		_, err = tx.ExecContext(ctx, `INSERT INTO alert_rules (`+alertRuleSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`, alertRuleArgs(rule)...)
 	}
 	if err != nil {
 		return AlertRule{}, mapAlertRuleSQLError(err)
@@ -586,12 +603,12 @@ func (s *Store) retireAlertRuleSQL(ctx context.Context, id string, expectedRevis
 	return rule, nil
 }
 
-const alertOverrideSelectColumns = `id, lineage_id, target_kind, target_id, kind, metric, entity_id, operator, trigger_value, clear_value, trigger_state, clear_state, trigger_seconds, clear_seconds, minimum_consecutive_samples, severity, enabled, revision, created_at, updated_at`
+const alertOverrideSelectColumns = `id, lineage_id, target_kind, target_id, kind, metric, entity_id, operator, trigger_value, clear_value, trigger_state, clear_state, service_pattern, collector_id, trigger_seconds, clear_seconds, minimum_consecutive_samples, severity, enabled, revision, created_at, updated_at`
 
 func scanAlertOverride(scanner alertRuleScanner) (AlertOverride, error) {
 	var override AlertOverride
 	var triggerNumber, clearNumber sql.NullFloat64
-	if err := scanner.Scan(&override.ID, &override.LineageID, &override.TargetKind, &override.TargetID, &override.Kind, &override.Metric, &override.EntityID, &override.Operator, &triggerNumber, &clearNumber, &override.TriggerState, &override.ClearState, &override.TriggerSeconds, &override.ClearSeconds, &override.MinimumConsecutiveSamples, &override.Severity, &override.Enabled, &override.Revision, &override.CreatedAt, &override.UpdatedAt); err != nil {
+	if err := scanner.Scan(&override.ID, &override.LineageID, &override.TargetKind, &override.TargetID, &override.Kind, &override.Metric, &override.EntityID, &override.Operator, &triggerNumber, &clearNumber, &override.TriggerState, &override.ClearState, &override.ServicePattern, &override.CollectorID, &override.TriggerSeconds, &override.ClearSeconds, &override.MinimumConsecutiveSamples, &override.Severity, &override.Enabled, &override.Revision, &override.CreatedAt, &override.UpdatedAt); err != nil {
 		return AlertOverride{}, err
 	}
 	if triggerNumber.Valid {
@@ -606,7 +623,7 @@ func scanAlertOverride(scanner alertRuleScanner) (AlertOverride, error) {
 }
 
 func alertOverrideArgs(override AlertOverride) []any {
-	return []any{override.ID, override.LineageID, override.TargetKind, override.TargetID, override.Kind, override.Metric, override.EntityID, override.Operator, override.TriggerValue, override.ClearValue, override.TriggerState, override.ClearState, override.TriggerSeconds, override.ClearSeconds, override.MinimumConsecutiveSamples, override.Severity, override.Enabled, override.Revision, override.CreatedAt.UTC(), override.UpdatedAt.UTC()}
+	return []any{override.ID, override.LineageID, override.TargetKind, override.TargetID, override.Kind, override.Metric, override.EntityID, override.Operator, override.TriggerValue, override.ClearValue, override.TriggerState, override.ClearState, override.ServicePattern, override.CollectorID, override.TriggerSeconds, override.ClearSeconds, override.MinimumConsecutiveSamples, override.Severity, override.Enabled, override.Revision, override.CreatedAt.UTC(), override.UpdatedAt.UTC()}
 }
 
 func (s *Store) listAlertOverridesSQL(ctx context.Context, lineageID string) ([]AlertOverride, error) {
@@ -678,9 +695,9 @@ func (s *Store) putAlertOverrideSQL(ctx context.Context, override AlertOverride,
 	}
 	override.UpdatedAt = s.now().UTC()
 	if exists {
-		_, err = tx.ExecContext(ctx, `UPDATE alert_overrides SET kind=$1, metric=$2, entity_id=$3, operator=$4, trigger_value=$5, clear_value=$6, trigger_state=$7, clear_state=$8, trigger_seconds=$9, clear_seconds=$10, minimum_consecutive_samples=$11, severity=$12, enabled=$13, revision=$14, updated_at=$15 WHERE id=$16`, override.Kind, override.Metric, override.EntityID, override.Operator, override.TriggerValue, override.ClearValue, override.TriggerState, override.ClearState, override.TriggerSeconds, override.ClearSeconds, override.MinimumConsecutiveSamples, override.Severity, override.Enabled, override.Revision, override.UpdatedAt.UTC(), override.ID)
+		_, err = tx.ExecContext(ctx, `UPDATE alert_overrides SET kind=$1, metric=$2, entity_id=$3, operator=$4, trigger_value=$5, clear_value=$6, trigger_state=$7, clear_state=$8, service_pattern=$9, collector_id=$10, trigger_seconds=$11, clear_seconds=$12, minimum_consecutive_samples=$13, severity=$14, enabled=$15, revision=$16, updated_at=$17 WHERE id=$18`, override.Kind, override.Metric, override.EntityID, override.Operator, override.TriggerValue, override.ClearValue, override.TriggerState, override.ClearState, override.ServicePattern, override.CollectorID, override.TriggerSeconds, override.ClearSeconds, override.MinimumConsecutiveSamples, override.Severity, override.Enabled, override.Revision, override.UpdatedAt.UTC(), override.ID)
 	} else {
-		_, err = tx.ExecContext(ctx, `INSERT INTO alert_overrides (`+alertOverrideSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`, alertOverrideArgs(override)...)
+		_, err = tx.ExecContext(ctx, `INSERT INTO alert_overrides (`+alertOverrideSelectColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`, alertOverrideArgs(override)...)
 	}
 	if err != nil {
 		return AlertOverride{}, mapAlertRuleSQLError(err)
