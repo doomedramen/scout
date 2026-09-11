@@ -5,6 +5,20 @@ repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_dir"
 
 go test ./tests/integration -run TestRuntimeEnrollmentPersistenceAndReporting -count=1
+bash -n scripts/install-agent.sh
+scripts/install-agent.sh --help >/dev/null
+if grep -q 'github.com/doomedramen/scout/releases' scripts/install-agent.sh; then
+	echo "agent installer still depends on public release assets" >&2
+	exit 1
+fi
+if ! grep -q '/api/v1/bootstrap/agent/' scripts/install-agent.sh; then
+	echo "agent installer does not use the Scout bootstrap endpoint" >&2
+	exit 1
+fi
+if grep -q 'scout.example.invalid\|/usr/local/bin/scout-agent' packaging/linux/agent.service; then
+	echo "agent service still contains a placeholder installation path" >&2
+	exit 1
+fi
 
 if [[ "${SCOUT_SYSTEMD_LAB:-0}" == "1" ]]; then
 	if [[ "$(uname -s)" != "Linux" ]] || ! command -v systemctl >/dev/null 2>&1; then

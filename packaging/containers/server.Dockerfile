@@ -19,6 +19,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags='-s -w' -o /out/scout-server ./apps/server
+RUN mkdir -p /out/agent \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/agent/scout-agent-linux-amd64 ./apps/agent \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o /out/agent/scout-agent-linux-arm64 ./apps/agent
 
 FROM alpine:3.22 AS permissions
 
@@ -27,6 +30,8 @@ RUN mkdir -p /var/lib/scout && chown 65532:65532 /var/lib/scout
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=build /out/scout-server /usr/local/bin/scout-server
+COPY --from=build /out/agent /usr/local/share/scout/agent
+COPY scripts/install-agent.sh /usr/local/share/scout/agent/install-agent.sh
 COPY --from=web-build /src/apps/web/dist /usr/local/share/scout/web
 COPY --from=permissions --chown=nonroot:nonroot /var/lib/scout /var/lib/scout
 ENV SCOUT_WEB_DIR=/usr/local/share/scout/web

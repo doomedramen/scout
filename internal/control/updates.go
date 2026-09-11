@@ -1,9 +1,13 @@
 package control
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,8 +24,61 @@ func (a *App) registerUpdateRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/rollouts", a.listRollouts)
 	mux.HandleFunc("POST /api/v1/rollouts", a.createRollout)
 	mux.HandleFunc("POST /api/v1/rollouts/{rolloutId}/pause", a.pauseRollout)
+	mux.HandleFunc("GET /api/v1/bootstrap/agent/{architecture}", a.agentBootstrap)
+	mux.HandleFunc("GET /api/v1/bootstrap/agent/install.sh", a.agentInstaller)
 	mux.HandleFunc("GET /api/v1/agent/v1/releases/{digest}", a.agentRelease)
 	mux.HandleFunc("GET /agent/v1/releases/{digest}", a.agentRelease)
+}
+
+var supportedAgentArchitectures = map[string]struct{}{
+	"amd64": {},
+	"arm64": {},
+}
+
+func (a *App) agentBootstrap(w http.ResponseWriter, r *http.Request) {
+	architecture := r.PathValue("architecture")
+	if _, ok := supportedAgentArchitectures[architecture]; !ok {
+		writeError(w, r, http.StatusNotFound, "not_found", "Agent binary is not available for this architecture", false)
+		return
+	}
+	directory := strings.TrimSpace(a.Config.AgentBootstrapDir)
+	if directory == "" {
+		writeError(w, r, http.StatusNotFound, "not_found", "Agent bootstrap is not configured", false)
+		return
+	}
+	path := filepath.Join(directory, "scout-agent-linux-"+architecture)
+	a.serveBootstrapFile(w, r, path, "scout-agent-linux-"+architecture, "application/octet-stream", "X-Scout-Agent-SHA256")
+}
+
+func (a *App) agentInstaller(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSpace(a.Config.AgentInstallerFile)
+	if path == "" {
+		writeError(w, r, http.StatusNotFound, "not_found", "Agent installer is not configured", false)
+		return
+	}
+	a.serveBootstrapFile(w, r, path, "install-agent.sh", "text/plain; charset=utf-8", "X-Scout-Agent-Installer-SHA256")
+}
+
+func (a *App) serveBootstrapFile(w http.ResponseWriter, r *http.Request, path, filename, contentType, checksumHeader string) {
+	artifact, err := os.ReadFile(filepath.Clean(path))
+	if errors.Is(err, os.ErrNotExist) {
+		writeError(w, r, http.StatusNotFound, "not_found", "Agent bootstrap artifact is not available", false)
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, "internal_error", "Agent bootstrap artifact could not be read", false)
+		return
+	}
+	if len(artifact) == 0 {
+		writeError(w, r, http.StatusNotFound, "not_found", "Agent bootstrap artifact is empty", false)
+		return
+	}
+	digest := sha256.Sum256(artifact)
+	digestHex := hex.EncodeToString(digest[:])
+	w.Header().Set(checksumHeader, digestHex)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	serveArtifactWithOptions(w, r, artifact, "sha256:"+digestHex, contentType, "public, max-age=300")
 }
 
 func (a *App) listReleases(w http.ResponseWriter, r *http.Request) {
@@ -221,8 +278,12 @@ func (a *App) agentRelease(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveArtifact(w http.ResponseWriter, r *http.Request, artifact []byte, digest string) {
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Cache-Control", "private, immutable")
+	serveArtifactWithOptions(w, r, artifact, digest, "application/octet-stream", "private, immutable")
+}
+
+func serveArtifactWithOptions(w http.ResponseWriter, r *http.Request, artifact []byte, digest, contentType, cacheControl string) {
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("ETag", strconv.Quote(digest))
 	start, end, partial, err := artifactRange(r.Header.Get("Range"), int64(len(artifact)))
 	if err != nil {

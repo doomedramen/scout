@@ -49,6 +49,9 @@ func TestRuntimeEnrollmentPersistenceAndReporting(t *testing.T) {
 	if err := first.RunOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(invitationFile); !os.IsNotExist(err) {
+		t.Fatalf("consumed invitation was not removed: %v", err)
+	}
 	firstDevice, err := repository.GetDevice(ctx, device.ID)
 	if err != nil {
 		t.Fatal(err)

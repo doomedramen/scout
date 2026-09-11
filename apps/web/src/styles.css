@@ -564,10 +564,122 @@ tbody tr:last-child td {
   margin-bottom: 28px;
   border-radius: 9px;
 }
+.setup-panel-heading,
+.agent-recipe-heading,
+.secret-copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.setup-panel-heading > div,
+.agent-recipe-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.agent-setup-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+.agent-setup-form label,
+.agent-setup-recipe > label {
+  display: grid;
+  gap: 6px;
+  color: #a1aab8;
+  font-size: 12px;
+}
+.agent-setup-form select,
+.agent-setup-recipe select {
+  min-height: 36px;
+  border: 1px solid #414b5d;
+  border-radius: 6px;
+  background: #181d26;
+  color: #f1f4f9;
+  padding: 0 10px;
+}
+.agent-setup-recipe {
+  display: grid;
+  gap: 14px;
+}
+.agent-invitation {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #516174;
+  border-radius: 7px;
+  background: #1b222d;
+}
+.agent-invitation h3,
+.agent-recipe-heading h3 {
+  margin: 7px 0 2px;
+  font-size: 14px;
+  color: #f1f4f9;
+}
+.agent-invitation small,
+.agent-recipe-heading small,
+.agent-docker-option p {
+  color: #979eaa;
+  font-size: 12px;
+}
+.secret-copy-row code {
+  min-width: 0;
+  overflow: auto;
+  color: #b8e0ff;
+  word-break: break-all;
+}
+.agent-recipe {
+  max-height: 330px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid #303948;
+  border-radius: 6px;
+  background: #181d26;
+  color: #dce6f2;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+.agent-docker-option {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid #414b5d;
+  padding-top: 14px;
+}
+.agent-docker-option summary {
+  cursor: pointer;
+  color: #dce6f2;
+  font-size: 13px;
+}
+.agent-docker-option p {
+  margin: 0;
+  max-width: 760px;
+}
+.agent-run-command {
+  display: block;
+  width: fit-content;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: #181d26;
+  color: #b8e0ff;
+}
+.agent-install-note {
+  margin: 0;
+  color: #979eaa;
+  font-size: 12px;
+}
 .setup-panel > div {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.setup-panel > .agent-setup-recipe {
+  display: grid;
+  gap: 14px;
+  align-items: initial;
 }
 .setup-panel h2 {
   margin: 0;
@@ -585,6 +697,25 @@ tbody tr:last-child td {
   border-radius: 5px;
   overflow: auto;
   font-size: 12px;
+}
+.agent-install-note code {
+  display: inline;
+  padding: 0;
+  background: transparent;
+}
+@media (max-width: 760px) {
+  .agent-setup-form {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .setup-panel-heading,
+  .agent-recipe-heading {
+    align-items: flex-start;
+  }
+  .secret-copy-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 .map-header {
   padding: 18px;

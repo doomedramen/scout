@@ -7,7 +7,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"scout.local/scout/internal/enrollment"
@@ -36,6 +38,10 @@ func main() {
 	if err != nil {
 		fatal(fmt.Errorf("read agent service unit: %w", err))
 	}
+	serviceUnit, err = renderServiceUnit(serviceUnit, *server)
+	if err != nil {
+		fatal(fmt.Errorf("render agent service unit: %w", err))
+	}
 	worker := &enrollment.RemoteWorker{ServerURL: *server, Token: *token}
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -58,6 +64,17 @@ func main() {
 		}
 		time.Sleep(*interval)
 	}
+}
+
+func renderServiceUnit(template []byte, server string) ([]byte, error) {
+	parsed, err := url.Parse(server)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || strings.ContainsAny(server, "\r\n\"") {
+		return nil, errors.New("server URL must be an http(s) URL without control characters or quotes")
+	}
+	if !strings.Contains(string(template), "__SCOUT_SERVER_URL__") {
+		return nil, errors.New("agent service unit is missing the server URL placeholder")
+	}
+	return []byte(strings.ReplaceAll(string(template), "__SCOUT_SERVER_URL__", server)), nil
 }
 
 func execute(ctx context.Context, worker *enrollment.RemoteWorker, job enrollment.ClaimedJob, username, knownHosts, version string, artifact []byte, artifactHash string, serviceUnit []byte) error {

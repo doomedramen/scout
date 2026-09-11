@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type Device, type Status } from "@/lib/api";
 import { AccessView } from "@/views/access";
+import { AgentSetupView } from "@/views/agent-setup";
 import { EnrollmentView } from "@/views/enrollment";
 import { NetworkView } from "@/views/network";
 import { RecoveryView } from "@/views/recovery";
@@ -174,22 +175,7 @@ export default function App() {
             <Badge variant="outline">Sample data</Badge>
           </div>
         )}
-        {help && (
-          <section className="setup-panel">
-            <div>
-              <Terminal size={21} />
-              <h2>First Linux agent</h2>
-            </div>
-            <p>
-              Use protected owner setup, then create a one-time invitation. The agent sends real observations over its
-              authenticated outbound connection.
-            </p>
-            <code>scout-agent --daemon --invitation-file /run/scout/invitation</code>
-            <Button variant="outline" size="sm" onClick={() => setHelp(false)}>
-              Close
-            </Button>
-          </section>
-        )}
+        {help && <AgentSetupView onClose={() => setHelp(false)} />}
         {selected && (page === "Systems" || page === "Network") ? (
           <Suspense
             fallback={

@@ -6,8 +6,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -128,6 +130,78 @@ func TestConfiguredWebRootDoesNotShadowAPI(t *testing.T) {
 	defer status.Body.Close()
 	if status.StatusCode != http.StatusOK {
 		t.Fatalf("API status = %d", status.StatusCode)
+	}
+}
+
+func TestAgentBootstrapArtifactsArePublicAndArchitectureBound(t *testing.T) {
+	directory := t.TempDir()
+	agent := []byte("linux-agent-amd64")
+	installer := []byte("#!/bin/sh\nprintf '%s\\n' scout\n")
+	if err := os.WriteFile(filepath.Join(directory, "scout-agent-linux-amd64"), agent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	installerPath := filepath.Join(directory, "install-agent.sh")
+	if err := os.WriteFile(installerPath, installer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(store.NewMemory(), nil, Config{SetupToken: "setup-secret-123456789", AgentBootstrapDir: directory, AgentInstallerFile: installerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/api/v1/bootstrap/agent/amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !bytes.Equal(body, agent) {
+		t.Fatalf("agent bootstrap = %d %q", response.StatusCode, body)
+	}
+	digest := sha256.Sum256(agent)
+	if got, want := response.Header.Get("X-Scout-Agent-SHA256"), hex.EncodeToString(digest[:]); got != want {
+		t.Fatalf("agent checksum = %q, want %q", got, want)
+	}
+	if got := response.Header.Get("Content-Disposition"); !strings.Contains(got, "scout-agent-linux-amd64") {
+		t.Fatalf("content disposition = %q", got)
+	}
+
+	missing, err := server.Client().Get(server.URL + "/api/v1/bootstrap/agent/arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing architecture status = %d", missing.StatusCode)
+	}
+	unsupported, err := server.Client().Get(server.URL + "/api/v1/bootstrap/agent/mips64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsupported.Body.Close()
+	if unsupported.StatusCode != http.StatusNotFound {
+		t.Fatalf("unsupported architecture status = %d", unsupported.StatusCode)
+	}
+
+	script, err := server.Client().Get(server.URL + "/api/v1/bootstrap/agent/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer script.Body.Close()
+	scriptBody, err := io.ReadAll(script.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if script.StatusCode != http.StatusOK || !bytes.Equal(scriptBody, installer) {
+		t.Fatalf("installer = %d %q", script.StatusCode, scriptBody)
+	}
+	if got := script.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Fatalf("installer content type = %q", got)
 	}
 }
 

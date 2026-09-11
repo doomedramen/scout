@@ -203,6 +203,34 @@ paths:
       parameters: [{ $ref: "#/components/parameters/DeviceId" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
       responses: { "200": { description: Device-bound invitation returned once } }
+  /bootstrap/agent/{architecture}:
+    get:
+      tags: [agents]
+      security: []
+      description: Public bootstrap binary for a supported Linux architecture. The response checksum checks transport integrity, not release trust.
+      parameters:
+        - name: architecture
+          in: path
+          required: true
+          schema: { type: string, enum: [amd64, arm64] }
+      responses:
+        "200":
+          description: Linux agent bootstrap binary
+          headers:
+            X-Scout-Agent-SHA256: { schema: { type: string, pattern: "^[A-Fa-f0-9]{64}$" } }
+          content:
+            application/octet-stream: { schema: { type: string, format: binary } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /bootstrap/agent/install.sh:
+    get:
+      tags: [agents]
+      security: []
+      description: Public self-hosted installer script for the server bootstrap endpoint.
+      responses:
+        "200":
+          description: Installer script
+          content: { text/plain: { schema: { type: string } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /devices/{deviceId}/decommission:
     post:
       tags: [operations]

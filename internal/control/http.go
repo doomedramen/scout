@@ -40,6 +40,8 @@ type Config struct {
 	StartRecovery      bool
 	ReleaseTrustFile   string
 	ArtifactDir        string
+	AgentBootstrapDir  string
+	AgentInstallerFile string
 	MaxBodyBytes       int64
 	RateLimitPerMinute int
 	AgentRequireMTLS   bool
@@ -62,6 +64,8 @@ type App struct {
 	limiter    *rateLimiter
 }
 
+const defaultAgentBootstrapDir = "/usr/local/share/scout/agent"
+
 func NewApp(repository *store.Store, database Database, config Config) (*App, error) {
 	if repository == nil {
 		repository = store.NewMemory()
@@ -71,6 +75,12 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	}
 	if config.RateLimitPerMinute <= 0 {
 		config.RateLimitPerMinute = 120
+	}
+	if strings.TrimSpace(config.AgentBootstrapDir) == "" {
+		config.AgentBootstrapDir = defaultAgentBootstrapDir
+	}
+	if strings.TrimSpace(config.AgentInstallerFile) == "" {
+		config.AgentInstallerFile = filepath.Join(config.AgentBootstrapDir, "install-agent.sh")
 	}
 	setupToken := config.SetupToken
 	if setupToken == "" && config.SetupTokenFile != "" {

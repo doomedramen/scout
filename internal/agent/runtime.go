@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"scout.local/scout/internal/collector"
@@ -240,7 +241,23 @@ func (r *Runtime) loadOrEnroll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return r.enroll(ctx, strings.TrimSpace(string(invitation)), path)
+	if err := r.enroll(ctx, strings.TrimSpace(string(invitation)), path); err != nil {
+		return err
+	}
+	if err := removeConsumedInvitation(r.Config.InvitationFile); err != nil {
+		return err
+	}
+	return nil
+}
+
+func removeConsumedInvitation(path string) error {
+	if err := os.Remove(filepath.Clean(path)); err != nil {
+		if errors.Is(err, os.ErrNotExist) || os.IsPermission(err) || errors.Is(err, syscall.EROFS) {
+			return nil
+		}
+		return fmt.Errorf("remove consumed invitation: %w", err)
+	}
+	return nil
 }
 
 func (r *Runtime) enroll(ctx context.Context, invitation, path string) error {

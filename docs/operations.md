@@ -96,6 +96,32 @@ one-time token. Enable MFA before creating reusable credentials or enabling
 remote enrollment. Keep the server behind an owner-controlled network
 boundary and configure the TLS certificate for the actual hostname.
 
+## First Linux agent
+
+After owner setup, create a site, then open **Systems → Agent setup**. The
+panel creates a five-minute, device-bound invitation and provides recipes for
+the native Linux agent or the same-host Docker image. The browser does not
+install a privileged service.
+
+The native installer at `scripts/install-agent.sh` downloads the matching
+AMD64/ARM64 bootstrap binary from the configured Scout server and verifies its
+SHA-256 transfer checksum. It creates the
+`scout-agent` system user, writes the server URL to
+`/etc/scout/agent.env`, installs `/usr/local/libexec/scout-agent`, copies the
+invitation with mode 0400 into `/var/lib/scout/agent`, and enables
+`scout-agent.service`. Official server images include both architectures;
+source deployments can set `SCOUT_AGENT_BOOTSTRAP_DIR` to a directory with
+`scout-agent-linux-amd64` and `scout-agent-linux-arm64`. Use `--artifact PATH`
+for a locally built binary when the server has no bootstrap artifact. Do not
+put invitations in command arguments, shell history, logs, or repository
+files.
+
+The Docker recipe is Linux-only and intentionally explicit: it uses host
+networking plus PID/UTS namespaces and a read-only host-root mount. Prefer the
+native service where possible. A containerized agent is separate from the
+server container and is the agent for that host; it is not silently installed
+by the control plane.
+
 ## Access and automatic enrollment
 
 Create a site and disabled scope first. Review ranges, exclusions, methods,
@@ -167,9 +193,11 @@ authenticated recovery reconciliation action only after the owner has
 reviewed stale authority. Reconciliation invalidates active work and leaves
 enrollment and updates paused until they are intentionally resumed.
 
-Configure retention through the authenticated telemetry settings endpoint.
-The implementation enforces a bounded sample count and exposes dropped
-samples/backpressure in the status and recovery views. Size storage from
+Configure retention and the optional row cap through the authenticated
+telemetry settings endpoint. The implementation admits telemetry against the
+configured disk budget using measured PostgreSQL relation size, exposes usage,
+dropped samples, and backpressure in the status and recovery views, and does
+not impose an implicit one-million-sample ceiling. Size the budget from a
 measured workload; the synthetic load test is not a capacity guarantee.
 
 ## Decommissioning

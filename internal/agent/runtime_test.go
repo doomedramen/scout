@@ -42,3 +42,18 @@ func TestSpoolUsesPrivateFiles(t *testing.T) {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
 }
+
+func TestRemoveConsumedInvitationAcceptsReadOnlyMountErrors(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "invitation")
+	if err := os.WriteFile(path, []byte("one-time"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(directory, 0o700)
+	if err := removeConsumedInvitation(path); err != nil {
+		t.Fatal(err)
+	}
+}

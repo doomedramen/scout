@@ -4,6 +4,8 @@ Production endpoints require verified server TLS. Except bootstrap, agents use m
 
 ## Bootstrap and renewal
 
+- `GET /bootstrap/agent/{architecture}` and `GET /bootstrap/agent/install.sh` are public, TLS-protected transport endpoints for self-hosted first-agent installation. The server image may provide `amd64` and `arm64` binaries plus the installer; the invitation remains separate, short-lived, single-use authorization. `X-Scout-Agent-SHA256` detects transfer corruption only and does not replace signed release verification for updates.
+
 - `POST /agent/v1/enroll`: `{invitation, csrPem, agentVersion, platform, architecture}`. Invitation is device/job-bound, five-minute expiry and single use. Reject caller-requested owner/worker privileges or mismatched platform/target. Return `{deviceId, agentId, certificatePem, caBundlePem, expiresAt, protocolVersion:1}`. Never log request bodies. Store agent private key locally before enrollment with 0600 ownership; do not transmit it.
 - `POST /agent/v1/renew`: authenticated current identity plus CSR; return a new certificate for the same device. Revoked/expired identities cannot renew. A lost enrollment response follows the revalidated replacement-invitation flow in plan.md, not token reuse or a second device.
 

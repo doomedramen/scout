@@ -171,7 +171,47 @@ Build a Linux agent from any supported development host:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o apps/agent/dist/scout-agent-linux-amd64 ./apps/agent
 ```
 
-Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The published container packages the control server and web UI; source development still uses the Vite server.
+Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The published container packages the control server, web UI, and both Linux bootstrap agents; source development still uses the Vite server.
+
+## Install the first Linux agent
+
+Open **Systems → Agent setup** after creating a site. Scout creates a
+device-bound invitation that expires after five minutes, then shows a
+copyable installation recipe. The browser does not install a privileged
+service by itself.
+
+The native recipe downloads the matching AMD64 or ARM64 binary directly from
+your Scout server, verifies its SHA-256 transfer checksum, creates the
+unprivileged `scout-agent` system user, installs a hardened systemd unit, and
+starts it:
+
+```sh
+umask 077
+read -r -s SCOUT_INVITATION
+printf '%s' "$SCOUT_INVITATION" > ./scout-invitation
+unset SCOUT_INVITATION
+curl -fsSL https://scout.example.test/api/v1/bootstrap/agent/install.sh -o /tmp/scout-install-agent.sh
+chmod 700 /tmp/scout-install-agent.sh
+sudo /tmp/scout-install-agent.sh --server 'https://scout.example.test' --invitation-file ./scout-invitation
+rm -f /tmp/scout-install-agent.sh ./scout-invitation
+```
+
+The `--server` URL must be reachable from the Linux host over HTTPS in
+production. Official server images contain both bootstrap architectures under
+`/usr/local/share/scout/agent`; source deployments can set
+`SCOUT_AGENT_BOOTSTRAP_DIR` to a directory containing
+`scout-agent-linux-amd64` and `scout-agent-linux-arm64`, or pass a locally built
+binary with `--artifact`. The one-time invitation is copied into the agent
+data directory, consumed during first enrollment, and then removed. The
+bootstrap checksum detects transfer corruption; signed release metadata still
+governs subsequent agent updates.
+
+The setup panel also provides a same-host Docker recipe. It uses the public
+`ghcr.io/doomedramen/scout-agent` image, host networking, host PID/UTS
+namespaces, and a read-only host-root mount so Linux host metrics are visible.
+Native installation is preferred because it does not expose the host
+filesystem to a container. Both paths preserve the one-agent-per-device
+identity model.
 
 This repository now contains the runnable implementation slices described by
 the handoff. Fixture and local integration coverage exists for owner
