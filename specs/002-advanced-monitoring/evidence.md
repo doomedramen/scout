@@ -521,9 +521,9 @@ For future results append: task and requirement IDs, commit, date, exact command
   format:check`; and `git diff --check` passed. All service data came from
   the repository fixture or an in-process fake manager; no host system bus
   was contacted.
-- Remaining limits: T020 wires service states into incident evaluation and
-  must-run alert defaults. No Linux host compatibility or provider support
-  claim is made from fixtures.
+- Remaining limits: T021 still needs the service inventory UI and controlled
+  Linux evidence. No Linux host compatibility or provider support claim is
+  made from fixtures.
 
 ## T019 — bounded read-only systemd adapter
 
@@ -544,7 +544,40 @@ For future results append: task and requirement IDs, commit, date, exact command
   errors, and closes its caller-owned D-Bus connection. No real host bus,
   production credential, production database, device, or deployment was
   used.
-- Remaining limits: T020 must persist the resulting entities and connect
-  service failures/must-run inactivity to automatic incidents. Live systemd
-  distribution/architecture support remains unvalidated until the controlled
-  Linux script in T021.
+- Remaining limits: Live systemd distribution/architecture support remains
+  unvalidated until the controlled Linux script in T021; this adapter has not
+  been exercised against a production host.
+
+## T020 — service-state incident evaluation and suppression
+
+- Requirements: FR-001, FR-006, FR-014, FR-015; SC-001, SC-005.
+- Date: 2026-09-11 (Europe/London); implementation commit: `7ef77c9`.
+- Added the service observation bridge in `internal/alerts/services.go`.
+  Stored systemd entities now become typed state observations with copied
+  labels, three-interval freshness, unsupported/expired evidence, canonical
+  API aliases, bounded `*`/`?` service-pattern matching, and collector
+  matching. Default provisioning now includes a critical `systemd_failed`
+  rule (first fresh failure, two healthy samples separated by the 30-second
+  collection interval) and a warning `service_required_inactive` rule (60
+  seconds inactive, 60 seconds active to clear). The latter is evaluated only
+  for the collector's selected `mustRun` services, while failed services take
+  the failure lineage without a duplicate inactivity incident. Service entity
+  writes mark coalesced alert work; evaluation passes the entity device ID
+  through the existing transactional evaluator, so dependent service
+  notifications inherit host-offline suppression without suppressing the
+  host-offline incident itself.
+- Exact verification commands and outcomes: `go test ./... -race -count=1`,
+  `go vet ./...`, `npm run check`, `npm run lint`, `npm run format:check`,
+  `npm run build`, and `git diff --check` all passed. Positive tests cover
+  fresh-to-expired service evidence, systemd failure trigger/recovery,
+  selected must-run delay, owner alias/pattern resolution, and device-aware
+  suppressed delivery intents. Negative tests cover unsupported states,
+  regex-like/non-matching patterns, unselected inactivity, failed-plus-
+  must-run duplication, and stale inventory. All service tests use in-process
+  entities, a manual clock, the memory store, and a fake destination; no host
+  D-Bus, real device, notification endpoint, production credential, or
+  deployment was used.
+- Remaining limits: T021 still needs the service view, persisted collector
+  configuration UI flow, and controlled Linux live evidence. The background
+  runtime has not yet been wired to emit systemd entities over the agent
+  transport; that remains part of the subsequent agent/collector integration.

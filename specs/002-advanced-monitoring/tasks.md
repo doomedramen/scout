@@ -37,7 +37,7 @@ Independent gate: Inspect failed and selected must-run units on a controlled hos
 
 - [X] T018 [US3] Create systemd fixtures for loaded active/inactive/failed/transitional units, must-run selection, partial discovery and denial in internal/collector/systemd/collector_test.go (FR-014, FR-015, FR-016, FR-032; SC-005).
 - [X] T019 [US3] Implement bounded read-only D-Bus systemd adapter and descriptor in internal/collector/systemd/collector.go through the 001 registry; expose must-run config and fresh/partial inventory (FR-014, FR-015, FR-016, FR-032; SC-005).
-- [ ] T020 [US3] Connect service-state observations to default rules and host-offline suppression in internal/alerts/services.go; add state-transition and must-run dedup tests (FR-001, FR-006, FR-014, FR-015; SC-001, SC-005).
+- [X] T020 [US3] Connect service-state observations to default rules and host-offline suppression in internal/alerts/services.go; add state-transition and must-run dedup tests (FR-001, FR-006, FR-014, FR-015; SC-001, SC-005).
 - [ ] T021 [US3] Extend apps/web/src/views/services.tsx with state/freshness, must-run selectors and incident links; add scripts/test-systemd.sh for controlled Linux evidence (FR-014, FR-015, FR-016, FR-019, FR-034; SC-005, SC-009, SC-010).
 ## Diagnostic metrics (P1)
 
