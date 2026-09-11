@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["scopeId", "host", "fingerprint"],
+  "properties": { "scopeId": { "type": "string", "format": "uuid" }, "host": { "type": "string", "maxLength": 256 }, "fingerprint": { "type": "string", "maxLength": 256 }, "publicKey": { "type": "string", "maxLength": 8192 } },
+  "additionalProperties": false
+}

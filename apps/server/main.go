@@ -12,6 +12,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"scout.local/scout/internal/control"
+	"scout.local/scout/internal/identity"
+	"scout.local/scout/internal/store"
 )
 
 func main() {
@@ -24,6 +26,10 @@ func main() {
 		}
 		defer db.Close()
 		db.SetMaxOpenConns(5)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := db.PingContext(ctx); err != nil && os.Getenv("SCOUT_PRODUCTION") == "true" { cancel(); log.Fatal("database unavailable") }
+		cancel()
+		if err := store.RunMigrations(context.Background(), db); err != nil && os.Getenv("SCOUT_PRODUCTION") == "true" { log.Fatal("database migrations failed") }
 	}
 	listen := os.Getenv("SCOUT_LISTEN")
 	if listen == "" {
@@ -33,7 +39,11 @@ func main() {
 	if db != nil {
 		database = db
 	}
-	server := &http.Server{Addr: listen, Handler: control.Handler(database), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	production := os.Getenv("SCOUT_PRODUCTION") == "true"
+	config := control.Config{Production: production, AllowedOrigin: os.Getenv("SCOUT_ALLOWED_ORIGIN"), SetupToken: os.Getenv("SCOUT_SETUP_TOKEN"), SetupTokenFile: os.Getenv("SCOUT_SETUP_TOKEN_FILE"), SecretKeyFile: os.Getenv("SCOUT_SECRET_KEY_FILE"), AgentRequireMTLS: os.Getenv("SCOUT_REQUIRE_AGENT_MTLS") == "true"}
+	app, err := control.NewApp(func() *store.Store { if db != nil { return store.NewSQL(db) }; return store.NewMemory() }(), database, config)
+	if err != nil { log.Fatal(err) }
+	server := &http.Server{Addr: listen, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
@@ -42,8 +52,14 @@ func main() {
 		defer cancel()
 		_ = server.Shutdown(shutdown)
 	}()
-	log.Printf("Scout development API listening on %s", listen)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+	log.Printf("Scout API listening on %s", listen)
+	tlsSettings := identity.TLSSettings{CertificateFile: os.Getenv("SCOUT_TLS_CERT_FILE"), PrivateKeyFile: os.Getenv("SCOUT_TLS_KEY_FILE"), ClientCAFile: os.Getenv("SCOUT_AGENT_CA_FILE"), RequireClient: config.AgentRequireMTLS, Production: production}
+	if tlsSettings.CertificateFile != "" || production {
+		tlsConfig, tlsErr := identity.LoadServerTLS(tlsSettings)
+		if tlsErr != nil { log.Fatal(tlsErr) }
+		server.TLSConfig = tlsConfig
+		if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed { log.Fatal(err) }
+		return
 	}
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed { log.Fatal(err) }
 }

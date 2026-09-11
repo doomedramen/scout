@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/setup.json",
+  "type": "object",
+  "required": ["setupToken", "password"],
+  "properties": {
+    "setupToken": { "type": "string", "minLength": 16, "maxLength": 256, "writeOnly": true },
+    "password": { "type": "string", "minLength": 12, "maxLength": 256, "writeOnly": true }
+  },
+  "additionalProperties": false
+}

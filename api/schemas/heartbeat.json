@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["bootId", "installedVersion", "uptimeSeconds", "collectorStates", "updateState"],
+  "properties": { "bootId": { "type": "string", "maxLength": 128 }, "installedVersion": { "type": "string", "maxLength": 64 }, "uptimeSeconds": { "type": "integer", "minimum": 0 }, "collectorStates": { "type": "array", "items": { "type": "object" } }, "updateState": { "type": "object" } },
+  "additionalProperties": false
+}

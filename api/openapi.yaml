@@ -1,0 +1,248 @@
+openapi: 3.1.0
+info:
+  title: Scout Control API
+  version: 1.0.0
+  description: Authenticated, owner-scoped control and telemetry API for Scout.
+servers:
+  - url: /api/v1
+security:
+  - scoutSession: []
+tags:
+  - name: authentication
+  - name: inventory
+  - name: access
+  - name: agents
+  - name: releases
+  - name: operations
+paths:
+  /setup:
+    post:
+      tags: [authentication]
+      security: []
+      description: setupToken and password are writeOnly and are never echoed or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './schemas/setup.json' }
+      responses:
+        '201': { description: Owner created, content: { application/json: { schema: { $ref: './schemas/owner.json' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /sessions:
+    post:
+      tags: [authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: './schemas/session.json' }
+      responses:
+        '200': { description: Session created, content: { application/json: { schema: { $ref: './schemas/session.json' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sessions/current:
+    delete:
+      tags: [authentication]
+      responses:
+        '204': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /sessions/reauth:
+    post:
+      tags: [authentication]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: './schemas/reauth.json' } } }
+      responses:
+        '204': { description: Recent verification updated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /owner:
+    get:
+      tags: [authentication]
+      responses:
+        '200': { description: Safe owner metadata, content: { application/json: { schema: { $ref: './schemas/owner.json' } } } }
+  /owner/mfa/setup:
+    post:
+      tags: [authentication]
+      responses:
+        '200': { description: One-time enrollment material }
+  /owner/mfa/confirm:
+    post:
+      tags: [authentication]
+      responses:
+        '200': { description: Recovery codes returned once }
+  /owner/recovery-codes:
+    post:
+      tags: [authentication]
+      responses:
+        '200': { description: Recovery codes returned once }
+  /devices:
+    get:
+      tags: [inventory]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: query, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: health, in: query, schema: { type: string } }
+        - { name: monitoringState, in: query, schema: { type: string } }
+        - { name: siteId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Device summaries, content: { application/json: { schema: { $ref: './schemas/device-list.json' } } } }
+  /devices/{deviceId}:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+    get:
+      tags: [inventory]
+      responses:
+        '200': { description: Device detail, content: { application/json: { schema: { $ref: './schemas/device.json' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /devices/{deviceId}/metrics:
+    parameters:
+      - { $ref: '#/components/parameters/DeviceId' }
+    get:
+      tags: [inventory]
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: metric, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: entityId, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: maxPoints, in: query, schema: { type: integer, minimum: 1, maximum: 600, default: 600 } }
+      responses:
+        '200': { description: Historical metric series, content: { application/json: { schema: { $ref: './schemas/metrics.json' } } } }
+  /topology:
+    get:
+      tags: [inventory]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: siteId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Evidence-backed topology }
+  /observations/{observationId}:
+    get:
+      tags: [inventory]
+      parameters:
+        - { name: observationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Redacted observation metadata }
+  /sites:
+    get: { tags: [access], responses: { '200': { description: Sites } } }
+    post:
+      tags: [access]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/site.json' } } } }
+      responses: { '201': { description: Site created } }
+  /scopes:
+    get: { tags: [access], responses: { '200': { description: Scopes } } }
+    post:
+      tags: [access]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/scope.json' } } } }
+      responses: { '201': { description: Scope created } }
+  /scopes/{scopeId}:
+    patch:
+      tags: [access]
+      parameters: [{ name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/scope-patch.json' } } } }
+      responses: { '200': { description: Scope updated }, '409': { $ref: '#/components/responses/Conflict' } }
+  /credentials:
+    get: { tags: [access], responses: { '200': { description: Credential metadata only } } }
+    post:
+      tags: [access]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/credential.json' } } } }
+      responses: { '201': { description: Credential reference created } }
+  /credentials/{credentialId}:
+    delete:
+      tags: [access]
+      parameters: [{ name: credentialId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: Credential revoked } }
+  /trust:
+    get: { tags: [access], responses: { '200': { description: Trust records } } }
+    post:
+      tags: [access]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/trust.json' } } } }
+      responses: { '201': { description: Trust record created } }
+  /access-requests:
+    get: { tags: [access], responses: { '200': { description: Actionable unmet prerequisites } } }
+  /jobs:
+    get: { tags: [access], responses: { '200': { description: Redacted job progress } } }
+  /bootstrap-invitations:
+    post:
+      tags: [agents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/bootstrap-invitation.json' } } } }
+      responses: { '201': { description: Single-use invitation returned once } }
+  /devices/{deviceId}/bootstrap:
+    post:
+      tags: [agents]
+      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/revision.json' } } } }
+      responses: { '200': { description: Device-bound invitation returned once } }
+  /devices/{deviceId}/decommission:
+    post:
+      tags: [operations]
+      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/decommission.json' } } } }
+      responses: { '202': { description: Revocation accepted } }
+  /devices/{deviceId}/reenable:
+    post:
+      tags: [operations]
+      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/revision.json' } } } }
+      responses: { '200': { description: Device re-enabled } }
+  /control/pause:
+    post:
+      tags: [operations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/pause.json' } } } }
+      responses: { '200': { description: Requested/effective pause state } }
+  /control/state:
+    get: { tags: [operations], responses: { '200': { description: Control state } } }
+  /agent/v1/enroll:
+    post:
+      tags: [agents]
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/enroll.json' } } } }
+      responses: { '200': { description: Issued device identity and certificate } }
+  /agent/v1/renew:
+    post:
+      tags: [agents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/renew.json' } } } }
+      responses: { '200': { description: Renewed certificate } }
+  /agent/v1/batches:
+    post:
+      tags: [agents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/batch.json' } } } }
+      responses: { '200': { description: Batch acknowledgement }, '409': { $ref: '#/components/responses/Conflict' }, '413': { $ref: '#/components/responses/TooLarge' } }
+  /agent/v1/heartbeat:
+    post:
+      tags: [agents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/heartbeat.json' } } } }
+      responses: { '200': { description: Current server policy revision } }
+  /agent/v1/desired-state:
+    get: { tags: [agents], responses: { '200': { description: Bounded desired state } } }
+  /worker/v1/claim:
+    post: { tags: [agents], responses: { '200': { description: Target-scoped job claim } } }
+  /releases/import:
+    post: { tags: [releases], requestBody: { required: true, content: { multipart/form-data: { schema: { type: object } } } }, responses: { '201': { description: Verified release } } }
+  /releases:
+    get: { tags: [releases], responses: { '200': { description: Immutable release metadata } } }
+  /rollouts:
+    get: { tags: [releases], responses: { '200': { description: Rollouts } } }
+    post: { tags: [releases], responses: { '202': { description: Desired assignments created } } }
+  /audit:
+    get: { tags: [operations], responses: { '200': { description: Redacted audit events } } }
+  /recovery/reconcile:
+    post: { tags: [operations], responses: { '200': { description: Recovery mode cleared } } }
+components:
+  securitySchemes:
+    scoutSession:
+      type: apiKey
+      in: cookie
+      name: scout_session
+  parameters:
+    Cursor: { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+    DeviceId: { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
+    Unauthorized: { description: Missing or invalid identity, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
+    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
+    Conflict: { description: State or revision conflict, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
+    TooLarge: { description: Request exceeds bounded size, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }

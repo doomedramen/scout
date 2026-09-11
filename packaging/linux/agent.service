@@ -1,0 +1,28 @@
+[Unit]
+Description=Scout Linux monitoring agent
+Documentation=https://github.com/doomedramen/scout
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=scout-agent
+Group=scout-agent
+ExecStart=/usr/local/bin/scout-agent --daemon --server https://scout.example.invalid --invitation-file /run/scout/invitation --data-dir /var/lib/scout/agent
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/scout/agent
+RuntimeDirectory=scout
+RuntimeDirectoryMode=0700
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

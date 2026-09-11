@@ -8,32 +8,32 @@
 
 Goal: preserve the working scaffold and establish repeatable, isolated verification.
 
-- [ ] T001 Record the current baseline and limits in specs/001-scout-platform/evidence.md after inspecting AGENTS.md, README.md, apps/server/main.go, internal/control/http.go, internal/collector/collector.go and apps/web/src/App.tsx; run existing check/build/tests without treating demo screens as real monitoring.
-- [ ] T002 Add isolated PostgreSQL integration and browser harnesses in tests/integration/, tests/e2e/, scripts/test-integration.sh and apps/web/package.json; separate test configuration from personal .env and provide safe cleanup.
-- [ ] T003 Translate contracts/control-api.md, agent-protocol.md and releases-and-collectors.md into executable api/openapi.yaml and api/schemas/ with enum, limit, authentication and error fixtures in tests/contracts/; do not invent arbitrary command endpoints.
+- [X] T001 Record the current baseline and limits in specs/001-scout-platform/evidence.md after inspecting AGENTS.md, README.md, apps/server/main.go, internal/control/http.go, internal/collector/collector.go and apps/web/src/App.tsx; run existing check/build/tests without treating demo screens as real monitoring.
+- [X] T002 Add isolated PostgreSQL integration and browser harnesses in tests/integration/, tests/e2e/, scripts/test-integration.sh and apps/web/package.json; separate test configuration from personal .env and provide safe cleanup.
+- [X] T003 Translate contracts/control-api.md, agent-protocol.md and releases-and-collectors.md into executable api/openapi.yaml and api/schemas/ with enum, limit, authentication and error fixtures in tests/contracts/; do not invent arbitrary command endpoints.
 
 ## Phase 2: Foundation
 
 Goal: trusted data and authorization boundaries before any remote control capability. Complete before story implementation.
 
-- [ ] T004 Implement migration runner, transactional repository layer and initial schema from data-model.md in migrations/ and internal/store/, with migration/restart tests in tests/integration/store_test.go.
-- [ ] T005 Implement redacted structured audit and safe error mapping in internal/audit/ and internal/control/errors.go; verify no raw backend/secret values appear in tests/integration/audit_test.go (FR-034).
-- [ ] T006 Implement file-provisioned key loading, per-secret encryption, context binding, versioned wrapping-key rotation and fail-closed missing-key behavior in internal/secrets/; add tamper/rotation/backup-key tests in internal/secrets/secrets_test.go (FR-012).
-- [ ] T007 Add TLS configuration, production startup validation, request size/rate limits and separated owner/agent/worker authorization boundaries in apps/server/ and internal/identity/; test certificate/header impersonation in tests/integration/transport_test.go (FR-006).
-- [ ] T008 Implement revision-aware job queue, lease renewal/fencing, bounded retries, cancellation and global recovery/pause flags in internal/jobs/ and internal/policy/; prove concurrent claims and stale reports fail in tests/integration/jobs_test.go (FR-010, FR-014, FR-033).
+- [X] T004 Implement migration runner, transactional repository layer and initial schema from data-model.md in migrations/ and internal/store/, with migration/restart tests in tests/integration/store_test.go.
+- [X] T005 Implement redacted structured audit and safe error mapping in internal/audit/ and internal/control/errors.go; verify no raw backend/secret values appear in tests/integration/audit_test.go (FR-034).
+- [X] T006 Implement file-provisioned key loading, per-secret encryption, context binding, versioned wrapping-key rotation and fail-closed missing-key behavior in internal/secrets/; add tamper/rotation/backup-key tests in internal/secrets/secrets_test.go (FR-012).
+- [X] T007 Add TLS configuration, production startup validation, request size/rate limits and separated owner/agent/worker authorization boundaries in apps/server/ and internal/identity/; test certificate/header impersonation in tests/integration/transport_test.go (FR-006).
+- [X] T008 Implement revision-aware job queue, lease renewal/fencing, bounded retries, cancellation and global recovery/pause flags in internal/jobs/ and internal/policy/; prove concurrent claims and stale reports fail in tests/integration/jobs_test.go (FR-010, FR-014, FR-033).
 
 ## Phase 3: US1 — Secure workspace and first real agent (P1)
 
 Independent test: protected setup and one native Linux agent reports real measurements, survives restart, and becomes stale/offline when disconnected. No discovery needed.
 
-- [ ] T009 [US1] Add setup/session/MFA and invitation/revocation acceptance fixtures in tests/integration/identity_test.go and tests/e2e/setup.spec.ts, covering singleton setup races and unauthorized access (FR-001, FR-002, FR-006).
-- [ ] T010 [US1] Implement local setup invitation, Argon2id owner password, TOTP, recovery codes, hashed cookie sessions, CSRF, reauthentication and local owner recovery in internal/auth/ and apps/server/ (FR-001).
-- [ ] T011 [US1] Implement device-bound invitations, CSR validation, certificate issuance/renewal/revocation and lost-response reconciliation in internal/identity/ and internal/store/identity.go; prevent reused tokens and duplicate active identities (FR-002, FR-003).
-- [ ] T012 [US1] Extend internal/collector/ with Linux CPU/memory/filesystem/uptime/interface traffic readers, counter-reset/unavailability handling and fixture-based collector tests (FR-004).
-- [ ] T013 [US1] Turn apps/agent/ into a persistent daemon with durable identity, reporting/heartbeat loops, bounded disk spool, jittered retry and explicit snapshot command compatibility; add packaging/linux/agent.service (FR-003, FR-005, FR-033).
-- [ ] T014 [US1] Implement atomic batch deduplication, partitioned measurement storage, freshness calculation, heartbeat and basic device/history queries in internal/telemetry/ and internal/control/; test replay, clock skew and counter gaps (FR-004, FR-005, FR-006).
-- [ ] T015 [US1] Wire protected setup/sign-in and first-agent enrollment views in apps/web/src/views/setup.tsx and apps/web/src/lib/api.ts, including token-file instructions and secret-safe errors (FR-001, FR-002, FR-019).
-- [ ] T016 [US1] Replace fixture-only inventory/current host readings with authenticated queries in apps/web/src/views/systems.tsx and apps/web/src/views/device.tsx while retaining isolated demo mode (FR-004, FR-005, FR-015, FR-019).
+- [X] T009 [US1] Add setup/session/MFA and invitation/revocation acceptance fixtures in tests/integration/identity_test.go and tests/e2e/setup.spec.ts, covering singleton setup races and unauthorized access (FR-001, FR-002, FR-006).
+- [X] T010 [US1] Implement local setup invitation, Argon2id owner password, TOTP, recovery codes, hashed cookie sessions, CSRF, reauthentication and local owner recovery in internal/auth/ and apps/server/ (FR-001).
+- [X] T011 [US1] Implement device-bound invitations, CSR validation, certificate issuance/renewal/revocation and lost-response reconciliation in internal/identity/ and internal/store/identity.go; prevent reused tokens and duplicate active identities (FR-002, FR-003).
+- [X] T012 [US1] Extend internal/collector/ with Linux CPU/memory/filesystem/uptime/interface traffic readers, counter-reset/unavailability handling and fixture-based collector tests (FR-004).
+- [X] T013 [US1] Turn apps/agent/ into a persistent daemon with durable identity, reporting/heartbeat loops, bounded disk spool, jittered retry and explicit snapshot command compatibility; add packaging/linux/agent.service (FR-003, FR-005, FR-033).
+- [X] T014 [US1] Implement atomic batch deduplication, partitioned measurement storage, freshness calculation, heartbeat and basic device/history queries in internal/telemetry/ and internal/control/; test replay, clock skew and counter gaps (FR-004, FR-005, FR-006).
+- [X] T015 [US1] Wire protected setup/sign-in and first-agent enrollment views in apps/web/src/views/setup.tsx and apps/web/src/lib/api.ts, including token-file instructions and secret-safe errors (FR-001, FR-002, FR-019).
+- [X] T016 [US1] Replace fixture-only inventory/current host readings with authenticated queries in apps/web/src/views/systems.tsx and apps/web/src/views/device.tsx while retaining isolated demo mode (FR-004, FR-005, FR-015, FR-019).
 - [ ] T017 [US1] Create scripts/test-first-agent.sh and record real systemd-host setup, renewal/revocation, restart persistence and loss-of-contact evidence against SC-001, SC-002 and SC-012.
 
 ## Phase 4: US7 — Self-hosting and recovery (P1)

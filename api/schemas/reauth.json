@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["password", "totpCode"],
+  "properties": { "password": { "type": "string", "writeOnly": true }, "totpCode": { "type": "string", "pattern": "^[0-9]{6,8}$", "writeOnly": true } },
+  "additionalProperties": false
+}
