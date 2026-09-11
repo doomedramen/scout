@@ -746,3 +746,39 @@ For future results append: task and requirement IDs, commit, date, exact command
   full-range empty buckets, and API resolution/coverage metadata; T028 owns
   retention policy and rollup pressure telemetry. The bounded integration
   fixture is not a 100-host/year capacity claim.
+
+## T027 — tiered metric history queries and quality metadata
+
+- Requirements: FR-019, FR-021, FR-022; SC-007.
+- Date: 2026-09-11 (Europe/London); implementation commit: `d2415b2`.
+- Extended memory and authoritative PostgreSQL history queries with bounded
+  defaults (maximum 600 points and 16 explicit series), automatic raw/
+  five-minute/hourly tier selection from the oldest requested time, UTC-aligned
+  integer source-resolution grouping, and complete requested ranges including
+  empty buckets. Responses now expose stable series/entity identity,
+  resolution, count, coverage, extrema, and partial-boundary metadata. Raw
+  history uses cadence intervals for coverage; aggregate history combines
+  sufficient statistics without double-counting tiers. Explicit unknown series
+  return an empty identity-preserving unavailable series, and explicit filter
+  mismatches cannot fall back to host totals. The HTTP response reports the
+  effective defaulted `from`/`to` bounds and accepts repeated `seriesId`
+  parameters.
+- Added red/green fixtures for partial first/last buckets, weighted means,
+  extrema, interior gaps, grouped resolution, invalid point/series bounds,
+  unknown and mismatched explicit series, SQL raw history, SQL hourly
+  aggregate history, and authenticated HTTP metadata/negative cases. The
+  existing SQL identity fixture now queries explicit bounds so its assertions
+  remain about entity identity rather than default-range placement.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  passed against disposable PostgreSQL 17; `go test ./... -count=1` passed;
+  `go vet ./...` passed; `npm run format:check` passed; `npm run lint`
+  passed; `npm run check` passed; `npm run build` passed; and
+  `npx playwright test tests/e2e/playwright/z-diagnostics.spec.ts` passed.
+  `git diff --check` passed before commit. No production database, real
+  device, production credential, or deployment was used.
+- Remaining limits: T028 still owns retention policy coordination, dirty
+  generation/pressure status, and operator policy changes. T029 still owns
+  history resolution/partial metadata presentation in the device/recovery UI
+  and its mixed-version/interrupted-aggregation integration evidence. The
+  disposable fixture does not claim 100-device/year capacity or live hardware
+  support.
