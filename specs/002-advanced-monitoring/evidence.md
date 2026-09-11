@@ -662,3 +662,33 @@ For future results append: task and requirement IDs, commit, date, exact command
   or deployment was used. T024 still needs per-entity diagnostic chart/gap
   presentation and browser coverage; T030–T038/T042 remain the live
   storage/hardware/support evidence gates.
+
+## T024 — entity-aware diagnostic charts and browser coverage
+
+- Requirements: FR-017, FR-018, FR-019; SC-006, SC-010.
+- Date: 2026-09-11 (Europe/London); implementation commit: `679fef2`.
+- Added typed metric points with availability and optional extrema, entity-aware
+  memory history/current projections matching PostgreSQL, and a diagnostic
+  signal board in the device view. Owners can select a metric and entity with
+  native controls; percent, byte, rate, latency, seconds, and count units use
+  explicit formatting and honest chart domains. Downsampled ranges retain
+  visible min/max bounds, unavailable points stay as chart gaps, and partial
+  ranges/gap counts are announced in text. The accessible sample table exposes
+  timestamps, values, extrema, and availability for keyboard inspection.
+- Added `tests/e2e/playwright/z-diagnostics.spec.ts`, which uses a bounded
+  fixture route against the real authenticated UI to verify separate disk
+  series, unit-aware values, extrema, focusable metric/entity controls, and
+  unavailable-gap rendering. The `z-` filename preserves the existing
+  first-run test's one-owner ordering because this Playwright configuration
+  intentionally shares one isolated in-memory server across its browser files.
+- Exact verification commands and outcomes: `go test ./internal/store
+  -count=1`; `go test ./... -race -count=1`; `go vet ./...`; `npm run check`;
+  `npm run lint`; `npm run format:check`; `npm run build`; `npm run
+  test:e2e:browser`; and `git diff --check` all passed. The final browser run
+  passed all three configured journeys against a fresh local server. An
+  earlier run caught the shared-server ordering issue; it was corrected before
+  this evidence entry rather than weakening the first-run assertion.
+- No live Linux host, production database, real device, production credential,
+  or deployment was used. The fixture proves presentation and contract
+  behavior; live diagnostic collection remains limited to the fixture-backed
+  Linux collector evidence in T022/T023.
