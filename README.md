@@ -45,9 +45,15 @@ The UI also runs without a database and reports its actual connection state. Use
 ```sh
 npm run check
 npm run build
+npm run lint
 npm test
 npm run snapshot -w @scout/agent
 ```
+
+`npm run lint` checks Go formatting and vet, Prettier formatting, and the
+TypeScript workspace checks. Run `npm run format` to rewrite the supported
+source and configuration files, or `npm run format:check` for a read-only
+CI-style check.
 
 The snapshot command prints this machine's hostname, OS, architecture, CPU count, and active non-loopback interface addresses. It does not enroll, upload metrics, discover remote devices, or install software. It is a collector scaffold, not a running monitoring daemon.
 
@@ -82,6 +88,8 @@ The Linux-first MVP is the selected direction. It includes server-delivered agen
 - [UI direction](docs/interface.md)
 - [Agent updates](docs/agent-updates.md)
 - [Service-aware collectors](docs/service-collectors.md)
+- [Operations runbook](docs/operations.md)
+- [Support and verification matrix](docs/support-matrix.md)
 - [Roadmap and acceptance criteria](docs/roadmap.md)
 
 ## Status

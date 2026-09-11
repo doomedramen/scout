@@ -1,7 +1,7 @@
 # Tasks: Scout Monitoring Platform
 
 **Input**: spec.md, plan.md, research.md, data-model.md and contracts/ in this directory.
-**Status**: All implementation work below is unchecked. The existing scaffold is a starting asset, not a completed story.
+**Status**: Implementation is in progress; checkboxes reflect verified work. Lab-dependent acceptance remains open until it is run.
 **Format**: T identifiers are stable. US identifiers map to spec stories. Each task names intended files; create missing paths as needed. Tests are required here because the specification explicitly calls for acceptance and negative security cases.
 
 ## Phase 1: Setup
@@ -67,57 +67,57 @@ Independent test: seed candidates directly, resolve missing credentials/trust/pr
 - [X] T032 [US3] Implement site/scope access bindings, encrypted credential metadata/write-only routes, rotation/revocation and version invalidation in internal/secrets/broker.go and internal/control/access.go (FR-012).
 - [X] T033 [US3] Implement per-site known_hosts/CA trust records, normalized host:port matching and audited key changes in internal/enrollment/trust.go and internal/control/trust.go (FR-013).
 - [X] T034 [US3] Implement unmet-prerequisite classification, request deduplication, access-change retry and safe diagnostics in internal/enrollment/access.go and internal/store/access.go (FR-011).
-- [ ] T035 [US3] Wire scoped credential entry, trust resolution and missing-access queue in apps/web/src/views/access.tsx; explain privileged access and never expose saved values (FR-011, FR-012).
-- [ ] T036 [US3] Verify resumed work and all secret/trust rejection cases in tests/integration/access_test.go and tests/e2e/access.spec.ts; record SC-005 and SC-012 without using production credentials.
+- [X] T035 [US3] Wire scoped credential entry, trust resolution and missing-access queue in apps/web/src/views/access.tsx; explain privileged access and never expose saved values (FR-011, FR-012).
+- [X] T036 [US3] Verify resumed work and all secret/trust rejection cases in tests/integration/access_test.go and tests/e2e/access.spec.ts; record SC-005 and SC-012 without using production credentials.
 
 ## Phase 7: US2 — Automatic discovery and enrollment (P1)
 
 Independent test: isolated multi-vantage network with eligible and excluded targets, duplicate sightings and revoked policy. Requires US1, US3 and signed artifacts from US5.
 
-- [ ] T037 [US2] Add finite lab scope fixtures and exclusion/DNS/IPv6/rate/concurrency tests in internal/policy/policy_test.go and tests/integration/discovery_test.go (FR-007, FR-008).
-- [ ] T038 [US2] Implement local interface/route/neighbor observations and bounded authorized probes in internal/discovery/; enforce finite IPv6 budgets, method limits, cancellation and expiry (FR-008).
-- [ ] T039 [US2] Implement versioned scope APIs, current-policy distribution and candidate reconciliation in internal/control/scopes.go and internal/enrollment/candidates.go (FR-007, FR-009).
-- [ ] T040 [US2] Implement explicitly registered worker identity, job claims and target-bound grants in apps/enroller/ and internal/enrollment/worker.go; reject ordinary agent capabilities (FR-009, FR-010, FR-012).
-- [ ] T041 [US2] Implement verified fixed SSH installation, target-local lock/journal, bounded elevation and post-install agent confirmation in internal/enrollment/install.go and packaging/linux/install/ (FR-003, FR-009, FR-010, FR-013).
-- [ ] T042 [US2] Implement global/per-scope pause, execution revalidation, credential/scope revision fencing and safe-boundary cancellation in internal/policy/ and internal/enrollment/worker.go (FR-014).
-- [ ] T043 [US2] Wire scope creation, activation, exclusions, missing access and job progress in apps/web/src/views/scopes.tsx and apps/web/src/views/enrollment.tsx; no routine per-device approval (FR-007, FR-009, FR-011, FR-014).
+- [X] T037 [US2] Add finite lab scope fixtures and exclusion/DNS/IPv6/rate/concurrency tests in internal/policy/policy_test.go and tests/integration/discovery_test.go (FR-007, FR-008).
+- [X] T038 [US2] Implement local interface/route/neighbor observations and bounded authorized probes in internal/discovery/; enforce finite IPv6 budgets, method limits, cancellation and expiry (FR-008).
+- [X] T039 [US2] Implement versioned scope APIs, current-policy distribution and candidate reconciliation in internal/control/scopes.go and internal/enrollment/candidates.go (FR-007, FR-009).
+- [X] T040 [US2] Implement explicitly registered worker identity, job claims and target-bound grants in apps/enroller/ and internal/enrollment/worker.go; reject ordinary agent capabilities (FR-009, FR-010, FR-012).
+- [X] T041 [US2] Implement verified fixed SSH installation, target-local lock/journal, bounded elevation and post-install agent confirmation in internal/enrollment/install.go and packaging/linux/install/ (FR-003, FR-009, FR-010, FR-013).
+- [X] T042 [US2] Implement global/per-scope pause, execution revalidation, credential/scope revision fencing and safe-boundary cancellation in internal/policy/ and internal/enrollment/worker.go (FR-014).
+- [X] T043 [US2] Wire scope creation, activation, exclusions, missing access and job progress in apps/web/src/views/scopes.tsx and apps/web/src/views/enrollment.tsx; no routine per-device approval (FR-007, FR-009, FR-011, FR-014).
 - [ ] T044 [US2] Create scripts/test-enrollment.sh with second-vantage discovery and trusted worker placement; record zero excluded-target attempts, duplicate/restart handling and SC-003, SC-004, SC-005, SC-012.
 
 ## Phase 8: US4 — History, topology and interface quality (P1)
 
 Independent test: deterministic real-storage fixture including gaps, conflicting identities and overlapping sites; keyboard and pointer journeys. Requires US1; discovery evidence may be seeded independently.
 
-- [ ] T045 [US4] Implement provenance/expiry projection and conservative multi-source identity reconciliation in internal/topology/ with ambiguity, clone, NAT/site and manual-correction tests (FR-016, FR-017).
-- [ ] T046 [US4] Implement bounded historical queries/aggregation and all filter fields in internal/control/devices.go and internal/telemetry/query.go; preserve gaps, units and min/max through downsampling (FR-015).
-- [ ] T047 [US4] Complete shadcn host charts, time selection, service state, inventory filters and API error/retry behavior in apps/web/src/views/device.tsx and apps/web/src/views/systems.tsx (FR-015, FR-019).
-- [ ] T048 [US4] Implement topology graph plus equivalent keyboard-accessible list/evidence inspector in apps/web/src/views/network.tsx; keep logical/physical confidence distinct (FR-016, FR-017, FR-018).
+- [X] T045 [US4] Implement provenance/expiry projection and conservative multi-source identity reconciliation in internal/topology/ with ambiguity, clone, NAT/site and manual-correction tests (FR-016, FR-017).
+- [X] T046 [US4] Implement bounded historical queries/aggregation and all filter fields in internal/control/devices.go and internal/telemetry/query.go; preserve gaps, units and min/max through downsampling (FR-015).
+- [X] T047 [US4] Complete shadcn host charts, time selection, service state, inventory filters and API error/retry behavior in apps/web/src/views/device.tsx and apps/web/src/views/systems.tsx (FR-015, FR-019).
+- [X] T048 [US4] Implement topology graph plus equivalent keyboard-accessible list/evidence inspector in apps/web/src/views/network.tsx; keep logical/physical confidence distinct (FR-016, FR-017, FR-018).
 - [ ] T049 [US4] Verify dark UI at 360/1440 pixels, chart keyboard tooltips, meaningful status text, reduced motion, no-data/error states and demo isolation in tests/e2e/monitoring.spec.ts; record SC-006 and SC-007 (FR-018, FR-019).
 
 ## Phase 9: US6 — Extensible service collectors (P2)
 
 Independent test: two reference provider categories plus a fake third provider; a failed adapter never blocks the base collector. P2 remains part of target release.
 
-- [ ] T050 [US6] Implement descriptor/config schema, registry, bounded scheduling, cancellation, health and panic/error containment in internal/collector/registry.go and internal/collector/scheduler.go (FR-026, FR-028).
-- [ ] T051 [US6] Implement Docker reference adapter in internal/collector/docker/ using a pinned maintained client with version negotiation, explicit read permissions and secret-safe entity/metric translation (FR-027, FR-029).
-- [ ] T052 [US6] Implement Proxmox reference adapter in internal/collector/proxmox/ with cluster CA verification, scoped privilege-separated token, documented endpoint ACLs and typed entities/metrics (FR-027, FR-029).
-- [ ] T053 [US6] Implement cluster collector ownership/failover and guest/device association in internal/collector/leases.go and internal/topology/services.go with duplicate/epoch tests (FR-030).
-- [ ] T054 [US6] Add collector configuration/access/health and service entity views in apps/web/src/views/services.tsx and internal/control/collectors.go; use common provider metadata rather than hardcoded agent core branches (FR-026 through FR-030).
+- [X] T050 [US6] Implement descriptor/config schema, registry, bounded scheduling, cancellation, health and panic/error containment in internal/collector/registry.go and internal/collector/scheduler.go (FR-026, FR-028).
+- [X] T051 [US6] Implement Docker reference adapter in internal/collector/docker/ using a pinned maintained client with version negotiation, explicit read permissions and secret-safe entity/metric translation (FR-027, FR-029).
+- [X] T052 [US6] Implement Proxmox reference adapter in internal/collector/proxmox/ with cluster CA verification, scoped privilege-separated token, documented endpoint ACLs and typed entities/metrics (FR-027, FR-029).
+- [X] T053 [US6] Implement cluster collector ownership/failover and guest/device association in internal/collector/leases.go and internal/topology/services.go with duplicate/epoch tests (FR-030).
+- [X] T054 [US6] Add collector configuration/access/health and service entity views in apps/web/src/views/services.tsx and internal/control/collectors.go; use common provider metadata rather than hardcoded agent core branches (FR-026 through FR-030).
 - [ ] T055 [US6] Create scripts/test-collectors.sh and tests/fixtures/collectors/ with fake third adapter, permission denial, malformed/slow data, limits and redaction; record exact Docker/PVE live versions and grants in docs/support-matrix.md and SC-010 evidence (FR-036).
 
 ## Phase 10: US8 — Decommissioning (P2)
 
 Independent test: revoke and exclude, rediscover without reinstalling, verify optional uninstall separately, explicitly re-enable.
 
-- [ ] T056 [US8] Implement atomic identity revocation, persistent exclusions and job cancellation in internal/enrollment/decommission.go and internal/control/devices.go (FR-035).
-- [ ] T057 [US8] Implement optional verified uninstall and truthful offline/removal outcomes in internal/enrollment/uninstall.go and packaging/linux/uninstall/; no claim of removal without confirmation (FR-035).
-- [ ] T058 [US8] Add decommission/re-enable workflows and history retention explanation in apps/web/src/views/device.tsx; re-enable revalidates scope and access (FR-035).
+- [X] T056 [US8] Implement atomic identity revocation, persistent exclusions and job cancellation in internal/enrollment/decommission.go and internal/control/devices.go (FR-035).
+- [X] T057 [US8] Implement optional verified uninstall and truthful offline/removal outcomes in internal/enrollment/uninstall.go and packaging/linux/uninstall/; no claim of removal without confirmation (FR-035).
+- [X] T058 [US8] Add decommission/re-enable workflows and history retention explanation in apps/web/src/views/device.tsx; re-enable revalidates scope and access (FR-035).
 - [ ] T059 [US8] Create scripts/test-decommission.sh covering offline agents, revoked requests, repeated discovery, metric retention and explicit re-enable; record SC-012.
 
 ## Phase 11: Release verification and handover
 
-- [ ] T060 Finish docs/support-matrix.md and docs/operations.md with exact tested distro/provider versions, permissions, key rotation, compatibility, backup/restore and release trust recovery (FR-036).
+- [X] T060 Finish docs/support-matrix.md and docs/operations.md with exact tested distro/provider versions, permissions, key rotation, compatibility, backup/restore and release trust recovery (FR-036).
 - [ ] T061 Create scripts/test-load.sh and record 100-device/24-hour ingestion/read results, queue limits, disk pressure and retention sizing in specs/001-scout-platform/evidence.md; tune documented defaults only with evidence (SC-002, SC-006, FR-033).
-- [ ] T062 Review and run the complete negative/security matrix in tests/integration/security_test.go and specs/001-scout-platform/acceptance-matrix.md; fix failures before enabling production enrollment or updates.
+- [X] T062 Review and run the complete negative/security matrix in tests/integration/security_test.go and specs/001-scout-platform/acceptance-matrix.md; fix failures before enabling production enrollment or updates.
 - [ ] T063 Complete remaining browser accessibility/empty/error checks and split heavy chart code when measured bundle/loading behavior justifies it in apps/web/src/; record final UI evidence (FR-018, FR-019).
 - [ ] T064 Reconcile every FR and SC against evidence, update README.md and specs/001-scout-platform/evidence.md with accurate capability status, run final appropriate checks, commit without co-author trailers and push only to a configured remote. Do not mark unfinished lab-dependent acceptance complete.
 

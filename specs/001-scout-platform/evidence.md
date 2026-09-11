@@ -67,3 +67,50 @@ This file records executed verification only. Planned targets from the specifica
   and revoked credential rejection, write-only listings, normalized trust
   matching and changed-key rejection, ordinary-agent separation, and
   deduplicated missing-access requests. No production secret was used.
+
+## Discovery, monitoring interface, collectors, and decommissioning
+
+- T035–T043: access, scope, enrollment, and missing-prerequisite views are
+  wired to authenticated APIs. `go test ./...` and the access/enrollment
+  integration and browser fixtures passed accepted and rejected credential,
+  trust, ordinary-agent, pause, lease, exclusion, revision, and target-bound
+  worker cases. Routine per-device approval is not introduced.
+- T037–T044: `scripts/test-enrollment.sh` passed finite range, exclusion,
+  DNS, IPv6-budget, method, rate, concurrency, cancellation, expiry, duplicate,
+  and restart fixtures. The script prints the required second-vantage Linux
+  lab prerequisites; no real second vantage or device was contacted, so T044
+  remains open.
+- T045–T048: topology projection, evidence expiry/provenance, identity
+  ambiguity handling, bounded history queries, inventory filters, host charts,
+  topology list/graph, and evidence inspection are implemented. The focused
+  Go suite, `npm run check`, and `npm run build -w @scout/web` passed. Charts
+  expose tabular samples and explicit gaps; logical and physical relationships
+  remain distinct.
+- T050–T054: registry, bounded scheduler, panic/error containment, leases,
+  guest association, Docker and Proxmox adapters, fake-provider boundary, and
+  collector configuration/health/service views are implemented. Fixture
+  adapters load from `tests/fixtures/collectors/`; no live provider endpoint
+  or credential was used.
+- T056–T060: atomic decommission/revocation, persistent exclusions, truthful
+  optional-uninstall status, explicit re-enable, operations guidance, and the
+  support/compatibility matrix are implemented. `scripts/test-decommission.sh`
+  passed the offline/revocation/re-enable fixture boundary. Native uninstall
+  confirmation remains a live-lab requirement.
+- T061: `scripts/test-load.sh` passed the synthetic 100-device/24-hour sample
+  shape, bounded ingestion/query path, and visible limit behavior in 10ms on
+  this run. This is explicitly not a live capacity, disk-pressure, or
+  retention-sizing claim; T061 remains open.
+- T062: the security matrix in `tests/integration/security_test.go` passed
+  accepted and rejected authentication, transport, secret, trust, worker,
+  update, audit, and decommission cases. Production enrollment and updates
+  remain disabled by default and still require owner-authorized lab evidence.
+- T063: measured web build output before splitting was 664.85 kB JavaScript
+  (198.88 kB gzip) with a large-chunk warning. Lazy-loading host detail now
+  produces a 326.96 kB initial chunk (98.54 kB gzip) and a 339.19 kB detail
+  chunk (101.55 kB gzip), with no large-chunk warning. A real browser viewport
+  and keyboard journey at both 360px and 1440px remains open.
+- Still open: T017 native Linux/systemd acceptance, T022 clean-host
+  deployment/restore, T030 power-loss VM update stages, T044 live
+  second-vantage placement, T049 browser viewport/accessibility journey, T055
+  live Docker/Proxmox version and ACL compatibility, T059 full offline
+  decommission lab, and T061 live capacity/disk-pressure measurement.

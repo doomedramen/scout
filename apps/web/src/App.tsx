@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Activity, CircleHelp, Download, KeyRound, LayoutList, Network, Radio, ScanSearch, ServerCog, Terminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type Device, type Status } from "@/lib/api";
 import { AccessView } from "@/views/access";
-import { DeviceView } from "@/views/device";
 import { EnrollmentView } from "@/views/enrollment";
 import { NetworkView } from "@/views/network";
 import { RecoveryView } from "@/views/recovery";
@@ -35,6 +34,10 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   Services: { title: "Services", description: "Provider health and associated service entities." },
   Updates: { title: "Agent updates", description: "Keep agents current, including on isolated networks." },
 };
+
+const LazyDeviceView = lazy(() =>
+  import("@/views/device").then(({ DeviceView }) => ({ default: DeviceView })),
+);
 
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "signedOut" | "signedIn">("loading");
@@ -158,7 +161,9 @@ export default function App() {
           </section>
         )}
         {selected && (page === "Systems" || page === "Network") ? (
-          <DeviceView selected={selected} demo={demo} onBack={() => setSelected(null)} onChanged={setSelected} />
+          <Suspense fallback={<div className="empty" role="status">Loading host detail…</div>}>
+            <LazyDeviceView selected={selected} demo={demo} onBack={() => setSelected(null)} onChanged={setSelected} />
+          </Suspense>
         ) : (
           <>
             <div className="page-heading">

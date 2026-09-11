@@ -1,6 +1,10 @@
 # Acceptance Coverage: Scout Platform
 
-This matrix links requirements to verification scenarios for the future implementation plan. Every row is **planned**, not executed or passed. Story numbers refer to the numbered journeys in [spec.md](spec.md). SC identifiers refer to its measurable outcomes.
+This matrix links requirements to the required verification scenarios. It is
+not a blanket pass: executed fixture, integration, browser, and live-lab
+status is recorded in [evidence.md](evidence.md). Story numbers refer to the
+numbered journeys in [spec.md](spec.md). SC identifiers refer to its measurable
+outcomes.
 
 | Requirements           | Stories          | Outcomes                       | Required verification                                                                                                                                                                                                                                          |
 | ---------------------- | ---------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
