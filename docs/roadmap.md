@@ -49,9 +49,21 @@ Acceptance:
 
 Implement a provider-independent collector registry and scheduling contract. Initial adapters can cover Docker and Proxmox VE; additional hypervisors, runtimes, and services must fit without changes to the agent core. Follow [the collector specification](service-collectors.md) for permissions, schema evolution, bounded execution, and topology reconciliation.
 
-## 6. Broader platform coverage
+## 6. Advanced monitoring and alerting (spec 002)
 
-Expand agent support to macOS, then Windows. Evaluate SNMP devices, additional service adapters, alerts, and notification integrations against real deployments. An agent is not appropriate for every device; agentless observations are first-class inventory sources.
+After the 001 Linux foundations, deliver [spec 002](../specs/002-advanced-monitoring/spec.md) through its [implementation package](../specs/002-advanced-monitoring/handoff.md):
+
+- Automatically enabled in-app incidents, sustained thresholds, acknowledgment and evidence-based recovery.
+- Owner-enabled ntfy delivery, bounded retries, quiet hours and current-incident summaries.
+- Read-only systemd health and CPU/load/swap/disk diagnostics with per-entity charts.
+- Thirty days raw, ninety days five-minute, and one year hourly history with peaks and gaps preserved.
+- SMART and ZFS health plus Linux temperature, fan, and NVIDIA/AMD/Intel GPU capabilities validated against real hardware.
+
+Acceptance includes normalized telemetry migration, restart-safe aggregation, notification suppression after restore, the expanded 100-host workload, and published hardware evidence. All six areas belong to the target release; staged development milestones remain explicitly incomplete. This package is prepared, not implemented. It does not add OIDC, multi-user access, image-update checks, Podman support, new operating systems, or remediation.
+
+## 7. Broader platform coverage
+
+Expand agent support to macOS, then Windows. Evaluate SNMP devices, additional service adapters, and notification providers beyond ntfy against real deployments. An agent is not appropriate for every device; agentless observations are first-class inventory sources.
 
 ## Decisions before implementation
 
