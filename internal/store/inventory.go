@@ -53,13 +53,23 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 }
 
 func ValidateScope(scope Scope) error {
-	if scope.SiteID == "" || len(scope.Ranges) == 0 || len(scope.Ranges) > 128 || len(scope.Ports) > 64 {
+	if scope.SiteID == "" || len(scope.Ranges) == 0 || len(scope.Ranges) > 128 || len(scope.Exclusions) > 128 || len(scope.Ports) > 64 {
+		return ErrInvalid
+	}
+	if scope.Limits.ProbesPerSecond < 0 || scope.Limits.ProbesPerSecond > 1000 || scope.Limits.Concurrency < 0 || scope.Limits.Concurrency > 16 || scope.Limits.TargetBudget < 0 || scope.Limits.TargetBudget > 4096 {
 		return ErrInvalid
 	}
 	if len(scope.AllowedMethods) == 0 {
 		return ErrInvalid
 	}
 	for _, raw := range scope.Ranges {
+		if _, err := netip.ParsePrefix(raw); err != nil {
+			if _, err := netip.ParseAddr(raw); err != nil {
+				return ErrInvalid
+			}
+		}
+	}
+	for _, raw := range scope.Exclusions {
 		if _, err := netip.ParsePrefix(raw); err != nil {
 			if _, err := netip.ParseAddr(raw); err != nil {
 				return ErrInvalid
@@ -101,6 +111,15 @@ func (s *Store) CreateScope(ctx context.Context, scope Scope) (Scope, error) {
 		}
 		if scope.UpdatedAt.IsZero() {
 			scope.UpdatedAt = scope.CreatedAt
+		}
+		if scope.Limits.ProbesPerSecond == 0 {
+			scope.Limits.ProbesPerSecond = 10
+		}
+		if scope.Limits.Concurrency == 0 {
+			scope.Limits.Concurrency = 16
+		}
+		if scope.Limits.TargetBudget == 0 {
+			scope.Limits.TargetBudget = 256
 		}
 		scope.Ranges = cloneStrings(scope.Ranges)
 		scope.Exclusions = cloneStrings(scope.Exclusions)
@@ -163,6 +182,15 @@ func (s *Store) UpdateScope(ctx context.Context, id string, expected int64, upda
 		update.Revision = current.Revision + 1
 		update.CreatedAt = current.CreatedAt
 		update.UpdatedAt = s.now().UTC()
+		if update.Limits.ProbesPerSecond == 0 {
+			update.Limits.ProbesPerSecond = 10
+		}
+		if update.Limits.Concurrency == 0 {
+			update.Limits.Concurrency = 16
+		}
+		if update.Limits.TargetBudget == 0 {
+			update.Limits.TargetBudget = 256
+		}
 		state.Scopes[id] = update
 		result = update
 		return nil

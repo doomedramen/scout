@@ -211,10 +211,75 @@ type AccessRequest struct {
 	LastAttempt time.Time         `json:"lastAttempt"`
 }
 
+type Candidate struct {
+	ID            string    `json:"id"`
+	SiteID        string    `json:"siteId"`
+	ScopeID       string    `json:"scopeId"`
+	Address       string    `json:"address"`
+	Hostname      string    `json:"hostname,omitempty"`
+	Source        string    `json:"source"`
+	State         string    `json:"state"`
+	ScopeRevision int64     `json:"scopeRevision"`
+	FirstSeen     time.Time `json:"firstSeen"`
+	LastSeen      time.Time `json:"lastSeen"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+	Excluded      bool      `json:"excluded"`
+	EvidenceIDs   []string  `json:"evidenceIds,omitempty"`
+}
+
+type WorkerIdentity struct {
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Kind          string     `json:"kind"`
+	AuthTokenHash string     `json:"authTokenHash"`
+	SiteIDs       []string   `json:"siteIds"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	RevokedAt     *time.Time `json:"revokedAt,omitempty"`
+}
+
+type DeviceUpdatePolicy struct {
+	DeviceID         string     `json:"deviceId"`
+	Mode             string     `json:"mode"`
+	ReleaseID        string     `json:"releaseId,omitempty"`
+	Version          string     `json:"version,omitempty"`
+	WindowStart      *time.Time `json:"windowStart,omitempty"`
+	WindowEnd        *time.Time `json:"windowEnd,omitempty"`
+	ExpectedRevision int64      `json:"expectedRevision"`
+	Revision         int64      `json:"revision"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
+}
+
+type CollectorConfig struct {
+	DeviceID      string            `json:"deviceId"`
+	CollectorID   string            `json:"collectorId"`
+	Provider      string            `json:"provider"`
+	Enabled       bool              `json:"enabled"`
+	Config        map[string]string `json:"config,omitempty"`
+	CredentialRef string            `json:"credentialRef,omitempty"`
+	Revision      int64             `json:"revision"`
+	Health        CollectorState    `json:"health"`
+	Diagnostic    string            `json:"diagnostic,omitempty"`
+	LastSuccess   *time.Time        `json:"lastSuccess,omitempty"`
+}
+
+type ServiceEntity struct {
+	ID         string            `json:"id"`
+	Provider   string            `json:"provider"`
+	ClusterID  string            `json:"clusterId,omitempty"`
+	DeviceID   string            `json:"deviceId,omitempty"`
+	Kind       string            `json:"kind"`
+	Name       string            `json:"name"`
+	Status     string            `json:"status"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	ObservedAt time.Time         `json:"observedAt"`
+	ExpiresAt  time.Time         `json:"expiresAt"`
+}
+
 type Job struct {
 	ID                string            `json:"id"`
 	Kind              string            `json:"kind"`
 	DeviceID          string            `json:"deviceId"`
+	ScopeID           string            `json:"scopeId,omitempty"`
 	ScopeRevision     int64             `json:"scopeRevision"`
 	CredentialVersion int64             `json:"credentialVersion"`
 	ReleaseID         string            `json:"releaseId,omitempty"`
@@ -225,6 +290,9 @@ type Job struct {
 	Attempts          int               `json:"attempts"`
 	NextAttempt       time.Time         `json:"nextAttempt"`
 	Deadline          *time.Time        `json:"deadline,omitempty"`
+	Destination       string            `json:"destination,omitempty"`
+	TrustRef          string            `json:"trustRef,omitempty"`
+	CredentialGrantID string            `json:"credentialGrantId,omitempty"`
 	Result            map[string]string `json:"result,omitempty"`
 }
 
@@ -303,30 +371,39 @@ type WorkspaceState struct {
 	DroppedSamples        int64      `json:"droppedSamples"`
 	TelemetryBackpressure bool       `json:"telemetryBackpressure"`
 	LastRetentionAt       *time.Time `json:"lastRetentionAt,omitempty"`
+	PauseRequested        bool       `json:"pauseRequested"`
+	PausePending          bool       `json:"pausePending"`
+	ExecutionHolders      []string   `json:"executionHolders,omitempty"`
+	PolicyRevision        int64      `json:"policyRevision"`
 	SchemaVersion         int        `json:"schemaVersion"`
 }
 
 type State struct {
-	Version        int                                 `json:"version"`
-	Owner          *Owner                              `json:"owner,omitempty"`
-	Sessions       map[string]Session                  `json:"sessions"`
-	Sites          map[string]Site                     `json:"sites"`
-	Scopes         map[string]Scope                    `json:"scopes"`
-	Devices        map[string]Device                   `json:"devices"`
-	Invitations    map[string]BootstrapInvitation      `json:"invitations"`
-	Agents         map[string]AgentIdentity            `json:"agents"`
-	Credentials    map[string]CredentialRef            `json:"credentials"`
-	Trust          map[string]TrustRecord              `json:"trust"`
-	AccessRequests map[string]AccessRequest            `json:"accessRequests"`
-	Jobs           map[string]Job                      `json:"jobs"`
-	BatchReceipts  map[string]string                   `json:"batchReceipts"`
-	Samples        []MetricSample                      `json:"samples"`
-	Observations   map[string]Observation              `json:"observations"`
-	Relationships  map[string]Relationship             `json:"relationships"`
-	Collectors     map[string]CollectorDescriptorState `json:"collectors"`
-	Releases       map[string]Release                  `json:"releases"`
-	Assignments    map[string]Assignment               `json:"assignments"`
-	Rollouts       map[string]Rollout                  `json:"rollouts"`
-	AuditEvents    []AuditEvent                        `json:"auditEvents"`
-	Workspace      WorkspaceState                      `json:"workspace"`
+	Version          int                                 `json:"version"`
+	Owner            *Owner                              `json:"owner,omitempty"`
+	Sessions         map[string]Session                  `json:"sessions"`
+	Sites            map[string]Site                     `json:"sites"`
+	Scopes           map[string]Scope                    `json:"scopes"`
+	Devices          map[string]Device                   `json:"devices"`
+	Invitations      map[string]BootstrapInvitation      `json:"invitations"`
+	Agents           map[string]AgentIdentity            `json:"agents"`
+	Credentials      map[string]CredentialRef            `json:"credentials"`
+	Trust            map[string]TrustRecord              `json:"trust"`
+	AccessRequests   map[string]AccessRequest            `json:"accessRequests"`
+	Candidates       map[string]Candidate                `json:"candidates"`
+	Workers          map[string]WorkerIdentity           `json:"workers"`
+	Jobs             map[string]Job                      `json:"jobs"`
+	BatchReceipts    map[string]string                   `json:"batchReceipts"`
+	Samples          []MetricSample                      `json:"samples"`
+	Observations     map[string]Observation              `json:"observations"`
+	Relationships    map[string]Relationship             `json:"relationships"`
+	Collectors       map[string]CollectorDescriptorState `json:"collectors"`
+	Releases         map[string]Release                  `json:"releases"`
+	Assignments      map[string]Assignment               `json:"assignments"`
+	UpdatePolicies   map[string]DeviceUpdatePolicy       `json:"updatePolicies"`
+	CollectorConfigs map[string]CollectorConfig          `json:"collectorConfigs"`
+	ServiceEntities  map[string]ServiceEntity            `json:"serviceEntities"`
+	Rollouts         map[string]Rollout                  `json:"rollouts"`
+	AuditEvents      []AuditEvent                        `json:"auditEvents"`
+	Workspace        WorkspaceState                      `json:"workspace"`
 }

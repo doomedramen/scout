@@ -33,3 +33,29 @@ func TestScopeEvaluationIsLiteralScopedAndExclusionsWin(t *testing.T) {
 	}
 	_ = errors.Is
 }
+
+func TestNonTCPDiscoveryMethodsDoNotRequirePorts(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	site, _ := s.CreateSite(ctx, store.Site{Name: "observations"})
+	scope, err := s.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"2001:db8::/126"}, AllowedMethods: []string{"neighbor"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := (&Engine{Store: s}).Evaluate(ctx, scope.ID, "2001:db8::1", "neighbor", 0)
+	if err != nil || !decision.Allowed {
+		t.Fatalf("neighbor observation incorrectly required a port: %+v %v", decision, err)
+	}
+}
+
+func TestValidateScopeRejectsMalformedExclusionAndLimits(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	site, _ := s.CreateSite(ctx, store.Site{Name: "limits"})
+	if _, err := s.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"192.0.2.0/24"}, Exclusions: []string{"not-an-address"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("malformed exclusion accepted: %v", err)
+	}
+	if _, err := s.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"192.0.2.0/24"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Limits: store.ScopeLimits{Concurrency: 17}}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("excessive concurrency accepted: %v", err)
+	}
+}

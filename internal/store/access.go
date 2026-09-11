@@ -488,6 +488,20 @@ func (s *Store) ListJobs(ctx context.Context, kind, stateFilter, deviceID string
 	return result, err
 }
 
+func (s *Store) Job(ctx context.Context, id string) (Job, error) {
+	var result Job
+	err := s.read(ctx, func(state *State) error {
+		item, ok := state.Jobs[id]
+		if !ok {
+			return ErrNotFound
+		}
+		item.Result = cloneMap(item.Result)
+		result = item
+		return nil
+	})
+	return result, err
+}
+
 func (s *Store) ScopeCredentialVersion(ctx context.Context, scopeID string) (int64, error) {
 	var result int64
 	err := s.read(ctx, func(state *State) error {

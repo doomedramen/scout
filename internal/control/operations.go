@@ -2,6 +2,7 @@ package control
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"scout.local/scout/internal/store"
@@ -29,18 +30,17 @@ func (a *App) pauseControl(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	state, err := a.Store.SetWorkspace(r.Context(), func(value *store.WorkspaceState) error {
-		value.DiscoveryPaused = request.Discovery
-		value.EnrollmentPaused = request.Enrollment
-		value.UpdatesPaused = request.Updates
-		return nil
-	})
+	state, err := a.Store.SetControlPause(r.Context(), request.Discovery, request.Enrollment, request.Updates)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
-	a.recordOwnerAudit(r, "control.pause", "workspace", map[string]any{"discovery": request.Discovery, "enrollment": request.Enrollment, "updates": request.Updates})
-	writeJSON(w, http.StatusOK, state)
+	status := http.StatusOK
+	if state.PausePending {
+		status = http.StatusAccepted
+	}
+	a.recordOwnerAudit(r, "control.pause", "workspace", map[string]any{"discovery": request.Discovery, "enrollment": request.Enrollment, "updates": request.Updates, "pending": state.PausePending})
+	writeJSON(w, status, state)
 }
 
 func (a *App) controlState(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func (a *App) decommission(w http.ResponseWriter, r *http.Request) {
 		Uninstall bool   `json:"uninstall"`
 		Reason    string `json:"reason"`
 	}
-	if err := decodeJSON(r, &request, 32<<10); err != nil {
+	if err := decodeJSON(r, &request, 32<<10); err != nil || strings.TrimSpace(request.Reason) == "" {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}

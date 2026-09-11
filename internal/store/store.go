@@ -69,10 +69,10 @@ func newState() State {
 	return State{
 		Version: 1, Sessions: map[string]Session{}, Sites: map[string]Site{}, Scopes: map[string]Scope{},
 		Devices: map[string]Device{}, Invitations: map[string]BootstrapInvitation{}, Agents: map[string]AgentIdentity{},
-		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{},
+		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{}, Candidates: map[string]Candidate{}, Workers: map[string]WorkerIdentity{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, Releases: map[string]Release{},
-		Assignments: map[string]Assignment{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, MaxSamples: DefaultMaxSamples},
+		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, MaxSamples: DefaultMaxSamples},
 	}
 }
 
@@ -111,6 +111,12 @@ func ensureStateMaps(state *State) {
 	if state.AccessRequests == nil {
 		state.AccessRequests = map[string]AccessRequest{}
 	}
+	if state.Candidates == nil {
+		state.Candidates = map[string]Candidate{}
+	}
+	if state.Workers == nil {
+		state.Workers = map[string]WorkerIdentity{}
+	}
 	if state.Jobs == nil {
 		state.Jobs = map[string]Job{}
 	}
@@ -134,6 +140,15 @@ func ensureStateMaps(state *State) {
 	}
 	if state.Assignments == nil {
 		state.Assignments = map[string]Assignment{}
+	}
+	if state.UpdatePolicies == nil {
+		state.UpdatePolicies = map[string]DeviceUpdatePolicy{}
+	}
+	if state.CollectorConfigs == nil {
+		state.CollectorConfigs = map[string]CollectorConfig{}
+	}
+	if state.ServiceEntities == nil {
+		state.ServiceEntities = map[string]ServiceEntity{}
 	}
 	if state.Rollouts == nil {
 		state.Rollouts = map[string]Rollout{}

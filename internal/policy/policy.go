@@ -31,7 +31,7 @@ func (e *Engine) Evaluate(ctx context.Context, scopeID, destination, method stri
 	if !methodAllowed(scope.AllowedMethods, method) {
 		return Decision{Reason: "method_not_allowed", ScopeRevision: scope.Revision}, nil
 	}
-	if !portAllowed(scope.Ports, port) {
+	if method == "tcp" && !portAllowed(scope.Ports, port) {
 		return Decision{Reason: "port_not_allowed", ScopeRevision: scope.Revision}, nil
 	}
 	addr, err := netip.ParseAddr(destination)
@@ -69,6 +69,9 @@ func methodAllowed(methods []string, target string) bool {
 	return false
 }
 func portAllowed(ports []int, target int) bool {
+	if len(ports) == 0 {
+		return true
+	}
 	for _, port := range ports {
 		if port == target {
 			return true
@@ -95,6 +98,24 @@ func ValidateRanges(ranges []string) error {
 	for _, raw := range ranges {
 		if _, err := netip.ParsePrefix(raw); err != nil {
 			if _, addrErr := netip.ParseAddr(raw); addrErr != nil {
+				return store.ErrInvalid
+			}
+		}
+	}
+	return nil
+}
+
+func ValidateExclusions(exclusions []string) error {
+	if len(exclusions) > 128 {
+		return store.ErrInvalid
+	}
+	for _, raw := range exclusions {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return store.ErrInvalid
+		}
+		if _, err := netip.ParseAddr(raw); err != nil {
+			if _, prefixErr := netip.ParsePrefix(raw); prefixErr != nil {
 				return store.ErrInvalid
 			}
 		}

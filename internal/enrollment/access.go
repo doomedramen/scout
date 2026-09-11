@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"scout.local/scout/internal/policy"
+	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
 )
 
@@ -49,7 +50,24 @@ func (a *Access) Evaluate(ctx context.Context, scopeID, target, method string, p
 		request, requestErr := a.Store.UpsertAccessRequest(ctx, store.AccessRequest{DeviceID: deviceID, ScopeID: scopeID, ReasonCode: string(reason), SafeDetails: map[string]string{"target": target, "method": method}, State: "open", LastAttempt: time.Now().UTC()})
 		return Result{Reason: reason, Request: request}, requestErr
 	}
-	job, jobErr := a.Store.CreateJob(ctx, store.Job{Kind: "enrollment", DeviceID: deviceID, ScopeRevision: decision.ScopeRevision, CredentialVersion: decision.CredentialVersion, State: "queued", Deadline: timePtr(time.Now().UTC().Add(10 * time.Minute))})
+	scope, err := a.Store.GetScope(ctx, scopeID)
+	if err != nil {
+		return Result{}, err
+	}
+	if scope.TrustRef != "" {
+		matched, trustErr := a.Store.ScopeTrust(ctx, scopeID, secrets.Target(target, port), "")
+		if trustErr != nil {
+			return Result{}, trustErr
+		}
+		if !matched {
+			request, requestErr := a.Store.UpsertAccessRequest(ctx, store.AccessRequest{DeviceID: deviceID, ScopeID: scopeID, ReasonCode: string(ReasonHostTrust), SafeDetails: map[string]string{"target": secrets.Target(target, port), "method": method}, State: "open", LastAttempt: time.Now().UTC()})
+			return Result{Reason: ReasonHostTrust, Request: request}, requestErr
+		}
+	}
+	if deviceID == "" {
+		return Result{}, store.ErrInvalid
+	}
+	job, jobErr := a.Store.CreateJob(ctx, store.Job{Kind: "enrollment", DeviceID: deviceID, ScopeID: scopeID, ScopeRevision: decision.ScopeRevision, CredentialVersion: decision.CredentialVersion, Destination: secrets.Target(target, port), TrustRef: scope.TrustRef, State: "queued", Deadline: timePtr(time.Now().UTC().Add(10 * time.Minute))})
 	if jobErr != nil && jobErr != store.ErrDuplicate {
 		return Result{}, jobErr
 	}
