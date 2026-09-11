@@ -54,3 +54,41 @@ func TestDecommissionIsIdempotent(t *testing.T) {
 		t.Fatalf("repeat decommission changed state: first=%+v second=%+v", first, second)
 	}
 }
+
+func TestCollectorConfigRejectsSecretLikeFieldsAndFencesRevisions(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemory()
+	device, err := s.CreateDevice(ctx, Device{DisplayName: "collector-host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := s.PutCollectorConfig(ctx, CollectorConfig{
+		DeviceID:    device.ID,
+		CollectorID: "docker",
+		Provider:    "docker",
+		Enabled:     true,
+		Config:      map[string]string{"socketPath": "/run/docker.sock"},
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Revision != 1 {
+		t.Fatalf("expected first collector revision, got %d", config.Revision)
+	}
+	if _, err := s.PutCollectorConfig(ctx, CollectorConfig{
+		DeviceID:    device.ID,
+		CollectorID: "docker",
+		Provider:    "docker",
+		Config:      map[string]string{"apiToken": "must-not-be-stored"},
+	}, config.Revision); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("secret-like collector config was accepted: %v", err)
+	}
+	if _, err := s.PutCollectorConfig(ctx, CollectorConfig{
+		DeviceID:    device.ID,
+		CollectorID: "docker",
+		Provider:    "docker",
+		Config:      map[string]string{"socketPath": "/run/docker.sock"},
+	}, config.Revision+1); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale collector revision was accepted: %v", err)
+	}
+}

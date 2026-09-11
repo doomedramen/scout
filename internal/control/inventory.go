@@ -20,12 +20,16 @@ func (a *App) listDevices(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireOwner(w, r, false); !ok {
 		return
 	}
+	limit, err := queryLimit(r)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
 	items, err := a.Store.ListDevices(r.Context(), store.DeviceFilter{Query: r.URL.Query().Get("query"), Health: r.URL.Query().Get("health"), MonitoringState: r.URL.Query().Get("monitoringState"), SiteID: r.URL.Query().Get("siteId")})
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
-	limit := queryLimit(r)
 	if len(items) > limit {
 		items = items[:limit]
 	}
@@ -48,7 +52,12 @@ func (a *App) getMetrics(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireOwner(w, r, false); !ok {
 		return
 	}
-	query := store.MetricQuery{DeviceID: r.PathValue("deviceId"), Metric: r.URL.Query().Get("metric"), EntityID: r.URL.Query().Get("entityId"), MaxPoints: queryInt(r, "maxPoints", 600)}
+	maxPoints, queryErr := queryInt(r, "maxPoints", 600)
+	if queryErr != nil {
+		writeMappedError(w, r, queryErr)
+		return
+	}
+	query := store.MetricQuery{DeviceID: r.PathValue("deviceId"), Metric: r.URL.Query().Get("metric"), EntityID: r.URL.Query().Get("entityId"), MaxPoints: maxPoints}
 	var err error
 	if raw := r.URL.Query().Get("from"); raw != "" {
 		query.From, err = time.Parse(time.RFC3339, raw)
@@ -115,21 +124,21 @@ func (a *App) getObservation(w http.ResponseWriter, r *http.Request) {
 	writeMappedError(w, r, store.ErrNotFound)
 }
 
-func queryLimit(r *http.Request) int { return queryInt(r, "limit", 100) }
-func queryInt(r *http.Request, name string, defaultValue int) int {
+func queryLimit(r *http.Request) (int, error) { return queryInt(r, "limit", 100) }
+func queryInt(r *http.Request, name string, defaultValue int) (int, error) {
 	raw := r.URL.Query().Get(name)
 	if raw == "" {
-		return defaultValue
+		return defaultValue, nil
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 {
-		return 0
+		return 0, store.ErrInvalid
 	}
 	if name == "limit" && value > 500 {
-		return 500
+		return 500, nil
 	}
 	if name == "maxPoints" && value > 600 {
-		return value
+		return 0, store.ErrInvalid
 	}
-	return value
+	return value, nil
 }

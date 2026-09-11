@@ -1,6 +1,11 @@
 # Service-aware collectors
 
-Scout agents understand host services as well as host resources. The framework supports additional hypervisors, container runtimes, storage systems, and other services through independent adapters. Docker and Proxmox VE are examples of initial integration targets, not an exhaustive list. These collectors are planned; the current agent only emits a local host identity and interface snapshot.
+Scout agents understand host services as well as host resources. The framework
+supports additional hypervisors, container runtimes, storage systems, and other
+services through independent adapters. Docker and Proxmox VE are reference
+adapters, not an exhaustive list. The host collector remains independent from
+these adapters, and the control UI exposes collector descriptors, health, and
+service entities.
 
 ## Extension model
 
@@ -30,11 +35,16 @@ Coordinate cluster-level collection through one assigned collector with failover
 
 Remote enrollment secrets remain in the enrollment service. A service collector may require its own narrow API credential; treat this as a separate credential class, scoped to the collector, endpoint, and operations. Prefer local provisioning or short-lived, revocable delivery over sharing a fleet-wide secret. Protect any necessary local credential file with restrictive ownership and permissions and exclude it from diagnostics.
 
-## Acceptance criteria
+## Current verification boundary
 
-- A host without Docker or Proxmox continues normal monitoring.
-- An inaccessible service appears as needing access, not as healthy with zero metrics.
-- API failures, timeouts, malformed payloads, and version differences do not stop other collectors.
-- Container environment values and service credentials never appear in metrics, errors, or audit events.
-- Duplicate platform and agent observations reconcile to the same guest when identity evidence supports it.
-- Removing collector access takes effect without reinstalling the agent.
+- Fixture coverage verifies that a host without Docker or Proxmox continues
+  normal monitoring; inaccessible, malformed, slow, and over-limit adapters
+  become degraded without blocking other collectors.
+- Docker and Proxmox adapter fixtures verify bounded, typed, redacted entity
+  translation and TLS/permission boundaries. A live provider version and ACL
+  claim requires the owner-authorized lab recorded in docs/support-matrix.md.
+- The lease and service-association fixtures verify epoch fencing, exact
+  site-local address association, and an unassociated outcome when evidence is
+  ambiguous.
+- Removing collector access is represented by configuration and health state;
+  live agent provisioning remains an acceptance gap.

@@ -15,6 +15,11 @@ func (s *Store) PutCollectorConfig(ctx context.Context, config CollectorConfig, 
 	if config.DeviceID == "" || config.CollectorID == "" || config.Provider == "" || len(config.Config) > 64 {
 		return CollectorConfig{}, ErrInvalid
 	}
+	for key, value := range config.Config {
+		if len(key) > 64 || len(value) > 256 || sensitiveCollectorConfigKey(key) {
+			return CollectorConfig{}, ErrInvalid
+		}
+	}
 	var result CollectorConfig
 	err := s.mutate(ctx, func(state *State) error {
 		if _, ok := state.Devices[config.DeviceID]; !ok {
@@ -35,6 +40,12 @@ func (s *Store) PutCollectorConfig(ctx context.Context, config CollectorConfig, 
 		return nil
 	})
 	return result, err
+}
+
+func sensitiveCollectorConfigKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	return key == "key" || strings.Contains(key, "password") || strings.Contains(key, "secret") ||
+		strings.Contains(key, "token") || strings.Contains(key, "private") || strings.Contains(key, "credential")
 }
 
 func (s *Store) GetCollectorConfig(ctx context.Context, deviceID, collectorID string) (CollectorConfig, error) {

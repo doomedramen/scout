@@ -25,7 +25,11 @@ func Download(ctx context.Context, client *http.Client, endpoint, destination, d
 	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
 		return store.ErrInvalid
 	}
-	if bytes < 1 || bytes > MaxArtifactBytes || !strings.HasPrefix(digest, "sha256:") {
+	digestHex := strings.TrimPrefix(digest, "sha256:")
+	if bytes < 1 || bytes > MaxArtifactBytes || !strings.HasPrefix(digest, "sha256:") || len(digestHex) != sha256.Size*2 {
+		return store.ErrInvalid
+	}
+	if _, err := hex.DecodeString(digestHex); err != nil {
 		return store.ErrInvalid
 	}
 	if destination == "" || filepath.Base(destination) == "." || filepath.Base(destination) == string(filepath.Separator) {

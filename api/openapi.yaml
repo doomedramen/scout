@@ -220,7 +220,7 @@ paths:
   /worker/v1/claim:
     post: { tags: [agents], responses: { '200': { description: Target-scoped job claim } } }
   /releases/import:
-    post: { tags: [releases], requestBody: { required: true, content: { multipart/form-data: { schema: { type: object } } } }, responses: { '201': { description: Verified release } } }
+    post: { tags: [releases], requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/release-bundle.json' } } } }, responses: { '201': { description: Verified release } } }
   /releases:
     get: { tags: [releases], responses: { '200': { description: Immutable release metadata } } }
   /rollouts:

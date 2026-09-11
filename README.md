@@ -59,7 +59,14 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o apps/agent/dist/scout-agent-li
 
 Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The Compose file currently runs PostgreSQL only; full server packaging is pending.
 
-This is a local development scaffold. Owner authentication, stored inventory, ingestion, remote enrollment, service adapters, and signed updates are not implemented. Do not expose the development API publicly or provide SSH credentials to it.
+This repository now contains the runnable implementation slices described by
+the handoff. Fixture and local integration coverage exists for owner
+authentication, durable telemetry, signed updates, scoped discovery/enrollment
+boundaries, service adapters, and decommissioning. Native systemd, live
+second-vantage enrollment, live Docker/Proxmox compatibility, 24-hour capacity,
+and power-loss VM acceptance remain explicitly unverified. Do not expose the
+development API publicly, use production credentials, or point an enroller at
+real devices without an owner-authorized lab.
 
 ## First usable milestone
 
@@ -79,4 +86,9 @@ The Linux-first MVP is the selected direction. It includes server-delivered agen
 
 ## Status
 
-Runnable monorepo foundation with a reference-guided UI preview, shadcn charts, a development health API that checks PostgreSQL, and a local host collector. The product roadmap describes the remaining work; this scaffold is not the completed Linux MVP.
+Runnable Linux-first monitoring platform implementation with a single-owner
+control API, authenticated agent telemetry, bounded automatic enrollment
+boundaries, signed offline-capable update handling, extensible collector
+adapters, recovery controls, and a shadcn-based UI. The remaining acceptance
+gaps are tracked in [implementation evidence](specs/001-scout-platform/evidence.md)
+and are not silently treated as production compatibility claims.

@@ -4,6 +4,9 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,7 +16,7 @@ func TestAdapterTranslatesTypedResources(t *testing.T) {
 		if request.Header.Get("Authorization") != "PVEAPIToken=token" {
 			t.Fatal("Proxmox token header missing")
 		}
-		body := `{"data":[{"vmid":101,"type":"qemu","node":"pve1","name":"router","status":"running"}]}`
+		body := string(readFixture("proxmox-resources.json"))
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}}
 	result, err := adapter.Collect(context.Background())
@@ -23,6 +26,18 @@ func TestAdapterTranslatesTypedResources(t *testing.T) {
 	if result.Entities[0].Name != "router" || result.Entities[0].Labels["cluster"] != "cluster-a" {
 		t.Fatalf("resource translation: %+v", result.Entities[0])
 	}
+}
+
+func readFixture(name string) []byte {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("test fixture path unavailable")
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../tests/fixtures/collectors", name))
+	if err != nil {
+		panic(err)
+	}
+	return data
 }
 
 func TestNewRequiresHTTPSAndScopedCredentials(t *testing.T) {

@@ -45,17 +45,21 @@ func LoadServerTLS(settings TLSSettings) (*tls.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load server certificate: %w", err)
 	}
-	pool := x509.NewCertPool()
-	ca, err := os.ReadFile(settings.ClientCAFile)
-	if err != nil {
-		return nil, fmt.Errorf("read client CA: %w", err)
-	}
-	if !pool.AppendCertsFromPEM(ca) {
-		return nil, fmt.Errorf("client CA contains no certificates")
-	}
-	clientAuth := tls.RequireAndVerifyClientCert
-	if !settings.RequireClient && !settings.Production {
-		clientAuth = tls.VerifyClientCertIfGiven
+	var pool *x509.CertPool
+	clientAuth := tls.NoClientCert
+	if settings.RequireClient || settings.Production || settings.ClientCAFile != "" {
+		pool = x509.NewCertPool()
+		ca, readErr := os.ReadFile(settings.ClientCAFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("read client CA: %w", readErr)
+		}
+		if !pool.AppendCertsFromPEM(ca) {
+			return nil, fmt.Errorf("client CA contains no certificates")
+		}
+		clientAuth = tls.RequireAndVerifyClientCert
+		if !settings.RequireClient && !settings.Production {
+			clientAuth = tls.VerifyClientCertIfGiven
+		}
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}, ClientAuth: clientAuth, ClientCAs: pool, CurvePreferences: []tls.CurveID{tls.X25519, tls.CurveP256}}, nil
 }

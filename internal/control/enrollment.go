@@ -260,7 +260,7 @@ func (a *App) workerJob(w http.ResponseWriter, r *http.Request) (store.WorkerIde
 		return store.WorkerIdentity{}, store.Job{}, false
 	}
 	job, err := a.Store.Job(r.Context(), r.PathValue("jobId"))
-	if err != nil || job.LeaseOwner != worker.ID {
+	if err != nil || job.LeaseOwner != worker.ID || job.Kind != "enrollment" || job.LeaseExpiry == nil || !a.Store.Now().Before(*job.LeaseExpiry) {
 		if err == nil {
 			err = store.ErrConflict
 		}

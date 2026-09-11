@@ -78,7 +78,9 @@ func (s *Service) ReconcileSightings(ctx context.Context, scopeID string, sighti
 		if deviceErr != nil {
 			return nil, deviceErr
 		}
-		_, _ = (&enrollment.Access{Policy: s.Policy, Store: s.Store}).Evaluate(ctx, scope.ID, address.String(), "tcp", port, deviceID)
+		if _, evaluateErr := (&enrollment.Access{Policy: s.Policy, Store: s.Store}).Evaluate(ctx, scope.ID, address.String(), "tcp", port, deviceID); evaluateErr != nil {
+			return nil, evaluateErr
+		}
 	}
 	return result, nil
 }

@@ -1,8 +1,14 @@
-export type APIErrorBody = { code: string; message: string; requestId: string; retryable: boolean };
+export type APIErrorBody = {
+  code: string;
+  message: string;
+  requestId: string;
+  retryable: boolean;
+};
 
 export class APIError extends Error {
   readonly status: number;
   readonly details: APIErrorBody | null;
+
   constructor(status: number, details: APIErrorBody | null, message = "Request failed") {
     super(message);
     this.name = "APIError";
@@ -11,10 +17,50 @@ export class APIError extends Error {
   }
 }
 
-export type Status = { mode: string; database: string; enrollmentAvailable: boolean; recoveryMode?: boolean; telemetry?: { samples: number; droppedSamples: number; maxSamples: number; backpressure: boolean; retentionHours: number } };
-export type Metric = { value: number | null; availability: string; unit: string; observedAt: string; min?: number | null; max?: number | null };
-export type MetricSeries = { metric: string; unit: string; points: Metric[] };
-export type CollectorState = { id: string; provider: string; state: string; diagnostic?: string; lastSuccess?: string };
+export type Status = {
+  mode: string;
+  database: string;
+  enrollmentAvailable: boolean;
+  recoveryMode?: boolean;
+  telemetry?: {
+    samples: number;
+    droppedSamples: number;
+    maxSamples: number;
+    backpressure: boolean;
+    retentionHours: number;
+  };
+};
+
+export type Metric = {
+  value: number | null;
+  availability: string;
+  unit: string;
+  observedAt: string;
+  min?: number | null;
+  max?: number | null;
+};
+
+export type MetricSeries = {
+  metric: string;
+  unit: string;
+  points: Metric[];
+};
+
+export type CollectorState = {
+  id: string;
+  provider: string;
+  state: string;
+  diagnostic?: string;
+  lastSuccess?: string;
+};
+
+export type DeviceMetric = {
+  value: number | null;
+  unit: string;
+  availability: string;
+  observedAt: string;
+};
+
 export type Device = {
   id: string;
   displayName: string;
@@ -28,26 +74,244 @@ export type Device = {
   lastHeartbeat?: string;
   availability: "connecting" | "online" | "offline" | "revoked";
   metricFreshness: Record<string, string>;
-  currentMetrics?: Record<string, { value: number | null; unit: string; availability: string; observedAt: string }>;
+  currentMetrics?: Record<string, DeviceMetric>;
   collectorStates: CollectorState[];
   excluded?: boolean;
   revision: number;
 };
-export type ListResponse<T> = { items: T[]; nextCursor: string | null };
-export type Site = { id: string; name: string; addressContext: string; createdAt: string };
-export type Scope = { id: string; siteId: string; ranges: string[]; exclusions: string[]; allowedMethods: string[]; ports: number[]; enabled: boolean; revision: number; credentialRef?: string; trustRef?: string; limits?: { probesPerSecond: number; concurrency: number; targetBudget: number } };
-export type Invitation = { deviceId: string; invitation: string; expiresAt: string; instructions: string };
-export type AccessRequest = { id: string; deviceId: string; scopeId?: string; reasonCode: string; safeDetails: Record<string, string>; state: string; lastAttempt: string };
-export type Credential = { id: string; kind: string; endpoint?: string; allowedUse: string[]; targets: string[]; metadata: Record<string, string>; revision: number; revokedAt?: string };
-export type TrustRecord = { id: string; scopeId?: string; endpoint: string; host: string; fingerprint: string; publicKey?: string; revision: number; revokedAt?: string };
-export type Candidate = { id: string; siteId: string; scopeId: string; address: string; hostname?: string; source: string; state: string; scopeRevision: number; firstSeen: string; lastSeen: string; expiresAt: string; excluded: boolean };
-export type Job = { id: string; kind: string; deviceId: string; scopeId?: string; scopeRevision: number; state: string; leaseOwner?: string; epoch: number; attempts: number; destination?: string; result?: Record<string, string> };
-export type Worker = { id: string; name: string; kind: string; siteIds: string[]; createdAt: string; revokedAt?: string };
-export type Rollout = { id: string; releaseId: string; mode: string; targets: string[]; concurrency: number; canaries: number; failureThreshold: number; paused: boolean; revision: number; failureCount: number; createdAt: string };
-export type Assignment = { id: string; rolloutId?: string; deviceId: string; desiredRelease: string; generation: number; expiresAt: string; state: string };
-export type CollectorConfig = { deviceId: string; collectorId: string; provider: string; enabled: boolean; config?: Record<string, string>; credentialRef?: string; revision: number; health: string; diagnostic?: string; lastSuccess?: string };
-export type ServiceEntity = { id: string; provider: string; clusterId?: string; deviceId?: string; kind: string; name: string; status: string; labels?: Record<string, string>; observedAt: string; expiresAt: string };
-export type DeviceUpdatePolicy = { deviceId: string; mode: string; releaseId?: string; version?: string; expectedRevision: number; revision: number; windowStart?: string; windowEnd?: string; updatedAt: string };
+
+export type ListResponse<T> = {
+  items: T[];
+  nextCursor: string | null;
+};
+
+export type Site = {
+  id: string;
+  name: string;
+  addressContext: string;
+  createdAt: string;
+};
+
+export type Scope = {
+  id: string;
+  siteId: string;
+  ranges: string[];
+  exclusions: string[];
+  allowedMethods: string[];
+  ports: number[];
+  enabled: boolean;
+  revision: number;
+  credentialRef?: string;
+  trustRef?: string;
+  limits?: {
+    probesPerSecond: number;
+    concurrency: number;
+    targetBudget: number;
+  };
+};
+
+export type Invitation = {
+  deviceId: string;
+  invitation: string;
+  expiresAt: string;
+  instructions: string;
+};
+
+export type AccessRequest = {
+  id: string;
+  deviceId: string;
+  scopeId?: string;
+  reasonCode: string;
+  safeDetails: Record<string, string>;
+  state: string;
+  lastAttempt: string;
+};
+
+export type Credential = {
+  id: string;
+  kind: string;
+  endpoint?: string;
+  allowedUse: string[];
+  targets: string[];
+  metadata: Record<string, string>;
+  revision: number;
+  revokedAt?: string;
+};
+
+export type TrustRecord = {
+  id: string;
+  scopeId?: string;
+  endpoint: string;
+  host: string;
+  fingerprint: string;
+  publicKey?: string;
+  revision: number;
+  revokedAt?: string;
+};
+
+export type Candidate = {
+  id: string;
+  siteId: string;
+  scopeId: string;
+  address: string;
+  hostname?: string;
+  source: string;
+  state: string;
+  scopeRevision: number;
+  firstSeen: string;
+  lastSeen: string;
+  expiresAt: string;
+  excluded: boolean;
+};
+
+export type Job = {
+  id: string;
+  kind: string;
+  deviceId: string;
+  scopeId?: string;
+  scopeRevision: number;
+  state: string;
+  leaseOwner?: string;
+  epoch: number;
+  attempts: number;
+  destination?: string;
+  result?: Record<string, string>;
+};
+
+export type Worker = {
+  id: string;
+  name: string;
+  kind: string;
+  siteIds: string[];
+  createdAt: string;
+  revokedAt?: string;
+};
+
+export type Rollout = {
+  id: string;
+  releaseId: string;
+  mode: string;
+  targets: string[];
+  concurrency: number;
+  canaries: number;
+  failureThreshold: number;
+  paused: boolean;
+  revision: number;
+  failureCount: number;
+  createdAt: string;
+};
+
+export type Assignment = {
+  id: string;
+  rolloutId?: string;
+  deviceId: string;
+  desiredRelease: string;
+  generation: number;
+  expiresAt: string;
+  state: string;
+};
+
+export type Release = {
+  id: string;
+  manifestHash: string;
+  version: string;
+  generation: number;
+  platform: string;
+  architecture: string;
+  digest: string;
+  bytes: number;
+  trustKeyId: string;
+  manifest?: Record<string, unknown>;
+  revokedAt?: string;
+};
+
+export type CollectorDescriptor = {
+  id: string;
+  provider: string;
+  version: string;
+  requiredPermissions: string[];
+  configSchema: Record<string, string>;
+  entityLimit: number;
+  interval: number | string;
+  deadline: number | string;
+};
+
+export type CollectorConfig = {
+  deviceId: string;
+  collectorId: string;
+  provider: string;
+  enabled: boolean;
+  config?: Record<string, string>;
+  credentialRef?: string;
+  revision: number;
+  health: string;
+  diagnostic?: string;
+  lastSuccess?: string;
+};
+
+export type ServiceEntity = {
+  id: string;
+  provider: string;
+  clusterId?: string;
+  deviceId?: string;
+  kind: string;
+  name: string;
+  status: string;
+  labels?: Record<string, string>;
+  observedAt: string;
+  expiresAt: string;
+};
+
+export type DeviceUpdatePolicy = {
+  deviceId: string;
+  mode: string;
+  releaseId?: string;
+  version?: string;
+  expectedRevision: number;
+  revision: number;
+  windowStart?: string;
+  windowEnd?: string;
+  updatedAt: string;
+};
+
+export type TopologyNode = {
+  id: string;
+  label?: string;
+  addresses?: string[];
+  availability?: string;
+  lifecycle?: string;
+};
+
+export type Relationship = {
+  id: string;
+  fromEntity: string;
+  toEntity: string;
+  type: string;
+  confidence: number;
+  projectionRevision: number;
+  evidenceIds: string[];
+  observedAt: string;
+  expiresAt: string;
+  source: string;
+};
+
+export type Topology = {
+  nodes: TopologyNode[];
+  relationships: Relationship[];
+  nextCursor: string | null;
+};
+
+export type DecommissionResult = {
+  device: Device;
+  identityRevoked: boolean;
+  excluded: boolean;
+  uninstall: "not_requested" | { state: string; jobId: string; confirmed: boolean };
+};
+
+export type RolloutResult = {
+  rollout: Rollout;
+  assignments: Assignment[];
+};
 
 let csrfToken = "";
 
@@ -60,12 +324,25 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) headers.set("X-CSRF-Token", csrfToken || csrfFromCookie());
-  const response = await fetch(`/api/v1${path}`, { ...init, method, headers, credentials: "same-origin" });
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    headers.set("X-CSRF-Token", csrfToken || csrfFromCookie());
+  }
+  const response = await fetch(`/api/v1${path}`, {
+    ...init,
+    method,
+    headers,
+    credentials: "same-origin",
+  });
   if (!response.ok) {
     let details: APIErrorBody | null = null;
-    try { details = (await response.json()).error ?? null; } catch { /* empty response */ }
+    try {
+      details = (await response.json()).error ?? null;
+    } catch {
+      // Empty or non-JSON error response.
+    }
     throw new APIError(response.status, details, details?.message ?? `Request failed (${response.status})`);
   }
   if (response.status === 204) return undefined as T;
@@ -73,52 +350,153 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 }
 
 export const api = {
-  status: () => fetch("/api/status", { credentials: "same-origin" }).then(async (response) => { if (!response.ok) throw new APIError(response.status, null); return response.json() as Promise<Status>; }),
+  status: () =>
+    fetch("/api/status", { credentials: "same-origin" }).then(async (response) => {
+      if (!response.ok) throw new APIError(response.status, null);
+      return response.json() as Promise<Status>;
+    }),
   owner: () => request<{ id: string; mfaEnabled: boolean; createdAt: string }>("/owner"),
-  setup: (setupToken: string, password: string) => request<{ id: string }>("/setup", { method: "POST", body: JSON.stringify({ setupToken, password }) }),
-  signIn: async (password: string, totpCode?: string, recoveryCode?: string) => { const result = await request<{ owner: { id: string }; csrfToken: string }>("/sessions", { method: "POST", body: JSON.stringify({ password, totpCode, recoveryCode }) }); csrfToken = result.csrfToken; return result; },
+  setup: (setupToken: string, password: string) =>
+    request<{ id: string }>("/setup", {
+      method: "POST",
+      body: JSON.stringify({ setupToken, password }),
+    }),
+  signIn: async (password: string, totpCode?: string, recoveryCode?: string) => {
+    const result = await request<{ owner: { id: string }; csrfToken: string }>("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ password, totpCode, recoveryCode }),
+    });
+    csrfToken = result.csrfToken;
+    return result;
+  },
   signOut: () => request<void>("/sessions/current", { method: "DELETE" }),
-  beginMFA: (password: string) => request<{ secret: string; otpauth: string }>("/owner/mfa/setup", { method: "POST", body: JSON.stringify({ password }) }),
-  confirmMFA: (totpCode: string) => request<{ recoveryCodes: string[] }>("/owner/mfa/confirm", { method: "POST", body: JSON.stringify({ totpCode }) }),
+  beginMFA: (password: string) =>
+    request<{ secret: string; otpauth: string }>("/owner/mfa/setup", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+  confirmMFA: (totpCode: string) =>
+    request<{ recoveryCodes: string[] }>("/owner/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ totpCode }),
+    }),
   devices: (query = "") => request<ListResponse<Device>>(`/devices${query}`),
   device: (id: string) => request<Device>(`/devices/${encodeURIComponent(id)}`),
-  metrics: (id: string, query = "") => request<{ series: MetricSeries[] }>(`/devices/${encodeURIComponent(id)}/metrics${query}`),
+  metrics: (id: string, query = "") =>
+    request<{ series: MetricSeries[] }>(`/devices/${encodeURIComponent(id)}/metrics${query}`),
   sites: () => request<ListResponse<Site>>("/sites"),
   createSite: (name: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ name }) }),
   scopes: () => request<ListResponse<Scope>>("/scopes"),
-  createScope: (value: { siteId: string; ranges: string[]; exclusions: string[]; methods: string[]; ports: number[]; credentialRef?: string; trustRef?: string; limits?: { probesPerSecond: number; concurrency: number; targetBudget: number }; enabled: boolean }) => request<Scope>("/scopes", { method: "POST", body: JSON.stringify(value) }),
-  updateScope: (id: string, value: { expectedRevision: number; ranges: string[]; exclusions: string[]; methods: string[]; ports: number[]; credentialRef?: string; trustRef?: string; limits?: { probesPerSecond: number; concurrency: number; targetBudget: number }; enabled: boolean }) => request<Scope>(`/scopes/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
-  invitation: (displayName: string, siteId: string) => request<Invitation>("/bootstrap-invitations", { method: "POST", body: JSON.stringify({ displayName, siteId }) }),
-  topology: (siteId = "") => request<{ nodes: Array<Record<string, unknown>>; relationships: Array<Record<string, unknown>> }>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
-  recoveryStatus: () => request<{ workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean }; telemetry: Record<string, unknown> }>("/recovery/status"),
+  createScope: (value: {
+    siteId: string;
+    ranges: string[];
+    exclusions: string[];
+    methods: string[];
+    ports: number[];
+    credentialRef?: string;
+    trustRef?: string;
+    limits?: { probesPerSecond: number; concurrency: number; targetBudget: number };
+    enabled: boolean;
+  }) => request<Scope>("/scopes", { method: "POST", body: JSON.stringify(value) }),
+  updateScope: (
+    id: string,
+    value: {
+      expectedRevision: number;
+      ranges: string[];
+      exclusions: string[];
+      methods: string[];
+      ports: number[];
+      credentialRef?: string;
+      trustRef?: string;
+      limits?: { probesPerSecond: number; concurrency: number; targetBudget: number };
+      enabled: boolean;
+    },
+  ) => request<Scope>(`/scopes/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  invitation: (displayName: string, siteId: string) =>
+    request<Invitation>("/bootstrap-invitations", {
+      method: "POST",
+      body: JSON.stringify({ displayName, siteId }),
+    }),
+  topology: (siteId = "") =>
+    request<Topology>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
+  recoveryStatus: () =>
+    request<{ workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean }; telemetry: Record<string, unknown> }>(
+      "/recovery/status",
+    ),
   reconcileRecovery: () => request("/recovery/reconcile", { method: "POST", body: JSON.stringify({}) }),
   telemetrySettings: () => request<Record<string, unknown>>("/settings/telemetry"),
-  accessRequests: (state = "") => request<ListResponse<AccessRequest>>(`/access-requests${state ? `?state=${encodeURIComponent(state)}` : ""}`),
+  accessRequests: (state = "") =>
+    request<ListResponse<AccessRequest>>(`/access-requests${state ? `?state=${encodeURIComponent(state)}` : ""}`),
   credentials: () => request<ListResponse<Credential>>("/credentials"),
-  createCredential: (value: { kind: string; secret: string; allowedUse: string[]; targets: string[]; endpoint?: string }) => request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
-  rotateCredential: (id: string, value: { secret: string; expectedRevision: number }) => request<Credential>(`/credentials/${encodeURIComponent(id)}/rotate`, { method: "POST", body: JSON.stringify(value) }),
+  createCredential: (value: { kind: string; secret: string; allowedUse: string[]; targets: string[]; endpoint?: string }) =>
+    request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
+  rotateCredential: (id: string, value: { secret: string; expectedRevision: number }) =>
+    request<Credential>(`/credentials/${encodeURIComponent(id)}/rotate`, { method: "POST", body: JSON.stringify(value) }),
   revokeCredential: (id: string) => request<void>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }),
   trust: () => request<ListResponse<TrustRecord>>("/trust"),
-  createTrust: (value: { scopeId?: string; host: string; endpoint: string; fingerprint: string; publicKey?: string }) => request<TrustRecord>("/trust", { method: "POST", body: JSON.stringify(value) }),
-  updateTrust: (id: string, value: Partial<TrustRecord> & { expectedRevision: number }) => request<TrustRecord>(`/trust/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  createTrust: (value: { scopeId?: string; host: string; endpoint: string; fingerprint: string; publicKey?: string }) =>
+    request<TrustRecord>("/trust", { method: "POST", body: JSON.stringify(value) }),
+  updateTrust: (id: string, value: Partial<TrustRecord> & { expectedRevision: number }) =>
+    request<TrustRecord>(`/trust/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
   jobs: (query = "") => request<ListResponse<Job>>(`/jobs${query}`),
   candidates: (query = "") => request<ListResponse<Candidate>>(`/candidates${query}`),
-  discover: (scopeId: string, value: { source?: string; targetBudget?: number; probesPerSecond?: number; concurrency?: number; sightings?: Array<{ address: string; source: string; port?: number; reachable: boolean }> }) => request<{ items: Candidate[] }>(`/scopes/${encodeURIComponent(scopeId)}/discover`, { method: "POST", body: JSON.stringify(value) }),
-  enqueueCandidate: (id: string) => request<{ eligible: boolean; reason?: string; job?: Job; request?: AccessRequest }>(`/candidates/${encodeURIComponent(id)}/enroll`, { method: "POST", body: JSON.stringify({}) }),
+  discover: (
+    scopeId: string,
+    value: {
+      source?: string;
+      targetBudget?: number;
+      probesPerSecond?: number;
+      concurrency?: number;
+      sightings?: Array<{ address: string; source: string; port?: number; reachable: boolean }>;
+    },
+  ) => request<{ items: Candidate[] }>(`/scopes/${encodeURIComponent(scopeId)}/discover`, { method: "POST", body: JSON.stringify(value) }),
+  enqueueCandidate: (id: string) =>
+    request<{ eligible: boolean; reason?: string; job?: Job; request?: AccessRequest }>(`/candidates/${encodeURIComponent(id)}/enroll`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
   workers: () => request<ListResponse<Worker>>("/workers"),
-  createWorker: (value: { name: string; siteIds: string[] }) => request<Worker & { token: string }>("/workers", { method: "POST", body: JSON.stringify(value) }),
-  pause: (value: { discovery: boolean; enrollment: boolean; updates: boolean }) => request<Record<string, unknown>>("/control/pause", { method: "POST", body: JSON.stringify(value) }),
+  createWorker: (value: { name: string; siteIds: string[] }) =>
+    request<Worker & { token: string }>("/workers", { method: "POST", body: JSON.stringify(value) }),
+  pause: (value: { discovery: boolean; enrollment: boolean; updates: boolean }) =>
+    request<Record<string, unknown>>("/control/pause", { method: "POST", body: JSON.stringify(value) }),
   controlState: () => request<Record<string, unknown>>("/control/state"),
-  decommission: (id: string, value: { uninstall: boolean; reason: string }) => request(`/devices/${encodeURIComponent(id)}/decommission`, { method: "POST", body: JSON.stringify(value) }),
-  reenable: (id: string, expectedRevision: number) => request<Device>(`/devices/${encodeURIComponent(id)}/reenable`, { method: "POST", body: JSON.stringify({ expectedRevision }) }),
+  decommission: (id: string, value: { uninstall: boolean; reason: string }) =>
+    request<DecommissionResult>(`/devices/${encodeURIComponent(id)}/decommission`, { method: "POST", body: JSON.stringify(value) }),
+  reenable: (id: string, expectedRevision: number) =>
+    request<Device>(`/devices/${encodeURIComponent(id)}/reenable`, { method: "POST", body: JSON.stringify({ expectedRevision }) }),
   updatePolicy: (id: string) => request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`),
-  setUpdatePolicy: (id: string, value: Omit<DeviceUpdatePolicy, "deviceId" | "revision" | "updatedAt">) => request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`, { method: "PATCH", body: JSON.stringify(value) }),
-  releases: () => request<ListResponse<Record<string, unknown>>>("/releases"),
-  importRelease: (bundle: string) => request<Record<string, unknown>>("/releases/import", { method: "POST", body: bundle }),
+  setUpdatePolicy: (id: string, value: Omit<DeviceUpdatePolicy, "deviceId" | "revision" | "updatedAt">) =>
+    request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`, { method: "PATCH", body: JSON.stringify(value) }),
+  releases: () => request<ListResponse<Release>>("/releases"),
+  importRelease: (bundle: string) =>
+    request<Release>("/releases/import", {
+      method: "POST",
+      body: bundle,
+      headers: { "Content-Type": "application/json" },
+    }),
+  revokeRelease: (id: string) => request<void>(`/releases/${encodeURIComponent(id)}`, { method: "DELETE" }),
   rollouts: () => request<{ items: Rollout[]; assignments: Assignment[] }>("/rollouts"),
-  createRollout: (value: { releaseId: string; mode: string; targets: string[]; concurrency: number; canaries: number; failureThreshold: number }) => request("/rollouts", { method: "POST", body: JSON.stringify(value) }),
-  pauseRollout: (id: string) => request(`/rollouts/${encodeURIComponent(id)}/pause`, { method: "POST", body: JSON.stringify({}) }),
-  services: (provider = "") => request<ListResponse<ServiceEntity>>(`/services${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
+  createRollout: (value: {
+    releaseId: string;
+    mode: string;
+    targets: string[];
+    concurrency: number;
+    canaries: number;
+    failureThreshold: number;
+  }) => request<RolloutResult>("/rollouts", { method: "POST", body: JSON.stringify(value) }),
+  pauseRollout: (id: string) => request<Rollout>(`/rollouts/${encodeURIComponent(id)}/pause`, { method: "POST", body: JSON.stringify({}) }),
+  collectorDescriptors: () => request<ListResponse<CollectorDescriptor>>("/collectors"),
+  services: (provider = "") =>
+    request<ListResponse<ServiceEntity>>(`/services${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
   collectors: (deviceId: string) => request<ListResponse<CollectorConfig>>(`/devices/${encodeURIComponent(deviceId)}/collectors`),
-  updateCollector: (deviceId: string, collectorId: string, value: { provider: string; enabled: boolean; config: Record<string, string>; credentialRef?: string; expectedRevision?: number }) => request<CollectorConfig>(`/devices/${encodeURIComponent(deviceId)}/collectors/${encodeURIComponent(collectorId)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  updateCollector: (
+    deviceId: string,
+    collectorId: string,
+    value: { provider: string; enabled: boolean; config: Record<string, string>; credentialRef?: string; expectedRevision?: number },
+  ) =>
+    request<CollectorConfig>(`/devices/${encodeURIComponent(deviceId)}/collectors/${encodeURIComponent(collectorId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(value),
+    }),
 };

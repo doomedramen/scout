@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "vmid": 101,
+      "type": "qemu",
+      "node": "pve-fixture",
+      "name": "router",
+      "status": "running",
+      "pool": "monitoring"
+    }
+  ]
+}

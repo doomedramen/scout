@@ -1,6 +1,10 @@
 # Security model
 
-This is a design baseline, not a claim that security controls have been implemented or verified.
+The implementation includes the owner, agent, worker, secret, transport,
+update, and decommissioning boundaries described below. Fixture and local
+integration tests exercise the negative cases; native Linux, live provider,
+and production deployment acceptance remains open where noted in
+[implementation evidence](../specs/001-scout-platform/evidence.md).
 
 ## Assets and trust boundaries
 
@@ -67,4 +71,7 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 | Database backup is stolen                         | Secret values remain encrypted; key material is absent          |
 | Agent goes offline or submits stale data          | UI shows staleness; no false healthy status                     |
 
-Before remote enrollment ships, review the actual implementation against these cases and document residual risks and recovery procedures.
+Before enabling remote enrollment or updates against production devices, run
+the remaining disposable Linux, provider, VM, and capacity labs. The current
+implementation deliberately leaves those acceptance claims open and keeps
+live lab scripts opt-in.
