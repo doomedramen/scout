@@ -410,3 +410,32 @@ For future results append: task and requirement IDs, commit, date, exact command
   browser coverage. The worker is library-level at this task boundary; live
   notification acceptance remains intentionally limited to disposable local
   receivers.
+
+## T015 — quiet windows and suppression release
+
+- Requirements: FR-006, FR-011, FR-012; SC-004.
+- Date: 2026-09-11 (Europe/London); implementation commit: `700dabb`.
+- Added memory and PostgreSQL CRUD for bounded recurring and one-time
+  suppression windows with revision checks, fleet/site/device targeting,
+  IANA timezone validation, end-exclusive local-time matching, overnight
+  semantics, unioned reasons, and restart-persistent suppression episodes.
+  Repeated fall-back wall times match both UTC occurrences while skipped
+  spring-forward wall times match none. Dependent service/state incidents are
+  suppressed while their host is offline, while the host-offline incident and
+  numeric incidents remain eligible. Suppressed transitions are persisted
+  transactionally with incident state, and release closes each episode once
+  with one bounded summary for still-active incidents; resolved incidents and
+  disabled destinations produce no summary.
+- Exact verification commands and outcomes: `go test ./... -race -count=1`;
+  `scripts/test-integration.sh` against disposable PostgreSQL 17;
+  `go vet ./...`; `npm run lint`; `npm run format:check`; `npm test`;
+  `npm run check`; `npm run build`; `npm run test:e2e:browser`; and
+  `git diff --check` all passed. Positive tests cover CRUD, pagination,
+  target matching, unioned windows, DST fold/gap behavior, active summary
+  release, and SQL restart persistence. Negative tests cover invalid window
+  shapes, stale revisions, missing targets, end boundaries, resolved
+  suppression, and idempotent episode closure. No real receiver, production
+  credential, production database, or real device was used.
+- Remaining limits: T016 adds restore/revocation races and recovery
+  no-replay policy; T017 adds the notification settings UI and dedicated
+  browser coverage.
