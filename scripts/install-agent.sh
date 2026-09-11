@@ -4,14 +4,21 @@ set -euo pipefail
 agent_server_url=""
 agent_invitation_file=""
 agent_artifact=""
+agent_default_server_url='__SCOUT_SERVER_URL__'
+agent_server_url="${SCOUT_SERVER_URL:-$agent_default_server_url}"
 
 usage() {
     cat <<'EOF'
 Install and start a Scout Linux agent.
 
 Usage:
-  sudo scripts/install-agent.sh --server URL --invitation-file PATH
-  sudo scripts/install-agent.sh --server URL --invitation-file PATH --artifact PATH
+  scripts/install-agent.sh --server URL --invitation-file PATH
+  scripts/install-agent.sh --server URL --invitation-file PATH --artifact PATH
+
+The server-served installer also accepts SCOUT_OTI and embeds the server URL
+when downloaded from /api/v1/bootstrap/agent/install.sh. That enables the
+short form:
+  SCOUT_OTI=... bash -c "\$(curl -fsSL URL/api/v1/bootstrap/agent/install.sh)"
 
 The default path downloads the matching Linux agent from the Scout server and
 verifies its SHA-256 transfer checksum. Use --artifact with a locally built or
@@ -23,6 +30,12 @@ Options:
   --invitation-file PATH    one-time invitation file created by the owner UI
   --artifact PATH           local scout-agent binary; skips the download
   --help                    show this help
+
+Environment:
+  SCOUT_OTI                 one-time invitation; written to a protected
+                            temporary file and unset before installation
+  SCOUT_SERVER_URL          server URL when the installer was not served by
+                            Scout and --server was not supplied
 EOF
 }
 
@@ -59,15 +72,41 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$(uname -s)" == "Linux" ]] || fail "native installation requires Linux"
-[[ "$(id -u)" -eq 0 ]] || fail "run this installer with sudo or as root"
-[[ -n "$agent_server_url" ]] || fail "--server is required"
+[[ "$agent_server_url" != "$agent_default_server_url" ]] || fail "--server or SCOUT_SERVER_URL is required"
 server_url_pattern='^https?://[A-Za-z0-9:/._~+\[\]-]+$'
 [[ "$agent_server_url" =~ $server_url_pattern ]] || fail "--server must be an http(s) URL without shell metacharacters"
+
+installer_tmp_dir=$(mktemp -d)
+cleanup() {
+    rm -rf -- "$installer_tmp_dir"
+}
+trap cleanup EXIT
+
+if [[ -n "${SCOUT_OTI:-}" ]]; then
+    [[ -z "$agent_invitation_file" ]] || fail "use SCOUT_OTI or --invitation-file, not both"
+    agent_invitation_file="$installer_tmp_dir/invitation"
+    (umask 077; printf '%s\n' "$SCOUT_OTI" > "$agent_invitation_file")
+    unset SCOUT_OTI
+fi
+
 [[ -n "$agent_invitation_file" && -s "$agent_invitation_file" ]] || fail "invitation file is missing or empty"
 
 command -v install >/dev/null 2>&1 || fail "install is required"
 command -v systemctl >/dev/null 2>&1 || fail "systemd is required"
 command -v useradd >/dev/null 2>&1 || fail "useradd is required"
+
+run_privileged() {
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+        return
+    fi
+    sudo "$@"
+}
+
+if [[ "$(id -u)" -ne 0 ]]; then
+    command -v sudo >/dev/null 2>&1 || fail "sudo is required for native installation"
+    sudo -v || fail "sudo authorization failed"
+fi
 
 agent_arch=""
 case "$(uname -m)" in
@@ -75,12 +114,6 @@ case "$(uname -m)" in
     aarch64|arm64) agent_arch="arm64" ;;
     *) fail "unsupported Linux architecture: $(uname -m)" ;;
 esac
-
-installer_tmp_dir=$(mktemp -d)
-cleanup() {
-    rm -rf -- "$installer_tmp_dir"
-}
-trap cleanup EXIT
 
 if [[ -z "$agent_artifact" ]]; then
     command -v curl >/dev/null 2>&1 || fail "curl is required to download the agent from Scout"
@@ -102,19 +135,19 @@ fi
 [[ -f "$agent_artifact" && -s "$agent_artifact" ]] || fail "agent artifact is missing or empty"
 
 if ! id scout-agent >/dev/null 2>&1; then
-    useradd --system --user-group --home-dir /var/lib/scout/agent --shell /usr/sbin/nologin scout-agent
+    run_privileged useradd --system --user-group --home-dir /var/lib/scout/agent --shell /usr/sbin/nologin scout-agent
 fi
 
 agent_uid=$(id -u scout-agent)
 agent_gid=$(id -g scout-agent)
-install -d -o "$agent_uid" -g "$agent_gid" -m 0700 /var/lib/scout/agent
-install -d -o root -g root -m 0755 /usr/local/libexec
-install -o root -g root -m 0755 "$agent_artifact" /usr/local/libexec/scout-agent
-install -o "$agent_uid" -g "$agent_gid" -m 0400 "$agent_invitation_file" /var/lib/scout/agent/invitation
+run_privileged install -d -o "$agent_uid" -g "$agent_gid" -m 0700 /var/lib/scout/agent
+run_privileged install -d -o root -g root -m 0755 /usr/local/libexec
+run_privileged install -o root -g root -m 0755 "$agent_artifact" /usr/local/libexec/scout-agent
+run_privileged install -o "$agent_uid" -g "$agent_gid" -m 0400 "$agent_invitation_file" /var/lib/scout/agent/invitation
 
-install -d -o root -g root -m 0755 /etc/scout
+run_privileged install -d -o root -g root -m 0755 /etc/scout
 printf 'SCOUT_SERVER_URL=%s\n' "$agent_server_url" > "$installer_tmp_dir/agent.env"
-install -o root -g root -m 0644 "$installer_tmp_dir/agent.env" /etc/scout/agent.env
+run_privileged install -o root -g root -m 0644 "$installer_tmp_dir/agent.env" /etc/scout/agent.env
 
 printf '%s\n' \
     '[Unit]' \
@@ -144,11 +177,11 @@ printf '%s\n' \
     '[Install]' \
     'WantedBy=multi-user.target' \
     > "$installer_tmp_dir/scout-agent.service"
-install -o root -g root -m 0644 "$installer_tmp_dir/scout-agent.service" /etc/systemd/system/scout-agent.service
+run_privileged install -o root -g root -m 0644 "$installer_tmp_dir/scout-agent.service" /etc/systemd/system/scout-agent.service
 
-systemctl daemon-reload
-systemctl enable --now scout-agent.service
-systemctl is-active --quiet scout-agent.service || fail "scout-agent.service did not become active"
+run_privileged systemctl daemon-reload
+run_privileged systemctl enable --now scout-agent.service
+run_privileged systemctl is-active --quiet scout-agent.service || fail "scout-agent.service did not become active"
 
 echo "Scout agent installed and started as scout-agent.service"
 echo "The one-time invitation remains at /var/lib/scout/agent/invitation until enrollment succeeds."

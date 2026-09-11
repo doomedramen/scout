@@ -191,25 +191,30 @@ device-bound invitation that expires after five minutes, then shows a
 copyable installation recipe. The browser does not install a privileged
 service by itself.
 
-The native recipe downloads the matching AMD64 or ARM64 binary directly from
-your Scout server, verifies its SHA-256 transfer checksum, creates the
-unprivileged `scout-agent` system user, installs a hardened systemd unit, and
-starts it:
+The native recipe is a single command. Run it on the Linux host Scout should
+monitor, replacing the invitation placeholder with the one-time value shown in
+the setup panel:
 
 ```sh
-umask 077
-read -r -s SCOUT_INVITATION
-printf '%s' "$SCOUT_INVITATION" > ./scout-invitation
-unset SCOUT_INVITATION
-curl -fsSL https://scout.example.test/api/v1/bootstrap/agent/install.sh -o /tmp/scout-install-agent.sh
-chmod 700 /tmp/scout-install-agent.sh
-sudo /tmp/scout-install-agent.sh --server 'https://scout.example.test' --invitation-file ./scout-invitation
-rm -f /tmp/scout-install-agent.sh ./scout-invitation
+SCOUT_OTI='paste-the-one-time-invitation-here' bash -c "$(curl -fsSL 'https://scout.example.test/api/v1/bootstrap/agent/install.sh')"
 ```
 
-The `--server` URL must be reachable from the Linux host over HTTPS in
-production. Official server images contain both bootstrap architectures under
-`/usr/local/share/scout/agent`; source deployments can set
+The downloaded installer checks that it is running on Linux, checks `sudo` and
+the required host tools, downloads the matching AMD64 or ARM64 binary, verifies
+its SHA-256 transfer checksum, creates the unprivileged `scout-agent` system
+user, installs a hardened systemd unit, and starts it. It invokes `sudo`
+internally only for the privileged operations; do not prepend `sudo` to the
+copyable command. The server embeds its request origin into the downloaded
+installer, so the command does not need a second server URL argument.
+
+Because this compact form includes the one-time invitation in the command text,
+avoid saving it in shell history on shared hosts. The lower-level
+`scripts/install-agent.sh --server ... --invitation-file ...` form remains
+available for environments that need to handle the invitation through a file.
+
+For direct script usage, the `--server` URL must be reachable from the Linux
+host over HTTPS in production. Official server images contain both bootstrap
+architectures under `/usr/local/share/scout/agent`; source deployments can set
 `SCOUT_AGENT_BOOTSTRAP_DIR` to a directory containing
 `scout-agent-linux-amd64` and `scout-agent-linux-arm64`, or pass a locally built
 binary with `--artifact`. The one-time invitation is copied into the agent

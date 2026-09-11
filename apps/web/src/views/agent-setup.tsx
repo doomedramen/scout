@@ -47,22 +47,14 @@ export function AgentSetupView({ onClose }: { onClose: () => void }) {
 
   const nativeRecipe = useMemo(() => {
     const server = serverURL.trim().replace(/\/+$/, "") || window.location.origin;
-    const url = shellQuote(server);
+    const installerURL = shellQuote(`${server}/api/v1/bootstrap/agent/install.sh`);
+    const token = shellQuote(invitation?.invitation ?? "INVITATION_TOKEN");
     return [
       "# Run this on the Linux host Scout should monitor.",
-      "# Paste the one-time invitation when prompted; it is not placed in shell history.",
-      "umask 077",
-      "printf 'Paste the one-time Scout invitation: ' >&2",
-      "read -r -s SCOUT_INVITATION",
-      "printf '%s' \"$SCOUT_INVITATION\" > ./scout-invitation",
-      "unset SCOUT_INVITATION",
-      "",
-      `curl -fsSL ${shellQuote(`${server}/api/v1/bootstrap/agent/install.sh`)} -o /tmp/scout-install-agent.sh`,
-      "chmod 700 /tmp/scout-install-agent.sh",
-      `sudo /tmp/scout-install-agent.sh --server ${url} --invitation-file ./scout-invitation`,
-      "rm -f /tmp/scout-install-agent.sh ./scout-invitation",
+      "# The installer checks the OS and sudo access, then uses sudo only where required.",
+      `SCOUT_OTI=${token} bash -c \"$(curl -fsSL ${installerURL})\"`,
     ].join("\n");
-  }, [serverURL]);
+  }, [invitation, serverURL]);
 
   const dockerRecipe = useMemo(() => {
     const url = JSON.stringify(serverURL.trim() || window.location.origin);
@@ -202,7 +194,8 @@ export function AgentSetupView({ onClose }: { onClose: () => void }) {
             <div>
               <h3>Native Linux (recommended)</h3>
               <small>
-                Downloads the matching agent from this server, verifies its checksum, and enables scout-agent.service.
+                Checks the host, downloads the matching agent, verifies its checksum, and uses sudo internally to enable
+                scout-agent.service.
               </small>
             </div>
             <Button size="sm" variant="outline" onClick={() => copy(nativeRecipe, "native")}>

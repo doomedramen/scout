@@ -1,11 +1,13 @@
 package control
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -35,6 +37,8 @@ var supportedAgentArchitectures = map[string]struct{}{
 	"arm64": {},
 }
 
+const agentServerURLPlaceholder = "__SCOUT_SERVER_URL__"
+
 func (a *App) agentBootstrap(w http.ResponseWriter, r *http.Request) {
 	architecture := r.PathValue("architecture")
 	if _, ok := supportedAgentArchitectures[architecture]; !ok {
@@ -56,29 +60,70 @@ func (a *App) agentInstaller(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "not_found", "Agent installer is not configured", false)
 		return
 	}
-	a.serveBootstrapFile(w, r, path, "install-agent.sh", "text/plain; charset=utf-8", "X-Scout-Agent-Installer-SHA256")
+	artifact, ok := readBootstrapFile(w, r, path)
+	if !ok {
+		return
+	}
+	if bytes.Contains(artifact, []byte(agentServerURLPlaceholder)) {
+		origin, valid := bootstrapRequestOrigin(r)
+		if !valid {
+			writeError(w, r, http.StatusInternalServerError, "internal_error", "Agent installer URL could not be derived from this request", false)
+			return
+		}
+		artifact = bytes.ReplaceAll(artifact, []byte(agentServerURLPlaceholder), []byte(origin))
+	}
+	serveBootstrapArtifact(w, r, artifact, "install-agent.sh", "text/plain; charset=utf-8", "X-Scout-Agent-Installer-SHA256")
 }
 
 func (a *App) serveBootstrapFile(w http.ResponseWriter, r *http.Request, path, filename, contentType, checksumHeader string) {
+	artifact, ok := readBootstrapFile(w, r, path)
+	if !ok {
+		return
+	}
+	serveBootstrapArtifact(w, r, artifact, filename, contentType, checksumHeader)
+}
+
+func readBootstrapFile(w http.ResponseWriter, r *http.Request, path string) ([]byte, bool) {
 	artifact, err := os.ReadFile(filepath.Clean(path))
 	if errors.Is(err, os.ErrNotExist) {
 		writeError(w, r, http.StatusNotFound, "not_found", "Agent bootstrap artifact is not available", false)
-		return
+		return nil, false
 	}
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "internal_error", "Agent bootstrap artifact could not be read", false)
-		return
+		return nil, false
 	}
 	if len(artifact) == 0 {
 		writeError(w, r, http.StatusNotFound, "not_found", "Agent bootstrap artifact is empty", false)
-		return
+		return nil, false
 	}
+	return artifact, true
+}
+
+func serveBootstrapArtifact(w http.ResponseWriter, r *http.Request, artifact []byte, filename, contentType, checksumHeader string) {
 	digest := sha256.Sum256(artifact)
 	digestHex := hex.EncodeToString(digest[:])
 	w.Header().Set(checksumHeader, digestHex)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	serveArtifactWithOptions(w, r, artifact, "sha256:"+digestHex, contentType, "public, max-age=300")
+}
+
+func bootstrapRequestOrigin(r *http.Request) (string, bool) {
+	host := strings.TrimSpace(r.Host)
+	if host == "" || strings.ContainsAny(host, "/?#%\\\"' \t\r\n@") {
+		return "", false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	origin := scheme + "://" + host
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme != scheme || parsed.Host != host || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	return origin, true
 }
 
 func (a *App) listReleases(w http.ResponseWriter, r *http.Request) {

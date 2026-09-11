@@ -39,6 +39,10 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await expect(page.getByText("Invitation created. It is single-use and expires in five minutes.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Native Linux (recommended)" })).toBeVisible();
   await expect(page.getByText(/api\/v1\/bootstrap\/agent\/install\.sh/)).toBeVisible();
+  const nativeRecipe = page.locator(".agent-recipe").first();
+  await expect(nativeRecipe).toContainText("SCOUT_OTI=");
+  await expect(nativeRecipe).toContainText("bash -c");
+  await expect(nativeRecipe).not.toContainText("sudo /");
 
   await page.getByRole("button", { name: "Incidents", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Incidents and alert rules" })).toBeVisible();

@@ -291,6 +291,41 @@ func TestAgentBootstrapArtifactsArePublicAndArchitectureBound(t *testing.T) {
 	}
 }
 
+func TestAgentInstallerEmbedsRequestOrigin(t *testing.T) {
+	directory := t.TempDir()
+	installer := []byte("#!/usr/bin/env bash\nagent_default_server_url='__SCOUT_SERVER_URL__'\nprintf '%s\\n' \"$agent_default_server_url\"\n")
+	installerPath := filepath.Join(directory, "install-agent.sh")
+	if err := os.WriteFile(installerPath, installer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(store.NewMemory(), nil, Config{SetupToken: "setup-secret-123456789", AgentInstallerFile: installerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/api/v1/bootstrap/agent/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("installer status = %d, body = %q", response.StatusCode, body)
+	}
+	if bytes.Contains(body, []byte(agentServerURLPlaceholder)) || !bytes.Contains(body, []byte(server.URL)) {
+		t.Fatalf("installer did not embed request origin: %q", body)
+	}
+	digest := sha256.Sum256(body)
+	if got, want := response.Header.Get("X-Scout-Agent-Installer-SHA256"), hex.EncodeToString(digest[:]); got != want {
+		t.Fatalf("installer checksum = %q, want %q", got, want)
+	}
+}
+
 func TestAuthenticatedFirstAgentStoresRealBatchAndHeartbeat(t *testing.T) {
 	repository := store.NewMemory()
 	app, err := NewApp(repository, nil, Config{SetupToken: "setup-secret-123456789"})

@@ -15,6 +15,18 @@ if ! grep -q '/api/v1/bootstrap/agent/' scripts/install-agent.sh; then
 	echo "agent installer does not use the Scout bootstrap endpoint" >&2
 	exit 1
 fi
+if ! grep -q 'SCOUT_OTI' scripts/install-agent.sh; then
+	echo "agent installer does not support the one-command invitation flow" >&2
+	exit 1
+fi
+if ! grep -q '__SCOUT_SERVER_URL__' scripts/install-agent.sh; then
+	echo "agent installer does not expose the server URL placeholder" >&2
+	exit 1
+fi
+if grep -q 'run this installer with sudo or as root' scripts/install-agent.sh; then
+	echo "agent installer still requires the caller to prepend sudo" >&2
+	exit 1
+fi
 if grep -q 'scout.example.invalid\|/usr/local/bin/scout-agent' packaging/linux/agent.service; then
 	echo "agent service still contains a placeholder installation path" >&2
 	exit 1
