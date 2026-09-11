@@ -42,10 +42,20 @@ export type Metric = {
   max?: number | null;
 };
 
+export type MetricPoint = {
+  value: number | null;
+  availability: string;
+  observedAt: string;
+  min?: number | null;
+  max?: number | null;
+};
+
 export type MetricSeries = {
+  seriesId?: string;
+  entityId?: string;
   metric: string;
   unit: string;
-  points: Metric[];
+  points: MetricPoint[];
 };
 
 export type CollectorState = {

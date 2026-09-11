@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { api, APIError, type Device, type MetricSeries } from "@/lib/api";
 
 type RangeKey = "1h" | "6h" | "24h" | "7d";
@@ -22,6 +22,30 @@ type ChartPoint = {
   availability: string;
   min?: number | null;
   max?: number | null;
+};
+
+type ChartScale = {
+  domain: [number | "auto", number | "auto"];
+  ticks?: number[];
+};
+
+const summaryMetrics = new Set(["cpu.utilization", "memory.used_percent", "filesystem.used_percent"]);
+
+const diagnosticDetails: Record<string, string> = {
+  "cpu.user_percent": "CPU time excluding guest time already counted by Linux",
+  "cpu.system_percent": "Kernel time across all cores",
+  "cpu.iowait_percent": "Time waiting for block I/O",
+  "cpu.steal_percent": "Time taken by the hypervisor",
+  "load.1m": "Runnable-task load over one minute",
+  "load.5m": "Runnable-task load over five minutes",
+  "load.15m": "Runnable-task load over fifteen minutes",
+  "swap.used": "Swap space currently in use",
+  "swap.capacity": "Configured swap capacity; zero is valid",
+  "disk.read_rate": "Completed reads converted from 512-byte sectors",
+  "disk.write_rate": "Completed writes converted from 512-byte sectors",
+  "disk.utilization": "Time spent servicing I/O during the sample interval",
+  "disk.read_latency": "Average time per completed read operation",
+  "disk.write_latency": "Average time per completed write operation",
 };
 
 const ranges: Array<{ key: RangeKey; label: string; minutes: number; maxPoints: number }> = [
@@ -54,15 +78,97 @@ function demoSeries(base: number, seed: number): ChartPoint[] {
   }));
 }
 
-function seriesPoints(series: MetricSeries[], metric: string): ChartPoint[] {
-  const selected = series.find((item) => item.metric === metric);
+function seriesFor(series: MetricSeries[], metric: string, entityId = "host"): MetricSeries | undefined {
+  return (
+    series.find((item) => item.metric === metric && (item.entityId ?? "host") === entityId) ??
+    series.find((item) => item.metric === metric)
+  );
+}
+
+function seriesPoints(series: MetricSeries[], metric: string, entityId = "host"): ChartPoint[] {
+  const selected = seriesFor(series, metric, entityId);
   return (selected?.points ?? []).map((point) => ({
     time: new Date(point.observedAt).getTime(),
-    value: point.value,
+    value: point.availability === "current" ? point.value : null,
     availability: point.availability,
     min: point.min,
     max: point.max,
   }));
+}
+
+function formatBytes(value: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let scaled = Math.abs(value);
+  let unit = 0;
+  while (scaled >= 1024 && unit < units.length - 1) {
+    scaled /= 1024;
+    unit += 1;
+  }
+  const sign = value < 0 ? "-" : "";
+  return `${sign}${scaled >= 10 || unit === 0 ? scaled.toFixed(0) : scaled.toFixed(1)} ${units[unit]}`;
+}
+
+function formatRate(value: number): string {
+  return `${formatBytes(value)}/s`;
+}
+
+function formatMetricValue(value: number | null, unit: string): string {
+  if (value === null) return "—";
+  if (unit === "percent") return `${value.toFixed(1)}%`;
+  if (unit === "bytes") return formatBytes(value);
+  if (unit === "bytes_per_second") return formatRate(value);
+  if (unit === "milliseconds") return `${value.toFixed(1)} ms`;
+  if (unit === "seconds") return `${value.toFixed(1)} s`;
+  if (unit === "count") return value >= 10 ? value.toFixed(0) : value.toFixed(2);
+  return value.toFixed(2);
+}
+
+function metricLabel(metric: string): string {
+  const labels: Record<string, string> = {
+    "cpu.utilization": "CPU usage",
+    "memory.used_percent": "Memory usage",
+    "filesystem.used_percent": "Disk usage",
+  };
+  if (labels[metric]) return labels[metric];
+  return metric
+    .split(".")
+    .map((part) => part.replaceAll("_", " "))
+    .join(" · ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function metricDetail(metric: string): string {
+  return diagnosticDetails[metric] ?? "Reported by the selected host collector";
+}
+
+function chartScale(unit: string): ChartScale {
+  if (unit === "percent") return { domain: [0, 100], ticks: [0, 50, 100] };
+  if (unit === "bytes" || unit === "bytes_per_second") return { domain: [0, "auto"] };
+  return { domain: [0, "auto"] };
+}
+
+function chartCurrent(data: ChartPoint[]): number | null {
+  const last = data[data.length - 1];
+  return last?.availability === "current" && last.value !== null ? last.value : null;
+}
+
+function historyIsPartial(data: ChartPoint[], minutes: number, demo: boolean): boolean {
+  if (demo || !data.length) return false;
+  const first = data[0].time;
+  return Number.isFinite(first) && first > Date.now() - minutes * 60_000 + 15_000;
+}
+
+function entityLabel(entityId: string | undefined): string {
+  if (!entityId || entityId === "host") return "Host";
+  return entityId;
+}
+
+function colorForMetric(metric: string): string {
+  if (metric.startsWith("cpu.")) return "#7392f5";
+  if (metric.startsWith("load.")) return "#c69b64";
+  if (metric.startsWith("swap.")) return "#62b697";
+  if (metric.startsWith("disk.")) return "#ac8fd9";
+  return "#8db7d8";
 }
 
 export function DeviceView({
@@ -87,6 +193,8 @@ export function DeviceView({
   const [operationBusy, setOperationBusy] = useState(false);
   const [uninstall, setUninstall] = useState(false);
   const [reason, setReason] = useState("");
+  const [diagnosticMetric, setDiagnosticMetric] = useState("");
+  const [diagnosticEntity, setDiagnosticEntity] = useState("");
 
   const selectedRange = ranges.find((item) => item.key === range) ?? ranges[0];
 
@@ -131,17 +239,54 @@ export function DeviceView({
   const chartData = useMemo(() => {
     if (demo) {
       return {
-        cpu: demoSeries(cpu ?? 0, 1),
-        memory: demoSeries(memory ?? 0, 3),
-        disk: demoSeries(disk ?? 0, 7),
+        cpu: { data: demoSeries(cpu ?? 0, 1), partial: false },
+        memory: { data: demoSeries(memory ?? 0, 3), partial: false },
+        disk: { data: demoSeries(disk ?? 0, 7), partial: false },
       };
     }
     return {
-      cpu: seriesPoints(series, "cpu.utilization"),
-      memory: seriesPoints(series, "memory.used_percent"),
-      disk: seriesPoints(series, "filesystem.used_percent"),
+      cpu: {
+        data: seriesPoints(series, "cpu.utilization"),
+        partial: historyIsPartial(seriesPoints(series, "cpu.utilization"), selectedRange.minutes, demo),
+      },
+      memory: {
+        data: seriesPoints(series, "memory.used_percent"),
+        partial: historyIsPartial(seriesPoints(series, "memory.used_percent"), selectedRange.minutes, demo),
+      },
+      disk: {
+        data: seriesPoints(series, "filesystem.used_percent"),
+        partial: historyIsPartial(seriesPoints(series, "filesystem.used_percent"), selectedRange.minutes, demo),
+      },
     };
-  }, [cpu, demo, disk, memory, series]);
+  }, [cpu, demo, disk, memory, selectedRange.minutes, series]);
+
+  const diagnosticSeries = useMemo(() => series.filter((item) => !summaryMetrics.has(item.metric)), [series]);
+  const diagnosticMetrics = useMemo(
+    () => [...new Set(diagnosticSeries.map((item) => item.metric))].sort(),
+    [diagnosticSeries],
+  );
+  const diagnosticEntities = useMemo(
+    () =>
+      diagnosticSeries
+        .filter((item) => item.metric === diagnosticMetric)
+        .map((item) => item.entityId ?? "host")
+        .filter((entityId, index, entities) => entities.indexOf(entityId) === index)
+        .sort(),
+    [diagnosticMetric, diagnosticSeries],
+  );
+
+  useEffect(() => {
+    setDiagnosticMetric((current) => (diagnosticMetrics.includes(current) ? current : (diagnosticMetrics[0] ?? "")));
+  }, [diagnosticMetrics]);
+
+  useEffect(() => {
+    setDiagnosticEntity((current) => (diagnosticEntities.includes(current) ? current : (diagnosticEntities[0] ?? "")));
+  }, [diagnosticEntities]);
+
+  const selectedDiagnosticSeries = seriesFor(diagnosticSeries, diagnosticMetric, diagnosticEntity);
+  const diagnosticData = selectedDiagnosticSeries
+    ? seriesPoints([selectedDiagnosticSeries], diagnosticMetric, diagnosticEntity)
+    : [];
 
   async function decommissionDevice() {
     setOperationBusy(true);
@@ -240,27 +385,33 @@ export function DeviceView({
             detail="Utilization across all cores"
             unit="percent"
             color="#7392f5"
-            data={chartData.cpu}
+            data={chartData.cpu.data}
             current={cpu}
             loading={loading}
+            partialRange={chartData.cpu.partial}
+            rangeMinutes={selectedRange.minutes}
           />
           <MetricChart
             title="Memory usage"
             detail="Used memory as a share of total"
             unit="percent"
             color="#62b697"
-            data={chartData.memory}
+            data={chartData.memory.data}
             current={memory}
             loading={loading}
+            partialRange={chartData.memory.partial}
+            rangeMinutes={selectedRange.minutes}
           />
           <MetricChart
             title="Disk usage"
             detail="Used space on the root filesystem"
             unit="percent"
             color="#ac8fd9"
-            data={chartData.disk}
+            data={chartData.disk.data}
             current={disk}
             loading={loading}
+            partialRange={chartData.disk.partial}
+            rangeMinutes={selectedRange.minutes}
           />
           <section className="chart-panel host-info">
             <h3>Agent</h3>
@@ -304,6 +455,73 @@ export function DeviceView({
                 : "This candidate needs an authorized, trusted enrollment."}
           </p>
         </div>
+      )}
+      {hasAgent && !isDecommissioned && !demo && diagnosticMetrics.length > 0 && (
+        <section className="diagnostic-board" aria-labelledby="diagnostic-board-heading">
+          <div className="diagnostic-board-heading">
+            <div>
+              <Badge variant="outline">
+                <ChartNoAxesCombined size={13} />
+                Host diagnostics
+              </Badge>
+              <h2 id="diagnostic-board-heading">Inspect a signal</h2>
+              <p>Choose a metric and entity. Counter resets, missing samples, and unavailable fields stay visible.</p>
+            </div>
+            <small>{diagnosticSeries.length} returned series</small>
+          </div>
+          <div className="diagnostic-controls">
+            <label>
+              Metric
+              <select
+                aria-label="Diagnostic metric"
+                value={diagnosticMetric}
+                onChange={(event) => setDiagnosticMetric(event.target.value)}
+              >
+                {diagnosticMetrics.map((metric) => (
+                  <option key={metric} value={metric}>
+                    {metricLabel(metric)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Entity
+              <select
+                aria-label="Diagnostic entity"
+                value={diagnosticEntity}
+                onChange={(event) => setDiagnosticEntity(event.target.value)}
+              >
+                {diagnosticEntities.map((entity) => (
+                  <option key={entity} value={entity}>
+                    {entityLabel(entity)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedDiagnosticSeries && (
+              <Badge variant="outline">
+                {selectedDiagnosticSeries.unit} · {diagnosticData.length} samples
+              </Badge>
+            )}
+          </div>
+          {selectedDiagnosticSeries ? (
+            <MetricChart
+              title={metricLabel(selectedDiagnosticSeries.metric)}
+              detail={metricDetail(selectedDiagnosticSeries.metric)}
+              unit={selectedDiagnosticSeries.unit}
+              color={colorForMetric(selectedDiagnosticSeries.metric)}
+              data={diagnosticData}
+              current={chartCurrent(diagnosticData)}
+              loading={loading}
+              partialRange={historyIsPartial(diagnosticData, selectedRange.minutes, demo)}
+              rangeMinutes={selectedRange.minutes}
+            />
+          ) : (
+            <div className="chart-empty" role="status">
+              Select a diagnostic metric with returned history.
+            </div>
+          )}
+        </section>
       )}
       {!demo && (
         <section className={"danger-panel " + (isDecommissioned ? "danger-panel-muted" : "")}>
@@ -374,6 +592,8 @@ function MetricChart({
   data,
   current,
   loading,
+  partialRange,
+  rangeMinutes,
 }: {
   title: string;
   detail: string;
@@ -382,8 +602,12 @@ function MetricChart({
   data: ChartPoint[];
   current: number | null;
   loading: boolean;
+  partialRange: boolean;
+  rangeMinutes: number;
 }) {
-  const hasGap = data.some((point) => point.value === null || point.availability !== "current");
+  const gapCount = data.filter((point) => point.value === null || point.availability !== "current").length;
+  const hasRange = data.some((point) => point.min != null || point.max != null);
+  const scale = chartScale(unit);
   const chartId = title.toLowerCase().replaceAll(" ", "-");
   return (
     <section className="chart-panel" aria-labelledby={chartId + "-heading"}>
@@ -392,13 +616,10 @@ function MetricChart({
           <h3 id={chartId + "-heading"}>{title}</h3>
           <p>
             {detail}
-            {hasGap ? " · gaps indicate unavailable samples" : ""}
+            {gapCount ? " · gaps indicate unavailable samples" : ""}
           </p>
         </div>
-        <strong>
-          {current === null ? "—" : current.toFixed(1)}
-          {current !== null && <small> {unit}</small>}
-        </strong>
+        <strong>{formatMetricValue(current, unit)}</strong>
       </div>
       {loading && !data.length ? (
         <div className="chart-empty" role="status">
@@ -413,7 +634,15 @@ function MetricChart({
           <ChartContainer
             config={{ usage: { label: title, color } }}
             className="h-[200px] w-full aspect-auto"
-            aria-label={title + " history in " + unit + (hasGap ? ", including unavailable gaps" : "")}
+            aria-label={
+              title +
+              " history in " +
+              unit +
+              " over the last " +
+              rangeMinutes +
+              " minutes" +
+              (gapCount ? ", including unavailable gaps" : "")
+            }
           >
             <AreaChart accessibilityLayer data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 4" />
@@ -429,12 +658,12 @@ function MetricChart({
                 }
               />
               <YAxis
-                domain={[0, 100]}
-                ticks={[0, 50, 100]}
+                domain={scale.domain}
+                ticks={scale.ticks}
                 width={37}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => value + "%"}
+                tickFormatter={(value) => formatMetricValue(Number(value), unit)}
               />
               <ChartTooltip
                 content={
@@ -446,7 +675,7 @@ function MetricChart({
                       ) : (
                         <span>
                           {title}
-                          <strong>{Number(value).toFixed(1)}%</strong>
+                          <strong>{formatMetricValue(Number(value), unit)}</strong>
                         </span>
                       )
                     }
@@ -465,6 +694,7 @@ function MetricChart({
               />
             </AreaChart>
           </ChartContainer>
+          <ChartDataQuality gapCount={gapCount} partial={partialRange} />
           <details className="chart-table">
             <summary>View tabular samples</summary>
             <div className="table-scroll">
@@ -473,14 +703,26 @@ function MetricChart({
                   <tr>
                     <th>Observed</th>
                     <th>Value</th>
+                    {hasRange && <th>Range</th>}
                     <th>Availability</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((point) => (
-                    <tr key={point.time + "-" + point.availability}>
+                  {data.map((point, index) => (
+                    <tr key={point.time + "-" + point.availability + "-" + index}>
                       <td>{new Date(point.time).toLocaleString()}</td>
-                      <td>{point.value === null ? "Unavailable" : point.value.toFixed(1) + " " + unit}</td>
+                      <td>
+                        {point.value === null || point.availability !== "current"
+                          ? "Unavailable"
+                          : formatMetricValue(point.value, unit)}
+                      </td>
+                      {hasRange && (
+                        <td>
+                          {point.min != null && point.max != null
+                            ? `${formatMetricValue(point.min, unit)} – ${formatMetricValue(point.max, unit)}`
+                            : "—"}
+                        </td>
+                      )}
                       <td>{point.availability}</td>
                     </tr>
                   ))}

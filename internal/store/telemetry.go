@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -96,14 +97,18 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 			if device.CurrentMetrics == nil {
 				device.CurrentMetrics = map[string]MetricSample{}
 			}
-			previous, has := device.CurrentMetrics[sample.Metric]
+			currentKey := sample.Metric
+			if sample.EntityID != "" && sample.EntityID != "host" {
+				currentKey = sample.EntityID + ":" + sample.Metric
+			}
+			previous, has := device.CurrentMetrics[currentKey]
 			if !has || sample.ObservedAt.After(previous.ObservedAt) {
-				device.CurrentMetrics[sample.Metric] = sample
+				device.CurrentMetrics[currentKey] = sample
 			}
 			if device.MetricFreshness == nil {
 				device.MetricFreshness = map[string]Freshness{}
 			}
-			device.MetricFreshness[sample.Metric] = sample.Availability
+			device.MetricFreshness[currentKey] = sample.Availability
 			if sample.EntityID != "" {
 				if err := markAlertWorkState(state, AlertWorkAllLineages, sample.EntityID, now); err != nil {
 					return err
@@ -249,7 +254,8 @@ func (s *Store) QueryMetrics(ctx context.Context, query MetricQuery) ([]MetricSe
 			if !query.To.IsZero() && sample.ObservedAt.After(query.To) {
 				continue
 			}
-			buckets[sample.Metric] = append(buckets[sample.Metric], sample)
+			key := strings.Join([]string{sample.Metric, sample.EntityID, sample.Unit}, "\x00")
+			buckets[key] = append(buckets[key], sample)
 		}
 		keys := make([]string, 0, len(buckets))
 		for key := range buckets {
@@ -259,7 +265,8 @@ func (s *Store) QueryMetrics(ctx context.Context, query MetricQuery) ([]MetricSe
 		for _, key := range keys {
 			items := buckets[key]
 			sort.Slice(items, func(i, j int) bool { return items[i].ObservedAt.Before(items[j].ObservedAt) })
-			series := MetricSeries{Metric: key, Unit: items[0].Unit}
+			parts := strings.SplitN(key, "\x00", 3)
+			series := MetricSeries{Metric: parts[0], EntityID: parts[1], Unit: parts[2]}
 			if len(items) <= query.MaxPoints {
 				for _, item := range items {
 					series.Points = append(series.Points, MetricPoint{ObservedAt: item.ObservedAt, Value: item.Value, Availability: item.Availability})

@@ -459,6 +459,68 @@ tbody tr:last-child td {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+.diagnostic-board {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid #354456;
+  border-radius: 9px;
+  background: #1d2530;
+}
+.diagnostic-board-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.diagnostic-board-heading > div {
+  display: grid;
+  gap: 7px;
+}
+.diagnostic-board-heading h2 {
+  margin: 0;
+  color: #e7ebf5;
+  font-size: 17px;
+}
+.diagnostic-board-heading p,
+.diagnostic-board-heading small {
+  color: #aab4c7;
+  font-size: 11px;
+}
+.diagnostic-board-heading small {
+  white-space: nowrap;
+}
+.diagnostic-controls {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(180px, 0.8fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid #354456;
+}
+.diagnostic-controls label {
+  display: grid;
+  gap: 6px;
+  color: #d0d5df;
+  font-size: 11px;
+}
+.diagnostic-controls select {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #3b465b;
+  border-radius: 6px;
+  background: #151a21;
+  color: #e7e9ed;
+}
+.diagnostic-controls [data-slot="badge"] {
+  margin-bottom: 1px;
+  color: #b9c6e8;
+}
+.diagnostic-board > .chart-panel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .chart-panel {
   background: #191c20;
   border: 1px solid #2b3037;
@@ -494,6 +556,20 @@ tbody tr:last-child td {
   color: #9da5b2;
   font-size: 12px;
   text-align: center;
+}
+.chart-data-quality {
+  display: grid;
+  gap: 3px;
+  margin-top: 11px;
+  padding: 9px 10px;
+  border-left: 2px solid #d1b276;
+  background: #292720;
+  color: #e1c98a;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.chart-data-quality span {
+  color: #b6aa88;
 }
 .chart-table {
   margin-top: 12px;
@@ -905,6 +981,19 @@ tbody tr:last-child td {
   }
   .charts {
     grid-template-columns: 1fr;
+  }
+  .diagnostic-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+  .diagnostic-controls [data-slot="badge"] {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .diagnostic-board-heading {
+    flex-direction: column;
+  }
+  .diagnostic-board-heading small {
+    white-space: normal;
   }
   .notice {
     align-items: flex-start;

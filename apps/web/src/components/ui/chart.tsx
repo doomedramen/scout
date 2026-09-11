@@ -102,6 +102,24 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
+function ChartDataQuality({ gapCount = 0, partial = false }: { gapCount?: number; partial?: boolean }) {
+  if (!gapCount && !partial) {
+    return null;
+  }
+  const labels = [
+    partial ? "Partial range" : "",
+    gapCount ? `${gapCount} unavailable sample${gapCount === 1 ? "" : "s"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="chart-data-quality" role="status">
+      <strong>{labels}</strong>
+      <span>Gaps remain visible as unavailable; no value is interpolated.</span>
+    </div>
+  );
+}
+
 function ChartTooltipContent({
   active,
   payload,
@@ -302,4 +320,12 @@ function getPayloadConfigFromPayload(config: ChartConfig, payload: unknown, key:
   return configLabelKey in config ? config[configLabelKey] : config[key];
 }
 
-export { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, ChartStyle };
+export {
+  ChartContainer,
+  ChartDataQuality,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  ChartStyle,
+};

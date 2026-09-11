@@ -62,3 +62,65 @@ func TestTelemetryBackpressureIsVisibleAndRecoverable(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMemoryMetricQueryKeepsEntitySeriesSeparate(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemory()
+	site, err := s.CreateSite(ctx, Site{Name: "series-lab"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := s.CreateDevice(ctx, Device{DisplayName: "series-target", SiteID: site.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := AgentIdentity{ID: NewID(), DeviceID: device.ID, ExpiresAt: time.Now().UTC().Add(time.Hour)}
+	if err := s.CreateAgentIdentity(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+
+	first, second := 1024.0, 2048.0
+	observedAt := time.Now().UTC().Truncate(time.Second)
+	_, err = s.IngestBatch(ctx, agent.ID, "boot", "entities", "entities-hash", []MetricSample{
+		{EntityID: "disk-a", Metric: "disk.read_rate", Value: &first, Availability: FreshnessCurrent, Unit: "bytes_per_second", ObservedAt: observedAt},
+		{EntityID: "disk-b", Metric: "disk.read_rate", Value: &second, Availability: FreshnessCurrent, Unit: "bytes_per_second", ObservedAt: observedAt.Add(time.Second)},
+	}, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	series, err := s.QueryMetrics(ctx, MetricQuery{DeviceID: device.ID, Metric: "disk.read_rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 2 {
+		t.Fatalf("expected one series per disk, got %d: %+v", len(series), series)
+	}
+	if series[0].EntityID != "disk-a" || series[1].EntityID != "disk-b" {
+		t.Fatalf("unexpected series order or identity: %+v", series)
+	}
+	if len(series[0].Points) != 1 || series[0].Points[0].Value == nil || *series[0].Points[0].Value != first {
+		t.Fatalf("disk-a history was mixed or lost: %+v", series[0])
+	}
+	if len(series[1].Points) != 1 || series[1].Points[0].Value == nil || *series[1].Points[0].Value != second {
+		t.Fatalf("disk-b history was mixed or lost: %+v", series[1])
+	}
+
+	current, err := s.GetDevice(ctx, device.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.CurrentMetrics["disk-a:disk.read_rate"].Value == nil || current.CurrentMetrics["disk-b:disk.read_rate"].Value == nil {
+		t.Fatalf("current metric projection lost entity identity: %+v", current.CurrentMetrics)
+	}
+	if current.MetricFreshness["disk-a:disk.read_rate"] != FreshnessCurrent || current.MetricFreshness["disk-b:disk.read_rate"] != FreshnessCurrent {
+		t.Fatalf("current metric freshness lost entity identity: %+v", current.MetricFreshness)
+	}
+	filtered, err := s.QueryMetrics(ctx, MetricQuery{DeviceID: device.ID, Metric: "disk.read_rate", EntityID: "disk-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || filtered[0].EntityID != "disk-b" {
+		t.Fatalf("entity filter returned the wrong series: %+v", filtered)
+	}
+}
