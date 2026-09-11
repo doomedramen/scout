@@ -295,3 +295,34 @@ For future results append: task and requirement IDs, commit, date, exact command
   acceptance journey. No active incident was fabricated solely for this UI
   test, so the browser run does not claim a live incident-detail screenshot
   or acknowledgment acceptance against a monitored device.
+
+## T011 — restart and administrative incident lifecycle
+
+- Requirements: FR-004, FR-005, FR-007, FR-033; SC-001, SC-002, SC-011.
+- Date: 2026-09-11 (Europe/London); implementation commit: `7bcd2f2`.
+- Administrative policy changes now close active episodes with an explicit
+  append-only `administrative_close` transition and bounded reason: rule
+  changes, disablement, retirement, target membership changes, and device
+  decommissioning are not reported as telemetry recovery. The durable
+  evaluator checkpoint, timing state, and queued work are cleared so a stale
+  replay cannot reopen the episode. Rule closures are transactionally coupled
+  to their SQL policy update; each SQL incident closure locks active rows and
+  appends the incident update and transition together.
+- `tests/integration/incidents_test.go` positively covers replay after an
+  evaluator restart without a duplicate transition, rule target changes,
+  rule disablement, rule retirement, device movement out of a site target, and
+  device decommission closure. It negatively fills the database to exactly
+  `MaxActiveIncidents` (100,000) and verifies a new episode returns
+  `store.ErrIncidentCap` with neither an incident nor an evaluation checkpoint
+  committed. Closure assertions verify status, reason, transition sequence,
+  actor, revision, unknown evidence reset, zeroed timing counters, and cleared
+  incident references.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  against disposable PostgreSQL 17; `go test ./... -race -count=1`; `npm run
+  check`; `npm run build`; `npm run lint`; `npm test`; `npm run format:check`;
+  `go vet ./...`; `go mod verify`; and `git diff --check` all passed. No
+  production database, production credential, notification receiver, or real
+  device was used.
+- Remaining limits: this is deterministic SQL/evaluator lifecycle evidence;
+  no live monitored host or production rollout is claimed. T012 begins the
+  notification and suppression phase.

@@ -20,7 +20,7 @@ Independent gate: Open, acknowledge and recover one episode under deterministic 
 - [X] T008 [US1] Implement persisted dirty work, 15-second sweep, evaluator state and transactional incident transitions in internal/alerts/evaluator.go and internal/store/incidents.go (FR-002, FR-004, FR-005, FR-007, FR-033; SC-001, SC-002).
 - [X] T009 [US1] Implement rule/override CRUD, paginated incident/transition reads and idempotent acknowledgment in internal/control/alerts.go with owner authorization and revision tests (FR-003, FR-004, FR-005, FR-007, FR-009; SC-002, SC-011).
 - [X] T010 [US1] Add incident list/detail, acknowledgment, rule editor and automatic-default explanation in apps/web/src/views/incidents.tsx and apps/web/src/lib/api.ts; wire navigation through apps/web/src/App.tsx (FR-001, FR-003, FR-004, FR-005, FR-019; SC-010).
-- [ ] T011 [US1] Test restart, rule disable/retirement, target changes, admission caps and decommission closure in tests/integration/incidents_test.go; record US1 evidence (FR-004, FR-005, FR-007, FR-033; SC-001, SC-002, SC-011).
+- [X] T011 [US1] Test restart, rule disable/retirement, target changes, admission caps and decommission closure in tests/integration/incidents_test.go; record US1 evidence (FR-004, FR-005, FR-007, FR-033; SC-001, SC-002, SC-011).
 ## ntfy and suppression (P1)
 
 Independent gate: Publish to a controlled receiver, suppress all severities and recover without stale replay.
