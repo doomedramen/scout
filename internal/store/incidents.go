@@ -24,6 +24,7 @@ type IncidentQuery struct {
 	Acknowledged *bool
 	Severity     string
 	DeviceID     string
+	EntityID     string
 	SiteID       string
 	Cursor       string
 	Limit        int
@@ -267,6 +268,22 @@ func (s *Store) ApplyAlertEvaluationWithDeliveries(ctx context.Context, evaluati
 			transitions[index] = transition
 		}
 		if len(deliveries) > 0 {
+			for _, delivery := range deliveries {
+				if delivery.Status != NotificationDeliverySuppressed || delivery.IncidentID == "" {
+					continue
+				}
+				incident, exists := state.Incidents[delivery.IncidentID]
+				if !exists {
+					return ErrInvalid
+				}
+				reasons := delivery.SuppressionReasons
+				if len(reasons) == 0 {
+					reasons = []string{"notification_suppressed"}
+				}
+				if _, err := openSuppressionEpisodeState(state, delivery.DestinationID, incident.EntityID, incident.DeviceID, reasons, s.now().UTC()); err != nil {
+					return err
+				}
+			}
 			if _, err := enqueueNotificationDeliveriesState(state, deliveries, s.now().UTC()); err != nil {
 				return err
 			}
@@ -669,6 +686,24 @@ func (s *Store) applyAlertEvaluationSQL(ctx context.Context, evaluation AlertEva
 		return fmt.Errorf("persist alert evaluation: %w", err)
 	}
 	if len(deliveries) > 0 {
+		for _, delivery := range deliveries {
+			if delivery.Status != NotificationDeliverySuppressed || delivery.IncidentID == "" {
+				continue
+			}
+			var entityID, deviceID string
+			if err := tx.QueryRowContext(ctx, `SELECT entity_id, device_id FROM incidents WHERE id=$1`, delivery.IncidentID).Scan(&entityID, &deviceID); errors.Is(err, sql.ErrNoRows) {
+				return ErrInvalid
+			} else if err != nil {
+				return fmt.Errorf("read suppressed incident: %w", err)
+			}
+			reasons := delivery.SuppressionReasons
+			if len(reasons) == 0 {
+				reasons = []string{"notification_suppressed"}
+			}
+			if _, err := openSuppressionEpisodeTx(ctx, tx, delivery.DestinationID, entityID, deviceID, reasons, s.now().UTC()); err != nil {
+				return err
+			}
+		}
 		state, err := readWorkspaceStateTx(ctx, tx)
 		if err != nil {
 			return err
@@ -722,6 +757,9 @@ func (s *Store) listIncidentsPageSQL(ctx context.Context, query IncidentQuery) (
 	}
 	if query.DeviceID != "" {
 		add("incidents.device_id=$%d", query.DeviceID)
+	}
+	if query.EntityID != "" {
+		add("incidents.entity_id=$%d", query.EntityID)
 	}
 	if query.SiteID != "" {
 		add("EXISTS (SELECT 1 FROM devices AS incident_devices WHERE incident_devices.id = incidents.device_id AND incident_devices.site_id = $%d)", query.SiteID)
@@ -1121,7 +1159,7 @@ func validateIncident(incident Incident) error {
 }
 
 func incidentMatches(incident Incident, query IncidentQuery) bool {
-	if query.Status != "" && incident.Status != query.Status || query.Severity != "" && incident.Severity != query.Severity || query.DeviceID != "" && incident.DeviceID != query.DeviceID {
+	if query.Status != "" && incident.Status != query.Status || query.Severity != "" && incident.Severity != query.Severity || query.DeviceID != "" && incident.DeviceID != query.DeviceID || query.EntityID != "" && incident.EntityID != query.EntityID {
 		return false
 	}
 	if query.Acknowledged != nil && (*query.Acknowledged != (incident.AcknowledgedAt != nil)) {

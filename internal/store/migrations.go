@@ -50,6 +50,7 @@ func migrations() []migration {
 		{version: 5, sql: alertConditionFieldsMigrationSQL},
 		{version: 6, sql: notificationDestinationsMigrationSQL},
 		{version: 7, sql: notificationDeliveriesMigrationSQL},
+		{version: 8, sql: suppressionMigrationSQL},
 	}
 }
 
@@ -404,4 +405,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS notification_deliveries_transition_uq ON notif
 CREATE UNIQUE INDEX IF NOT EXISTS notification_deliveries_summary_uq ON notification_deliveries(destination_id, summary_key) WHERE summary_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS notification_deliveries_pending_idx ON notification_deliveries(status, next_attempt_at, expires_at, destination_id, created_at);
 CREATE INDEX IF NOT EXISTS notification_deliveries_incident_idx ON notification_deliveries(incident_id, updated_at DESC, id DESC);
+`
+
+const suppressionMigrationSQL = `
+CREATE TABLE IF NOT EXISTS suppression_windows (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  target_kind text NOT NULL CHECK (target_kind IN ('fleet', 'site', 'device')),
+  target_id text NOT NULL DEFAULT '',
+  mode text NOT NULL CHECK (mode IN ('recurring', 'oneTime')),
+  timezone text NOT NULL DEFAULT '',
+  weekdays jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(weekdays) = 'array'),
+  start_local text NOT NULL DEFAULT '',
+  end_local text NOT NULL DEFAULT '',
+  starts_at timestamptz,
+  ends_at timestamptz,
+  enabled boolean NOT NULL DEFAULT true,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  retired_at timestamptz,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  CHECK ((mode = 'recurring' AND timezone <> '' AND jsonb_array_length(weekdays) > 0 AND start_local <> '' AND end_local <> '' AND starts_at IS NULL AND ends_at IS NULL) OR
+         (mode = 'oneTime' AND timezone = '' AND jsonb_array_length(weekdays) = 0 AND start_local = '' AND end_local = '' AND starts_at IS NOT NULL AND ends_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS suppression_windows_active_idx ON suppression_windows(retired_at, enabled, target_kind, target_id, lower(name), id);
+
+CREATE TABLE IF NOT EXISTS suppression_episodes (
+  destination_id text NOT NULL REFERENCES notification_destinations(id),
+  entity_id text NOT NULL,
+  device_id text NOT NULL DEFAULT '',
+  epoch bigint NOT NULL CHECK (epoch >= 1),
+  started_at timestamptz NOT NULL,
+  ended_at timestamptz,
+  reason_bits jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(reason_bits) = 'array'),
+  summary_batch_id text NOT NULL DEFAULT '',
+  PRIMARY KEY (destination_id, entity_id, epoch)
+);
+CREATE INDEX IF NOT EXISTS suppression_episodes_open_idx ON suppression_episodes(destination_id, entity_id, ended_at);
 `

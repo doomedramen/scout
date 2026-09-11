@@ -749,6 +749,11 @@ func (a *App) incidentResponses(r *http.Request, incidents []store.Incident) ([]
 	result := make([]any, 0, len(incidents))
 	for _, item := range incidents {
 		response := incidentResponse(item)
+		decision, suppressionErr := alerts.EvaluateIncidentSuppression(r.Context(), a.Store, item, a.Store.Now())
+		if suppressionErr != nil {
+			return nil, suppressionErr
+		}
+		response["notificationSuppression"] = map[string]any{"suppressed": decision.Suppressed, "reasons": decision.Reasons}
 		if item.DeviceID != "" {
 			device, err := a.Store.GetDevice(r.Context(), item.DeviceID)
 			if err == nil && device.SiteID != "" {

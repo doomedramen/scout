@@ -267,6 +267,7 @@ type NotificationDelivery struct {
 	Payload             []byte     `json:"payload,omitempty"`
 	CreatedAt           time.Time  `json:"createdAt"`
 	UpdatedAt           time.Time  `json:"updatedAt"`
+	SuppressionReasons  []string   `json:"-"`
 }
 
 type NotificationDeliveryQuery struct {
@@ -288,13 +289,61 @@ type NotificationDeliveryEnqueueResult struct {
 }
 
 type NotificationDeliveryOutcome struct {
-	Accepted   bool
-	Cancelled  bool
-	Retryable  bool
-	RemoteID   string
-	SafeError  string
-	RetryAfter time.Duration
-	Now        time.Time
+	Accepted           bool
+	Cancelled          bool
+	Suppressed         bool
+	SuppressionReasons []string
+	Retryable          bool
+	RemoteID           string
+	SafeError          string
+	RetryAfter         time.Duration
+	Now                time.Time
+}
+
+const (
+	SuppressionWindowRecurring = "recurring"
+	SuppressionWindowOneTime   = "oneTime"
+)
+
+type SuppressionWindow struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	TargetKind string     `json:"targetKind"`
+	TargetID   string     `json:"targetId,omitempty"`
+	Enabled    bool       `json:"enabled"`
+	Mode       string     `json:"mode"`
+	Timezone   string     `json:"timezone,omitempty"`
+	Weekdays   []int      `json:"weekdays,omitempty"`
+	StartLocal string     `json:"startLocal,omitempty"`
+	EndLocal   string     `json:"endLocal,omitempty"`
+	StartsAt   *time.Time `json:"startsAt,omitempty"`
+	EndsAt     *time.Time `json:"endsAt,omitempty"`
+	Revision   int64      `json:"revision"`
+	RetiredAt  *time.Time `json:"retiredAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+type SuppressionWindowQuery struct {
+	Cursor         string
+	Limit          int
+	IncludeRetired bool
+}
+
+type SuppressionWindowPage struct {
+	Items      []SuppressionWindow
+	NextCursor string
+}
+
+type SuppressionEpisode struct {
+	DestinationID  string     `json:"destinationId"`
+	EntityID       string     `json:"entityId"`
+	DeviceID       string     `json:"deviceId,omitempty"`
+	Epoch          int64      `json:"epoch"`
+	StartedAt      time.Time  `json:"startedAt"`
+	EndedAt        *time.Time `json:"endedAt,omitempty"`
+	ReasonBits     []string   `json:"reasonBits"`
+	SummaryBatchID string     `json:"summaryBatchId,omitempty"`
 }
 
 type NotificationDeliveryStats struct {
@@ -614,6 +663,8 @@ type State struct {
 	AlertOverrides           map[string]AlertOverride            `json:"alertOverrides"`
 	NotificationDestinations map[string]NotificationDestination  `json:"notificationDestinations"`
 	NotificationDeliveries   map[string]NotificationDelivery     `json:"notificationDeliveries"`
+	SuppressionWindows       map[string]SuppressionWindow        `json:"suppressionWindows"`
+	SuppressionEpisodes      map[string]SuppressionEpisode       `json:"suppressionEpisodes"`
 	AlertEvaluations         map[string]AlertEvaluation          `json:"alertEvaluations"`
 	Incidents                map[string]Incident                 `json:"incidents"`
 	IncidentTransitions      map[string]IncidentTransition       `json:"incidentTransitions"`

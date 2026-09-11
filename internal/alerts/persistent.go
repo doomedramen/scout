@@ -110,8 +110,12 @@ func (p *PersistentEvaluator) EvaluateAndPersist(ctx context.Context, rule Rule,
 		if destinationErr != nil {
 			return EvaluationResult{}, destinationErr
 		}
+		suppression, suppressionErr := EvaluateIncidentSuppression(ctx, p.Store, *durableIncident, p.Clock.Now().UTC())
+		if suppressionErr != nil {
+			return EvaluationResult{}, suppressionErr
+		}
 		var buildErr error
-		deliveryIntents, buildErr = BuildNotificationDeliveryIntents(destinations, durableIncident, durableTransitions, p.Clock.Now().UTC())
+		deliveryIntents, buildErr = BuildNotificationDeliveryIntentsWithSuppression(destinations, durableIncident, durableTransitions, p.Clock.Now().UTC(), suppression)
 		if buildErr != nil {
 			return EvaluationResult{}, buildErr
 		}

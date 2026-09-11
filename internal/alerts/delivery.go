@@ -32,50 +32,7 @@ type notificationDeliveryPayload struct {
 // externally visible notifications; acknowledgement and evidence changes are
 // deliberately not sent as notifications in the initial delivery contract.
 func BuildNotificationDeliveryIntents(destinations []store.NotificationDestination, incident *store.Incident, transitions []store.IncidentTransition, now time.Time) ([]store.NotificationDelivery, error) {
-	if incident == nil || strings.TrimSpace(incident.ID) == "" {
-		return nil, nil
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	} else {
-		now = now.UTC()
-	}
-	result := make([]store.NotificationDelivery, 0, len(destinations)*len(transitions))
-	for _, transition := range transitions {
-		if transition.IncidentID != incident.ID {
-			continue
-		}
-		if transition.Kind != "triggered" && transition.Kind != "recovered" {
-			continue
-		}
-		if strings.TrimSpace(transition.ID) == "" {
-			return nil, fmt.Errorf("%w: notification transition id", store.ErrInvalid)
-		}
-		payload, err := encodeNotificationDeliveryPayload(*incident, transition)
-		if err != nil {
-			return nil, err
-		}
-		for _, destination := range destinations {
-			if destination.RetiredAt != nil || !destination.Enabled || destination.Revision < 1 {
-				continue
-			}
-			nextAttempt := now
-			result = append(result, store.NotificationDelivery{
-				ID:                  store.NewID(),
-				DestinationID:       destination.ID,
-				DestinationRevision: destination.Revision,
-				IncidentID:          incident.ID,
-				TransitionID:        transition.ID,
-				Status:              store.NotificationDeliveryQueued,
-				NextAttemptAt:       &nextAttempt,
-				ExpiresAt:           now.Add(store.NotificationDeliveryTTL),
-				Payload:             payload,
-				CreatedAt:           now,
-				UpdatedAt:           now,
-			})
-		}
-	}
-	return result, nil
+	return BuildNotificationDeliveryIntentsWithSuppression(destinations, incident, transitions, now, SuppressionDecision{})
 }
 
 func encodeNotificationDeliveryPayload(incident store.Incident, transition store.IncidentTransition) ([]byte, error) {
@@ -167,6 +124,9 @@ func (w *DeliveryWorker) RunOnce(ctx context.Context) (DeliverySweepResult, erro
 	if w == nil || w.Store == nil || w.Secrets == nil {
 		return DeliverySweepResult{}, fmt.Errorf("%w: delivery worker dependencies", store.ErrInvalid)
 	}
+	if err := w.releaseSuppressionSummaries(ctx); err != nil {
+		return DeliverySweepResult{}, err
+	}
 	claims, err := w.Store.ClaimNotificationDeliveries(ctx, w.WorkerID, w.WorkLimit, w.LeaseDuration)
 	if err != nil {
 		return DeliverySweepResult{}, err
@@ -175,6 +135,13 @@ func (w *DeliveryWorker) RunOnce(ctx context.Context) (DeliverySweepResult, erro
 	var firstErr error
 	for _, claim := range claims {
 		outcome := w.deliver(ctx, claim)
+		if outcome.Suppressed && claim.IncidentID != "" {
+			if incident, incidentErr := w.Store.GetIncident(ctx, claim.IncidentID); incidentErr == nil {
+				if _, openErr := w.Store.OpenSuppressionEpisode(ctx, claim.DestinationID, incident.EntityID, incident.DeviceID, outcome.SuppressionReasons, w.Clock.Now().UTC()); openErr != nil && firstErr == nil {
+					firstErr = openErr
+				}
+			}
+		}
 		completed, completeErr := w.Store.CompleteNotificationDelivery(ctx, claim, outcome)
 		if completeErr != nil {
 			if !errors.Is(completeErr, store.ErrConflict) {
@@ -208,6 +175,23 @@ func (w *DeliveryWorker) deliver(ctx context.Context, claim store.NotificationDe
 		outcome.Cancelled = true
 		outcome.SafeError = "destination disabled or changed"
 		return outcome
+	}
+	if claim.IncidentID != "" {
+		incident, incidentErr := w.Store.GetIncident(ctx, claim.IncidentID)
+		if incidentErr == nil {
+			decision, suppressionErr := EvaluateIncidentSuppression(ctx, w.Store, incident, now)
+			if suppressionErr != nil {
+				outcome.Retryable = true
+				outcome.SafeError = "notification suppression state unavailable"
+				return outcome
+			}
+			if decision.Suppressed {
+				outcome.Suppressed = true
+				outcome.SuppressionReasons = append([]string(nil), decision.Reasons...)
+				outcome.SafeError = "notification suppressed"
+				return outcome
+			}
+		}
 	}
 	configured, err := w.decryptDestination(destination)
 	if err != nil {

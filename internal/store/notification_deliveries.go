@@ -384,6 +384,14 @@ func applyNotificationDeliveryOutcome(item *NotificationDelivery, outcome Notifi
 		item.RemoteID = ""
 		return nil
 	}
+	if outcome.Suppressed {
+		item.Status = NotificationDeliverySuppressed
+		item.RemoteID = ""
+		if item.SafeError == "" {
+			item.SafeError = "notification suppressed"
+		}
+		return nil
+	}
 	if outcome.Accepted {
 		item.Status = NotificationDeliveryAccepted
 		acceptedAt := now
@@ -706,14 +714,22 @@ func normalizeNotificationDelivery(item NotificationDelivery, now time.Time) (No
 	if item.Status == "" {
 		item.Status = NotificationDeliveryQueued
 	}
-	if item.Status != NotificationDeliveryQueued || item.Attempts != 0 || item.LeaseEpoch != 0 || item.LeaseOwner != "" || item.LeaseUntil != nil || item.AcceptedAt != nil || item.RemoteID != "" || item.SafeError != "" {
+	if item.Status != NotificationDeliveryQueued && item.Status != NotificationDeliverySuppressed || item.Attempts != 0 || item.LeaseEpoch != 0 || item.LeaseOwner != "" || item.LeaseUntil != nil || item.AcceptedAt != nil || item.RemoteID != "" {
 		return NotificationDelivery{}, ErrInvalid
 	}
-	if item.NextAttemptAt == nil {
-		item.NextAttemptAt = timePointer(now)
+	if item.Status == NotificationDeliverySuppressed {
+		item.NextAttemptAt = nil
+		item.SafeError = "notification suppressed"
 	} else {
-		value := item.NextAttemptAt.UTC()
-		item.NextAttemptAt = &value
+		if item.SafeError != "" {
+			return NotificationDelivery{}, ErrInvalid
+		}
+		if item.NextAttemptAt == nil {
+			item.NextAttemptAt = timePointer(now)
+		} else {
+			value := item.NextAttemptAt.UTC()
+			item.NextAttemptAt = &value
+		}
 	}
 	if item.ExpiresAt.IsZero() {
 		item.ExpiresAt = now.Add(NotificationDeliveryTTL)
@@ -888,6 +904,7 @@ func cloneNotificationDelivery(item NotificationDelivery) NotificationDelivery {
 	item.LeaseUntil = cloneTime(item.LeaseUntil)
 	item.AcceptedAt = cloneTime(item.AcceptedAt)
 	item.Payload = append([]byte(nil), item.Payload...)
+	item.SuppressionReasons = append([]string(nil), item.SuppressionReasons...)
 	return item
 }
 
