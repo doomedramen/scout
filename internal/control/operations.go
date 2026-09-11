@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"scout.local/scout/internal/enrollment"
 	"scout.local/scout/internal/store"
 )
 
@@ -68,7 +69,7 @@ func (a *App) decommission(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	device, err := a.Store.DecommissionDevice(r.Context(), r.PathValue("deviceId"), request.Reason)
+	device, err := (&enrollment.Decommissioner{Store: a.Store}).Decommission(r.Context(), r.PathValue("deviceId"), request.Reason)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
@@ -98,7 +99,7 @@ func (a *App) reenable(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	device, err := a.Store.ReenableDevice(r.Context(), r.PathValue("deviceId"), request.ExpectedRevision)
+	device, err := (&enrollment.Decommissioner{Store: a.Store}).Reenable(r.Context(), r.PathValue("deviceId"), request.ExpectedRevision)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -355,11 +356,18 @@ func (s *Store) UpdateAssignment(ctx context.Context, deviceID string, update fu
 }
 
 func (s *Store) DecommissionDevice(ctx context.Context, deviceID, reason string) (Device, error) {
+	if strings.TrimSpace(deviceID) == "" || strings.TrimSpace(reason) == "" {
+		return Device{}, ErrInvalid
+	}
 	var result Device
 	err := s.mutate(ctx, func(state *State) error {
 		device, ok := state.Devices[deviceID]
 		if !ok {
 			return ErrNotFound
+		}
+		if device.Lifecycle == "decommissioned" && device.Excluded {
+			result = copyDevice(device)
+			return nil
 		}
 		now := s.now().UTC()
 		device.DecommissionedAt = &now
@@ -397,6 +405,9 @@ func (s *Store) ReenableDevice(ctx context.Context, deviceID string, expectedRev
 		if expectedRevision > 0 && device.Revision != expectedRevision {
 			return ErrConflict
 		}
+		if !hasEnabledScopeForDevice(state, device) {
+			return ErrForbidden
+		}
 		device.Excluded = false
 		device.DecommissionedAt = nil
 		device.Lifecycle = "candidate"
@@ -407,6 +418,35 @@ func (s *Store) ReenableDevice(ctx context.Context, deviceID string, expectedRev
 		return nil
 	})
 	return result, err
+}
+
+func hasEnabledScopeForDevice(state *State, device Device) bool {
+	for _, scope := range state.Scopes {
+		if !scope.Enabled || scope.SiteID != device.SiteID {
+			continue
+		}
+		if scope.CredentialRef != "" {
+			credential, ok := state.Credentials[scope.CredentialRef]
+			if !ok || credential.RevokedAt != nil {
+				continue
+			}
+		}
+		for _, rawAddress := range device.Addresses {
+			address, err := netip.ParseAddr(rawAddress)
+			if err != nil || scopeExcludes(scope, address.String()) {
+				continue
+			}
+			for _, rawRange := range scope.Ranges {
+				if prefix, prefixErr := netip.ParsePrefix(rawRange); prefixErr == nil && prefix.Contains(address) {
+					return true
+				}
+				if literal, literalErr := netip.ParseAddr(rawRange); literalErr == nil && literal == address {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (s *Store) AddIdentifier(ctx context.Context, deviceID string, evidence IdentifierEvidence) error {

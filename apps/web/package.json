@@ -6,7 +6,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
-    "test:e2e": "node ../../tests/e2e/smoke.mjs && node --experimental-strip-types --test ../../tests/e2e/setup.spec.ts"
+    "test:e2e": "node ../../tests/e2e/smoke.mjs && node --experimental-strip-types --test ../../tests/e2e/setup.spec.ts ../../tests/e2e/access.spec.ts ../../tests/e2e/monitoring.spec.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

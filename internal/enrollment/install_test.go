@@ -11,6 +11,7 @@ import (
 type fakeSSH struct {
 	uploads  map[string][]byte
 	commands []string
+	output   []byte
 }
 
 func (f *fakeSSH) Upload(_ context.Context, path string, data []byte) error {
@@ -23,7 +24,7 @@ func (f *fakeSSH) Upload(_ context.Context, path string, data []byte) error {
 
 func (f *fakeSSH) Run(_ context.Context, command string) ([]byte, error) {
 	f.commands = append(f.commands, command)
-	return nil, nil
+	return f.output, nil
 }
 
 func (f *fakeSSH) Close() error { return nil }
@@ -53,5 +54,20 @@ func TestInstallRejectsUnsafeTargetAndTamperedArtifact(t *testing.T) {
 	}
 	if err := (InstallRequest{Target: "192.0.2.10:22", Username: "scout", Version: "1.0.0;rm", Artifact: []byte("x"), ArtifactHash: "sha256:" + strings.Repeat("0", 64)}).Validate(); err == nil {
 		t.Fatal("command-injection version accepted")
+	}
+}
+
+func TestUninstallRequiresExplicitRemoteConfirmation(t *testing.T) {
+	transport := &fakeSSH{output: []byte("scout-uninstall-confirmed\n")}
+	result, err := Uninstall(context.Background(), transport, UninstallRequest{Target: "192.0.2.10:22", Username: "scout"})
+	if err != nil || !result.Removed || !result.Confirmed {
+		t.Fatalf("uninstall was not confirmed: %+v %v", result, err)
+	}
+	if !strings.Contains(transport.commands[0], "rm -f /usr/local/libexec/scout-agent") {
+		t.Fatal("uninstall command was not fixed to the Scout executable")
+	}
+	transport = &fakeSSH{}
+	if _, err := Uninstall(context.Background(), transport, UninstallRequest{Target: "192.0.2.10:22", Username: "scout"}); err == nil {
+		t.Fatal("unconfirmed uninstall was reported as successful")
 	}
 }
