@@ -14,7 +14,11 @@ Scout is a self-hosted server, network, and device monitor. Its planned distribu
 
 The owner configures allowed networks and credentials once. Enrollment proceeds automatically within those boundaries without routine per-device approvals. Newly enrolled agents contribute further discovery observations.
 
-## Development
+## Specification
+
+The [Scout platform specification](specs/001-scout-platform/spec.md) is the source of truth for target behavior. Start implementation from the [agent handoff](specs/001-scout-platform/handoff.md), which links the constitution, technical plan, contracts, 64 ordered tasks, and acceptance coverage. See the [Spec Kit workflow](specs/README.md) for tooling. Performance and retention defaults are proposed targets, not claims about this scaffold.
+
+## Development setup
 
 Requires Node.js 22.14+ or 24+, npm 11, Go 1.26+, and Docker with Compose for the optional local database. The repository uses npm workspaces and Turborepo:
 
