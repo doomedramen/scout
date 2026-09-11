@@ -241,7 +241,13 @@ func (s *Store) ClaimNotificationDeliveries(ctx context.Context, owner string, l
 	}
 	result := []NotificationDelivery{}
 	err := s.mutate(ctx, func(state *State) error {
-		result = claimNotificationDeliveriesState(state, owner, limit, lease, s.now().UTC())
+		now := s.now().UTC()
+		if state.Workspace.NotificationsPaused {
+			cancelPendingNotificationDeliveriesState(state, notificationDeliveryPaused, now)
+			cancelExpiredSendingNotificationDeliveriesState(state, notificationDeliveryPaused, now)
+			return nil
+		}
+		result = claimNotificationDeliveriesState(state, owner, limit, lease, now)
 		return nil
 	})
 	return result, err
@@ -602,6 +608,23 @@ func (s *Store) claimNotificationDeliveriesSQL(ctx context.Context, owner string
 	}
 	defer func() { _ = tx.Rollback() }()
 	now := s.now().UTC()
+	workspace, err := readWorkspaceStateTx(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.Workspace.NotificationsPaused {
+		if _, err := cancelPendingNotificationDeliveriesTx(ctx, tx, notificationDeliveryPaused, now); err != nil {
+			return nil, err
+		}
+		if _, err := cancelExpiredSendingNotificationDeliveriesTx(ctx, tx, notificationDeliveryPaused, now); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit paused notification delivery cleanup: %w", err)
+		}
+		s.invalidateLegacyCache()
+		return nil, nil
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET status='expired', next_attempt_at=NULL, lease_owner='', lease_until=NULL, safe_error='delivery expired before attempt', updated_at=$1 WHERE status IN ('queued','retry') AND expires_at <= $1`, now); err != nil {
 		return nil, fmt.Errorf("expire notification deliveries: %w", err)
 	}

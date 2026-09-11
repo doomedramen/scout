@@ -2,7 +2,9 @@ package control
 
 import (
 	"net/http"
+	"time"
 
+	"scout.local/scout/internal/alerts"
 	"scout.local/scout/internal/audit"
 	"scout.local/scout/internal/store"
 )
@@ -11,6 +13,7 @@ func (a *App) registerRecoveryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/recovery/status", a.recoveryStatus)
 	mux.HandleFunc("POST /api/v1/recovery/start", a.startRecovery)
 	mux.HandleFunc("POST /api/v1/recovery/reconcile", a.reconcileRecovery)
+	mux.HandleFunc("POST /api/v1/monitoring/notifications/resume", a.resumeNotifications)
 }
 
 func (a *App) recoveryStatus(w http.ResponseWriter, r *http.Request) {
@@ -58,4 +61,55 @@ func (a *App) reconcileRecovery(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = a.Audit.Record(r.Context(), audit.Event{ActorKind: "owner", Action: "recovery.reconcile", Target: "workspace", Outcome: map[string]any{"success": true, "enrollmentPaused": state.EnrollmentPaused, "updatesPaused": state.UpdatesPaused}, RequestID: r.Header.Get("X-Request-ID")})
 	writeJSON(w, http.StatusOK, state)
+}
+
+func (a *App) resumeNotifications(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireSensitive(w, r); !ok {
+		return
+	}
+	var request expectedRevisionInput
+	if err := decodeJSON(r, &request, 16<<10); err != nil || request.ExpectedRevision < 1 {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
+	state, result, err := alerts.ResumeNotifications(r.Context(), a.Store, request.ExpectedRevision)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	a.recordOwnerAudit(r, "monitoring.notifications.resume", "workspace", map[string]any{
+		"revision": state.PolicyRevision,
+		"queued":   result.Enqueued,
+		"dropped":  result.Dropped,
+	})
+	writeJSON(w, http.StatusOK, recoveryMonitoringSettingsResponse(state, a.Store.Now()))
+}
+
+func recoveryMonitoringSettingsResponse(state store.WorkspaceState, now time.Time) map[string]any {
+	rawDays := state.RetentionHours / 24
+	if rawDays < 1 {
+		rawDays = 1
+	}
+	if rawDays > 30 {
+		rawDays = 30
+	}
+	diskBudget := state.TelemetryBudgetBytes
+	if diskBudget < 1 {
+		diskBudget = store.DefaultTelemetryBudgetBytes
+	}
+	if diskBudget > 1<<40 {
+		diskBudget = 1 << 40
+	}
+	return map[string]any{
+		"revision":            state.PolicyRevision,
+		"defaultsVersion":     "002",
+		"notificationsPaused": state.NotificationsPaused,
+		"retention": map[string]any{
+			"rawDays":        rawDays,
+			"fiveMinuteDays": 90,
+			"hourlyDays":     365,
+		},
+		"diskBudgetBytes": diskBudget,
+		"updatedAt":       now.UTC(),
+	}
 }

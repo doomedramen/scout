@@ -178,6 +178,47 @@ func TestDevelopmentSensitiveMutationDoesNotRequireMFA(t *testing.T) {
 	}
 }
 
+func TestDevelopmentNotificationResumeUsesRevisionFenceWithoutMFA(t *testing.T) {
+	repository := store.NewMemory()
+	app, err := NewApp(repository, nil, Config{SetupToken: "setup-secret-123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	client := server.Client()
+	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "setup-secret-123456789", "password": "ScoutAa1"}, nil, nil)
+	if setup.Code != http.StatusCreated {
+		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
+	}
+	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "ScoutAa1"}, nil, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	var loginBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal([]byte(login.Body), &loginBody); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := repository.SetWorkspace(t.Context(), func(state *store.WorkspaceState) error {
+		state.NotificationsPaused = true
+		state.PolicyRevision++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := postJSON(t, client, server.URL+"/api/v1/monitoring/notifications/resume", map[string]any{"expectedRevision": paused.PolicyRevision}, login.Cookies, http.Header{"X-CSRF-Token": []string{loginBody.CSRFToken}})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body, `"notificationsPaused":false`) || !strings.Contains(response.Body, `"revision":3`) {
+		t.Fatalf("resume response: %d %s", response.Code, response.Body)
+	}
+	stale := postJSON(t, client, server.URL+"/api/v1/monitoring/notifications/resume", map[string]any{"expectedRevision": paused.PolicyRevision}, login.Cookies, http.Header{"X-CSRF-Token": []string{loginBody.CSRFToken}})
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale resume response: %d %s", stale.Code, stale.Body)
+	}
+}
+
 func TestAgentBootstrapArtifactsArePublicAndArchitectureBound(t *testing.T) {
 	directory := t.TempDir()
 	agent := []byte("linux-agent-amd64")

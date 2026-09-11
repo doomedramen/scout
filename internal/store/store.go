@@ -74,7 +74,7 @@ func newState() State {
 		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{}, Candidates: map[string]Candidate{}, Workers: map[string]WorkerIdentity{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, AlertRules: map[string]AlertRule{}, AlertOverrides: map[string]AlertOverride{}, NotificationDestinations: map[string]NotificationDestination{}, NotificationDeliveries: map[string]NotificationDelivery{}, SuppressionWindows: map[string]SuppressionWindow{}, SuppressionEpisodes: map[string]SuppressionEpisode{}, AlertEvaluations: map[string]AlertEvaluation{}, Incidents: map[string]Incident{}, IncidentTransitions: map[string]IncidentTransition{}, AlertWork: map[string]AlertWorkItem{}, Releases: map[string]Release{},
-		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
+		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{PolicyRevision: 1, SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
 	}
 }
 
@@ -187,6 +187,9 @@ func ensureStateMaps(state *State) {
 	}
 	if state.Workspace.SchemaVersion == 0 {
 		state.Workspace.SchemaVersion = 1
+	}
+	if state.Workspace.PolicyRevision < 1 {
+		state.Workspace.PolicyRevision = 1
 	}
 	if state.Workspace.RetentionHours == 0 {
 		state.Workspace.RetentionHours = DefaultRetentionHours

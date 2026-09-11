@@ -625,6 +625,7 @@ type WorkspaceState struct {
 	DiscoveryPaused            bool       `json:"discoveryPaused"`
 	EnrollmentPaused           bool       `json:"enrollmentPaused"`
 	UpdatesPaused              bool       `json:"updatesPaused"`
+	NotificationsPaused        bool       `json:"notificationsPaused"`
 	RetentionHours             int        `json:"retentionHours"`
 	MaxSamples                 int        `json:"maxSamples"`
 	TelemetryBudgetBytes       int64      `json:"telemetryBudgetBytes"`

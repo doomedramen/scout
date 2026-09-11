@@ -253,5 +253,11 @@ func cleanupMonitoringFixture(t *testing.T, db *sql.DB, repository *store.Store,
 		_, _ = db.ExecContext(ctx, `DELETE FROM monitoring_migration_checkpoints`)
 		_, _ = db.ExecContext(ctx, `UPDATE monitoring_storage_state SET storage_generation = 0, migration_generation = 0, phase = 'legacy', legacy_state_hash = '', legacy_sample_count = 0, normalized_sample_count = 0, legacy_receipt_count = 0, normalized_receipt_count = 0, legacy_observation_count = 0, normalized_observation_count = 0, parity_checked_at = NULL, cutover_at = NULL, updated_at = now() WHERE singleton = true`)
 		_ = repository.Restore(ctx, initialBackup)
+		if backup, parseErr := store.ParseBackup(initialBackup); parseErr == nil {
+			_, _ = repository.SetWorkspace(ctx, func(state *store.WorkspaceState) error {
+				*state = backup.State.Workspace
+				return nil
+			})
+		}
 	})
 }

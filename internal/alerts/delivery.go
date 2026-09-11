@@ -203,6 +203,17 @@ func (w *DeliveryWorker) deliver(ctx context.Context, claim store.NotificationDe
 		outcome.SafeError = "notification payload unavailable"
 		return outcome
 	}
+	workspace, err := w.Store.Workspace(ctx)
+	if err != nil {
+		outcome.Retryable = true
+		outcome.SafeError = "notification delivery state unavailable"
+		return outcome
+	}
+	if workspace.NotificationsPaused {
+		outcome.Cancelled = true
+		outcome.SafeError = "notification delivery paused"
+		return outcome
+	}
 	response, publishErr := w.Client.Publish(ctx, configured, message)
 	if publishErr == nil && response.Accepted {
 		outcome.Accepted = true

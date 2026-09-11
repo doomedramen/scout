@@ -134,12 +134,7 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	}
 	app.Updates = updates.NewReleaseService(repository, trust, config.ArtifactDir)
 	if config.StartRecovery {
-		_, _ = repository.SetWorkspace(context.Background(), func(state *store.WorkspaceState) error {
-			state.RecoveryMode = true
-			state.EnrollmentPaused = true
-			state.UpdatesPaused = true
-			return nil
-		})
+		_, _ = repository.StartRecovery(context.Background())
 	}
 	return app, nil
 }

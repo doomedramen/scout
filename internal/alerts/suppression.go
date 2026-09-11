@@ -315,6 +315,13 @@ func minInt(left, right int) int {
 }
 
 func (w *DeliveryWorker) releaseSuppressionSummaries(ctx context.Context) error {
+	workspace, err := w.Store.Workspace(ctx)
+	if err != nil {
+		return err
+	}
+	if workspace.NotificationsPaused {
+		return nil
+	}
 	episodes, err := w.Store.ListOpenSuppressionEpisodes(ctx)
 	if err != nil {
 		return err
