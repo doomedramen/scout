@@ -110,6 +110,13 @@ func (s *Store) PutAlertRule(ctx context.Context, rule AlertRule, expectedRevisi
 			rule.CreatedAt = current.CreatedAt
 			rule.Revision = current.Revision + 1
 			rule.RetiredAt = cloneTime(current.RetiredAt)
+			reason := "rule_changed"
+			if !rule.Enabled {
+				reason = "disabled"
+			}
+			if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.LineageID == current.ID }, reason, s.now().UTC()); err != nil {
+				return err
+			}
 		} else {
 			if rule.ID == "" {
 				rule.ID = NewID()
@@ -148,6 +155,9 @@ func (s *Store) RetireAlertRule(ctx context.Context, id string, expectedRevision
 		rule.Revision++
 		rule.RetiredAt = &when
 		rule.UpdatedAt = when
+		if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.LineageID == rule.ID }, "retired", when); err != nil {
+			return err
+		}
 		state.AlertRules[id] = cloneAlertRule(rule)
 		result = cloneAlertRule(rule)
 		return nil
@@ -567,6 +577,15 @@ func (s *Store) putAlertRuleSQL(ctx context.Context, rule AlertRule, expectedRev
 	if err != nil {
 		return AlertRule{}, mapAlertRuleSQLError(err)
 	}
+	if exists {
+		reason := "rule_changed"
+		if !rule.Enabled {
+			reason = "disabled"
+		}
+		if _, err := closeIncidentsTx(ctx, tx, "lineage_id=$1", current.ID, reason, rule.UpdatedAt.UTC()); err != nil {
+			return AlertRule{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return AlertRule{}, fmt.Errorf("commit alert rule: %w", err)
 	}
@@ -596,6 +615,9 @@ func (s *Store) retireAlertRuleSQL(ctx context.Context, id string, expectedRevis
 	rule.UpdatedAt = when
 	if _, err := tx.ExecContext(ctx, `UPDATE alert_rules SET enabled=false, revision=$1, retired_at=$2, updated_at=$3 WHERE id=$4`, rule.Revision, rule.RetiredAt, rule.UpdatedAt, id); err != nil {
 		return AlertRule{}, mapAlertRuleSQLError(err)
+	}
+	if _, err := closeIncidentsTx(ctx, tx, "lineage_id=$1", id, "retired", when); err != nil {
+		return AlertRule{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return AlertRule{}, fmt.Errorf("commit alert rule retirement: %w", err)

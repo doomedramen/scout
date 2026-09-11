@@ -825,6 +825,197 @@ func (s *Store) acknowledgeIncidentSQL(ctx context.Context, id string, expectedR
 	return incident, nil
 }
 
+func closeIncidentsForState(state *State, matches func(Incident) bool, reason string, now time.Time) (int, error) {
+	reason = boundedIncidentText(reason, 64)
+	if !validIncidentCloseReason(reason) {
+		return 0, ErrInvalid
+	}
+
+	ids := make([]string, 0)
+	for id, incident := range state.Incidents {
+		if incident.Status == "active" && matches(incident) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if nextTransitionSequence(state.IncidentTransitions, id) > MaxIncidentTransitions {
+			return 0, ErrBackpressure
+		}
+	}
+
+	now = now.UTC()
+	for _, id := range ids {
+		incident := state.Incidents[id]
+		incident.Status = "closed"
+		incident.EvidenceState = normalizedIncidentEvidence(incident.EvidenceState)
+		incident.ClosedAt = &now
+		incident.CloseReason = reason
+		incident.EvaluatedAt = now
+		incident.Revision++
+
+		transition := administrativeIncidentTransition(incident, nextTransitionSequence(state.IncidentTransitions, id), now, reason)
+		state.Incidents[id] = cloneIncident(incident)
+		state.IncidentTransitions[transition.ID] = cloneIncidentTransition(transition)
+		clearAlertEvaluationState(state, incident.LineageID, incident.EntityID, now)
+	}
+	return len(ids), nil
+}
+
+func (s *Store) closeIncidentsForLineageSQL(ctx context.Context, lineageID, reason string) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	count, err := closeIncidentsTx(ctx, tx, "lineage_id=$1", lineageID, reason, s.now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit lineage incident closure: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Store) closeIncidentsForDeviceSQL(ctx context.Context, deviceID, reason string) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	count, err := closeIncidentsTx(ctx, tx, "device_id=$1", deviceID, reason, s.now().UTC())
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit device incident closure: %w", err)
+	}
+	return count, nil
+}
+
+func closeIncidentsTx(ctx context.Context, tx *sql.Tx, predicate string, value any, reason string, now time.Time) (int, error) {
+	reason = boundedIncidentText(reason, 64)
+	if !validIncidentCloseReason(reason) {
+		return 0, ErrInvalid
+	}
+
+	rows, err := tx.QueryContext(ctx, incidentSelect+` WHERE status='active' AND `+predicate+` FOR UPDATE`, value)
+	if err != nil {
+		return 0, fmt.Errorf("select incidents for administrative closure: %w", err)
+	}
+	incidents := []Incident{}
+	for rows.Next() {
+		incident, scanErr := scanIncident(rows)
+		if scanErr != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan incident for administrative closure: %w", scanErr)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("iterate incidents for administrative closure: %w", err)
+	}
+	rows.Close()
+	sort.Slice(incidents, func(left, right int) bool { return incidents[left].ID < incidents[right].ID })
+
+	now = now.UTC()
+	for _, incident := range incidents {
+		var nextSequence int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) + 1 FROM incident_transitions WHERE incident_id=$1`, incident.ID).Scan(&nextSequence); err != nil {
+			return 0, fmt.Errorf("read administrative closure sequence: %w", err)
+		}
+		if nextSequence > MaxIncidentTransitions {
+			return 0, ErrBackpressure
+		}
+	}
+
+	for _, incident := range incidents {
+		incident.Status = "closed"
+		incident.EvidenceState = normalizedIncidentEvidence(incident.EvidenceState)
+		incident.ClosedAt = &now
+		incident.CloseReason = reason
+		incident.EvaluatedAt = now
+		incident.Revision++
+		transition := administrativeIncidentTransition(incident, 0, now, reason)
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) + 1 FROM incident_transitions WHERE incident_id=$1`, incident.ID).Scan(&transition.Sequence); err != nil {
+			return 0, fmt.Errorf("re-read administrative closure sequence: %w", err)
+		}
+
+		if _, err := tx.ExecContext(ctx, `UPDATE incidents SET status='closed', evidence_state=$1, evaluated_at=$2, closed_at=$3, close_reason=$4, revision=$5 WHERE id=$6`, incident.EvidenceState, incident.EvaluatedAt, incident.ClosedAt, incident.CloseReason, incident.Revision, incident.ID); err != nil {
+			return 0, mapIncidentSQLError(err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO incident_transitions(id, incident_id, sequence, kind, actor, evidence_state, reason, value, observed_at, occurred_at, rule_revision) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, transition.ID, transition.IncidentID, transition.Sequence, transition.Kind, transition.Actor, transition.EvidenceState, transition.Reason, transition.Value, transition.ObservedAt, transition.OccurredAt, transition.RuleRevision); err != nil {
+			return 0, mapIncidentSQLError(err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE alert_evaluations SET evidence_state='unknown', last_observed_at=NULL, last_received_at=NULL, pending_since=NULL, recovery_since=NULL, last_valid_at=NULL, trigger_consecutive=0, recovery_consecutive=0, incident_id=NULL, updated_at=$1 WHERE incident_id=$2`, now, incident.ID); err != nil {
+			return 0, fmt.Errorf("clear alert evaluation after administrative closure: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM alert_work WHERE entity_id=$1 AND (lineage_id=$2 OR lineage_id=$3)`, incident.EntityID, incident.LineageID, AlertWorkAllLineages); err != nil {
+			return 0, fmt.Errorf("clear alert work after administrative closure: %w", err)
+		}
+	}
+	return len(incidents), nil
+}
+
+func administrativeIncidentTransition(incident Incident, sequence int64, now time.Time, reason string) IncidentTransition {
+	transition := IncidentTransition{
+		ID:            NewID(),
+		IncidentID:    incident.ID,
+		Sequence:      sequence,
+		Kind:          "administrative_close",
+		Actor:         "system",
+		EvidenceState: normalizedIncidentEvidence(incident.EvidenceState),
+		Reason:        reason,
+		Value:         cloneAlertFloat(incident.Value),
+		OccurredAt:    now.UTC(),
+		RuleRevision:  incident.RuleRevision,
+	}
+	if !incident.ObservedAt.IsZero() {
+		observedAt := incident.ObservedAt.UTC()
+		transition.ObservedAt = &observedAt
+	}
+	return transition
+}
+
+func clearAlertEvaluationState(state *State, lineageID, entityID string, now time.Time) {
+	for key, evaluation := range state.AlertEvaluations {
+		if evaluation.IncidentID == "" || evaluation.LineageID != lineageID || evaluation.EntityID != entityID {
+			continue
+		}
+		evaluation.EvidenceState = "unknown"
+		evaluation.LastObservedAt = nil
+		evaluation.LastReceivedAt = nil
+		evaluation.PendingSince = nil
+		evaluation.RecoverySince = nil
+		evaluation.LastValidAt = nil
+		evaluation.TriggerConsecutive = 0
+		evaluation.RecoveryConsecutive = 0
+		evaluation.IncidentID = ""
+		evaluation.UpdatedAt = now.UTC()
+		state.AlertEvaluations[key] = cloneAlertEvaluation(evaluation)
+	}
+	delete(state.AlertWork, alertWorkKey(lineageID, entityID))
+	delete(state.AlertWork, alertWorkKey(AlertWorkAllLineages, entityID))
+}
+
+func normalizedIncidentEvidence(value string) string {
+	if value == "fresh" || value == "unsupported" {
+		return value
+	}
+	return "unknown"
+}
+
+func validIncidentCloseReason(value string) bool {
+	switch value {
+	case "recovered", "rule_changed", "disabled", "retired", "decommissioned", "administrative":
+		return true
+	default:
+		return false
+	}
+}
+
 const incidentSelect = `SELECT id, lineage_id, entity_id, device_id, rule_revision, rule_snapshot, severity, status, evidence_state, value, unit, source, opened_at, observed_at, evaluated_at, acknowledged_at, acknowledged_by, closed_at, close_reason, revision FROM incidents`
 
 type alertWorkScanner interface{ Scan(...any) error }

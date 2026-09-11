@@ -366,6 +366,11 @@ func (s *Store) DecommissionDevice(ctx context.Context, deviceID, reason string)
 			return ErrNotFound
 		}
 		if device.Lifecycle == "decommissioned" && device.Excluded {
+			if s.db == nil {
+				if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.DeviceID == deviceID }, "decommissioned", s.now().UTC()); err != nil {
+					return err
+				}
+			}
 			result = copyDevice(device)
 			return nil
 		}
@@ -389,9 +394,19 @@ func (s *Store) DecommissionDevice(ctx context.Context, deviceID, reason string)
 				state.Jobs[id] = item
 			}
 		}
+		if s.db == nil {
+			if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.DeviceID == deviceID }, "decommissioned", now); err != nil {
+				return err
+			}
+		}
 		result = copyDevice(device)
 		return nil
 	})
+	if err == nil && s.db != nil {
+		if _, closeErr := s.closeIncidentsForDeviceSQL(ctx, deviceID, "decommissioned"); closeErr != nil {
+			return Device{}, closeErr
+		}
+	}
 	return result, err
 }
 

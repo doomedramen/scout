@@ -321,19 +321,32 @@ func (s *Store) ListDevices(ctx context.Context, filter DeviceFilter) ([]Device,
 
 func (s *Store) UpdateDevice(ctx context.Context, id string, update func(*Device) error) (Device, error) {
 	var result Device
+	targetChanged := false
 	err := s.mutate(ctx, func(state *State) error {
 		item, ok := state.Devices[id]
 		if !ok {
 			return ErrNotFound
 		}
+		previousSiteID := item.SiteID
 		if err := update(&item); err != nil {
 			return err
 		}
+		targetChanged = previousSiteID != item.SiteID
 		item.Revision++
 		state.Devices[id] = item
+		if targetChanged && s.db == nil {
+			if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.DeviceID == id }, "administrative", s.now().UTC()); err != nil {
+				return err
+			}
+		}
 		result = copyDevice(item)
 		return nil
 	})
+	if err == nil && targetChanged && s.db != nil {
+		if _, closeErr := s.closeIncidentsForDeviceSQL(ctx, id, "administrative"); closeErr != nil {
+			return Device{}, closeErr
+		}
+	}
 	return result, err
 }
 
