@@ -581,3 +581,35 @@ For future results append: task and requirement IDs, commit, date, exact command
   configuration UI flow, and controlled Linux live evidence. The background
   runtime has not yet been wired to emit systemd entities over the agent
   transport; that remains part of the subsequent agent/collector integration.
+
+## T021 — service inventory controls and controlled systemd evidence
+
+- Requirements: FR-014, FR-015, FR-016, FR-019, FR-034; SC-005, SC-009,
+  SC-010.
+- Date: 2026-09-11 (Europe/London); implementation commit: `829730a`.
+- Extended the Services workspace with provider/device filtering, typed state
+  labels, source and expiry timestamps, freshness status, failed counts,
+  host association, must-run selection for observed systemd units, bounded
+  collector diagnostics, and links from active service incidents into the
+  incident detail view. The page uses native select/input/checkbox/button
+  controls and states in text as well as color. It explicitly tells owners
+  that inventory is evidence only and Scout exposes no service-control action.
+  Added `scripts/test-systemd.sh`: its default path runs the fixture-backed
+  collector and alert tests without touching the host system bus; an explicit
+  owner-confirmed Linux mode performs only a read-only `systemctl` preflight.
+- Exact verification commands and outcomes: `scripts/test-systemd.sh` passed
+  the systemd and service-alert fixture suites and printed that no host bus was
+  contacted; `npm run check`; `npm run lint`; `npm run format:check`;
+  `npm run build`; `go test ./... -race -count=1`; `go vet ./...`; `npm run
+  test:e2e:browser`; and `git diff --check` passed. The browser suite passed
+  both configured Playwright journeys against a fresh local server. Negative
+  coverage includes denied/unavailable systemd access, partial inventory,
+  expired/unsupported service evidence, unselected inactivity, duplicate
+  failed-plus-must-run suppression, and host-offline notification suppression.
+- No live Linux systemd bus, production database, real device, production
+  credential, service mutation, or deployment was used. The optional live
+  script mode was not run because this workspace is macOS and no owner-
+  authorized disposable Linux host was provided. The agent runtime still needs
+  the subsequent transport wiring that sends service entities from a live
+  enrolled agent; this task intentionally does not claim live inventory
+  support or SC-009 compatibility evidence.
