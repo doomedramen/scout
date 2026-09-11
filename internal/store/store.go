@@ -27,6 +27,11 @@ var (
 	ErrInvalid      = errors.New("invalid")
 )
 
+const (
+	DefaultRetentionHours = 24 * 30
+	DefaultMaxSamples     = 1_000_000
+)
+
 // NewID returns a UUID-shaped random identifier without adding a second UUID
 // dependency to the control plane. It is generated from the OS CSPRNG.
 func NewID() string {
@@ -67,67 +72,80 @@ func newState() State {
 		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, Releases: map[string]Release{},
-		Assignments: map[string]Assignment{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1},
+		Assignments: map[string]Assignment{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, MaxSamples: DefaultMaxSamples},
 	}
 }
 
 func (s *Store) ensureMaps() {
-	if s.state.Version == 0 {
-		s.state.Version = 1
+	ensureStateMaps(&s.state)
+}
+
+func ensureStateMaps(state *State) {
+	if state.Version == 0 {
+		state.Version = 1
 	}
-	if s.state.Sessions == nil {
-		s.state.Sessions = map[string]Session{}
+	if state.Sessions == nil {
+		state.Sessions = map[string]Session{}
 	}
-	if s.state.Sites == nil {
-		s.state.Sites = map[string]Site{}
+	if state.Sites == nil {
+		state.Sites = map[string]Site{}
 	}
-	if s.state.Scopes == nil {
-		s.state.Scopes = map[string]Scope{}
+	if state.Scopes == nil {
+		state.Scopes = map[string]Scope{}
 	}
-	if s.state.Devices == nil {
-		s.state.Devices = map[string]Device{}
+	if state.Devices == nil {
+		state.Devices = map[string]Device{}
 	}
-	if s.state.Invitations == nil {
-		s.state.Invitations = map[string]BootstrapInvitation{}
+	if state.Invitations == nil {
+		state.Invitations = map[string]BootstrapInvitation{}
 	}
-	if s.state.Agents == nil {
-		s.state.Agents = map[string]AgentIdentity{}
+	if state.Agents == nil {
+		state.Agents = map[string]AgentIdentity{}
 	}
-	if s.state.Credentials == nil {
-		s.state.Credentials = map[string]CredentialRef{}
+	if state.Credentials == nil {
+		state.Credentials = map[string]CredentialRef{}
 	}
-	if s.state.Trust == nil {
-		s.state.Trust = map[string]TrustRecord{}
+	if state.Trust == nil {
+		state.Trust = map[string]TrustRecord{}
 	}
-	if s.state.AccessRequests == nil {
-		s.state.AccessRequests = map[string]AccessRequest{}
+	if state.AccessRequests == nil {
+		state.AccessRequests = map[string]AccessRequest{}
 	}
-	if s.state.Jobs == nil {
-		s.state.Jobs = map[string]Job{}
+	if state.Jobs == nil {
+		state.Jobs = map[string]Job{}
 	}
-	if s.state.BatchReceipts == nil {
-		s.state.BatchReceipts = map[string]string{}
+	if state.BatchReceipts == nil {
+		state.BatchReceipts = map[string]string{}
 	}
-	if s.state.Samples == nil {
-		s.state.Samples = []MetricSample{}
+	if state.Samples == nil {
+		state.Samples = []MetricSample{}
 	}
-	if s.state.Observations == nil {
-		s.state.Observations = map[string]Observation{}
+	if state.Observations == nil {
+		state.Observations = map[string]Observation{}
 	}
-	if s.state.Relationships == nil {
-		s.state.Relationships = map[string]Relationship{}
+	if state.Relationships == nil {
+		state.Relationships = map[string]Relationship{}
 	}
-	if s.state.Collectors == nil {
-		s.state.Collectors = map[string]CollectorDescriptorState{}
+	if state.Collectors == nil {
+		state.Collectors = map[string]CollectorDescriptorState{}
 	}
-	if s.state.Releases == nil {
-		s.state.Releases = map[string]Release{}
+	if state.Releases == nil {
+		state.Releases = map[string]Release{}
 	}
-	if s.state.Assignments == nil {
-		s.state.Assignments = map[string]Assignment{}
+	if state.Assignments == nil {
+		state.Assignments = map[string]Assignment{}
 	}
-	if s.state.Workspace.SchemaVersion == 0 {
-		s.state.Workspace.SchemaVersion = 1
+	if state.Rollouts == nil {
+		state.Rollouts = map[string]Rollout{}
+	}
+	if state.Workspace.SchemaVersion == 0 {
+		state.Workspace.SchemaVersion = 1
+	}
+	if state.Workspace.RetentionHours == 0 {
+		state.Workspace.RetentionHours = DefaultRetentionHours
+	}
+	if state.Workspace.MaxSamples == 0 {
+		state.Workspace.MaxSamples = DefaultMaxSamples
 	}
 }
 

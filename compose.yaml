@@ -15,5 +15,36 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  server:
+    profiles: ["production"]
+    build:
+      context: .
+      dockerfile: packaging/containers/server.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCOUT_PRODUCTION: "true"
+      SCOUT_LISTEN: "0.0.0.0:8443"
+      SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD}@postgres:5432/scout?sslmode=disable
+      SCOUT_SETUP_TOKEN_FILE: /etc/scout/secrets/setup-token
+      SCOUT_SECRET_KEY_FILE: /etc/scout/secrets/wrapping-key
+      SCOUT_TLS_CERT_FILE: /etc/scout/tls/server.crt
+      SCOUT_TLS_KEY_FILE: /etc/scout/tls/server.key
+      SCOUT_AGENT_CA_FILE: /etc/scout/tls/agent-ca.pem
+      SCOUT_AGENT_CA_KEY_FILE: /etc/scout/tls/agent-ca-key.pem
+      SCOUT_RELEASE_TRUST_FILE: /etc/scout/secrets/release-trust.txt
+      SCOUT_ARTIFACT_DIR: /var/lib/scout/releases
+      SCOUT_REQUIRE_AGENT_MTLS: "true"
+      SCOUT_ALLOWED_ORIGIN: ${SCOUT_ALLOWED_ORIGIN:?Set SCOUT_ALLOWED_ORIGIN for the production profile}
+    ports:
+      - "${SCOUT_SERVER_BIND:-127.0.0.1:8443}:8443"
+    volumes:
+      - scout-server-data:/var/lib/scout
+      - scout-secrets:/etc/scout/secrets:ro
+      - scout-tls:/etc/scout/tls:ro
 volumes:
   scout-postgres:
+  scout-server-data:
+  scout-secrets:
+  scout-tls:

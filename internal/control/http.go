@@ -23,6 +23,7 @@ import (
 	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
 	"scout.local/scout/internal/telemetry"
+	"scout.local/scout/internal/updates"
 )
 
 type Database interface{ PingContext(context.Context) error }
@@ -33,6 +34,11 @@ type Config struct {
 	SetupToken         string
 	SetupTokenFile     string
 	SecretKeyFile      string
+	AgentCAFile        string
+	AgentCAKeyFile     string
+	StartRecovery      bool
+	ReleaseTrustFile   string
+	ArtifactDir        string
 	MaxBodyBytes       int64
 	RateLimitPerMinute int
 	AgentRequireMTLS   bool
@@ -48,6 +54,7 @@ type App struct {
 	Policy     *policy.Engine
 	Jobs       jobs.Queue
 	Telemetry  *telemetry.Service
+	Updates    *updates.ReleaseService
 	Database   Database
 	Config     Config
 	setupToken string
@@ -87,7 +94,14 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	if err != nil {
 		return nil, err
 	}
-	authority, err := identity.NewAuthority()
+	var authority *identity.Authority
+	if config.AgentCAFile != "" || config.AgentCAKeyFile != "" {
+		authority, err = identity.LoadAuthority(config.AgentCAFile, config.AgentCAKeyFile)
+	} else if config.Production {
+		return nil, fmt.Errorf("production agent CA certificate and key are required")
+	} else {
+		authority, err = identity.NewAuthority()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +112,22 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	app.Policy = &policy.Engine{Store: repository}
 	app.Jobs = jobs.Queue{Store: repository}
 	app.Telemetry = &telemetry.Service{Store: repository}
+	trust := updates.NewTrustStore()
+	if config.ReleaseTrustFile != "" {
+		trust, err = updates.LoadTrustFile(config.ReleaseTrustFile)
+		if err != nil {
+			return nil, err
+		}
+	}
+	app.Updates = updates.NewReleaseService(repository, trust, config.ArtifactDir)
+	if config.StartRecovery {
+		_, _ = repository.SetWorkspace(context.Background(), func(state *store.WorkspaceState) error {
+			state.RecoveryMode = true
+			state.EnrollmentPaused = true
+			state.UpdatesPaused = true
+			return nil
+		})
+	}
 	return app, nil
 }
 
@@ -156,6 +186,8 @@ func (a *App) Handler() http.Handler {
 	a.registerAccessRoutes(mux)
 	a.registerAgentRoutes(mux)
 	a.registerOperationsRoutes(mux)
+	a.registerRecoveryRoutes(mux)
+	a.registerSettingsRoutes(mux)
 	a.registerUpdateRoutes(mux)
 	return a.middleware(mux)
 }
@@ -174,7 +206,15 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 	if a.Config.Production {
 		mode = "production"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "database": state, "enrollmentAvailable": true})
+	recovery := false
+	telemetryStatus := store.TelemetryStatus{}
+	if workspace, err := a.Store.Workspace(r.Context()); err == nil {
+		recovery = workspace.RecoveryMode
+	}
+	if value, err := a.Store.TelemetryStatus(r.Context()); err == nil {
+		telemetryStatus = value
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"mode": mode, "database": state, "enrollmentAvailable": !recovery, "recoveryMode": recovery, "telemetry": telemetryStatus})
 }
 
 func (a *App) middleware(next http.Handler) http.Handler {

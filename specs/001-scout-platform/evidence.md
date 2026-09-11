@@ -45,3 +45,25 @@ This file records executed verification only. Planned targets from the specifica
 - Still open: T017 requires an owner-authorized disposable Linux systemd host
   for native install/restart/renewal/revocation evidence. No real device,
   production credential, or production endpoint was contacted.
+
+## Recovery, updates, and scoped access
+
+- T018–T022: production-profile Compose wiring and non-root server/agent
+  images are checked in with named volumes only; server TLS, agent CA, release
+  trust, setup-token, and wrapping-key files are explicit inputs. `go test
+  ./internal/store ./internal/telemetry` and `./scripts/test-restore.sh`
+  passed backup parsing, restore into a separate in-memory repository, session
+  invalidation, expiry revocation, paused authority, retention/backpressure
+  projection, and script safety checks. A live PostgreSQL restore remains
+  opt-in and was not run against any user database.
+- T023–T030: `./scripts/test-updates.sh` passed Ed25519 manifest and artifact
+  verification, tamper/unknown-key/revocation rejection, platform and
+  generation checks, immutable import/idempotency, range-resume downloads,
+  journaled A/B slot recovery, readiness, single rollback, canary/window
+  rollout planning, and rollout failure pausing. Native power-loss VM stages
+  are still open; the updater does not claim those results.
+- T031–T036: `go test ./tests/integration -run 'Test(Credential|Trust|Ordinary)'`
+  passed target-bound encrypted credential redemption, wrong operation/target
+  and revoked credential rejection, write-only listings, normalized trust
+  matching and changed-key rejection, ordinary-agent separation, and
+  deduplicated missing-access requests. No production secret was used.

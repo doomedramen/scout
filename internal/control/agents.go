@@ -11,6 +11,7 @@ import (
 	"scout.local/scout/internal/identity"
 	"scout.local/scout/internal/store"
 	"scout.local/scout/internal/telemetry"
+	"scout.local/scout/internal/updates"
 )
 
 func (a *App) registerAgentRoutes(mux *http.ServeMux) {
@@ -131,10 +132,20 @@ func (a *App) agentDesiredState(w http.ResponseWriter, r *http.Request) {
 	}
 	assignment, assignmentErr := a.Store.Assignment(r.Context(), agent.DeviceID)
 	update := any(nil)
-	if assignmentErr == nil {
-		update = assignment
+	workspace, workspaceErr := a.Store.Workspace(r.Context())
+	if assignmentErr == nil && workspaceErr == nil && !workspace.RecoveryMode && !workspace.UpdatesPaused && assignment.ExpiresAt.After(a.Store.Now()) && assignment.State != "paused" && assignment.State != "failed" {
+		if release, releaseErr := a.Store.GetRelease(r.Context(), assignment.DesiredRelease); releaseErr == nil && release.RevokedAt == nil {
+			update = map[string]any{"assignment": assignment, "release": releaseManifest(release), "artifactPath": "/api/v1/agent/v1/releases/" + release.Digest}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"revision": maxScopeRevision(visible), "expiresAt": time.Now().UTC().Add(5 * time.Minute), "discoveryPolicy": visible, "collectorConfig": []any{}, "updateAssignment": update})
+}
+
+func releaseManifest(release store.Release) map[string]any {
+	if release.Manifest != nil {
+		return release.Manifest
+	}
+	return map[string]any{"version": release.Version, "generation": release.Generation, "platform": release.Platform, "architecture": release.Architecture, "digest": release.Digest, "bytes": release.Bytes, "trustKeyId": release.TrustKeyID}
 }
 
 func maxScopeRevision(scopes []store.Scope) int64 {
@@ -172,6 +183,14 @@ func (a *App) agentUpdateResult(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrConflict)
 		return
 	}
+	if assignment.ExpiresAt.Before(a.Store.Now()) {
+		writeMappedError(w, r, store.ErrConflict)
+		return
+	}
+	if !validUpdateState(request.State) {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
 	_, err = a.Store.UpdateAssignment(r.Context(), agent.DeviceID, func(item *store.Assignment) error { item.State = request.State; return nil })
 	if err != nil {
 		writeMappedError(w, r, err)
@@ -180,7 +199,19 @@ func (a *App) agentUpdateResult(w http.ResponseWriter, r *http.Request) {
 	if request.InstalledVersion != "" {
 		_, _ = a.Store.UpdateAgent(r.Context(), agent.ID, func(item *store.AgentIdentity) error { item.InstalledVersion = request.InstalledVersion; return nil })
 	}
+	if request.State == "failed" && assignment.RolloutID != "" {
+		_, _ = a.Store.UpdateRollout(r.Context(), assignment.RolloutID, func(item *store.Rollout) error { updates.RecordRolloutFailure(item); return nil })
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"accepted": true})
+}
+
+func validUpdateState(value string) bool {
+	switch value {
+	case "queued", "downloading", "verifying", "staged", "installing", "healthy", "failed", "rolled_back", "rejected", "paused":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) requireAgent(w http.ResponseWriter, r *http.Request) (store.AgentIdentity, bool) {

@@ -180,9 +180,9 @@ type CredentialRef struct {
 	Endpoint       string            `json:"endpoint,omitempty"`
 	AllowedUse     []string          `json:"allowedUse"`
 	Targets        []string          `json:"targets"`
-	Ciphertext     []byte            `json:"ciphertext"`
-	Nonce          []byte            `json:"nonce"`
-	WrappedDataKey []byte            `json:"wrappedDataKey"`
+	Ciphertext     []byte            `json:"ciphertext,omitempty"`
+	Nonce          []byte            `json:"nonce,omitempty"`
+	WrappedDataKey []byte            `json:"wrappedDataKey,omitempty"`
 	KeyVersion     int               `json:"keyVersion"`
 	Metadata       map[string]string `json:"metadata"`
 	Revision       int64             `json:"revision"`
@@ -253,6 +253,22 @@ type Assignment struct {
 	State          string    `json:"state"`
 }
 
+type Rollout struct {
+	ID               string     `json:"id"`
+	ReleaseID        string     `json:"releaseId"`
+	Mode             string     `json:"mode"`
+	Targets          []string   `json:"targets"`
+	Concurrency      int        `json:"concurrency"`
+	Canaries         int        `json:"canaries"`
+	FailureThreshold int        `json:"failureThreshold"`
+	WindowStart      *time.Time `json:"windowStart,omitempty"`
+	WindowEnd        *time.Time `json:"windowEnd,omitempty"`
+	Paused           bool       `json:"paused"`
+	Revision         int64      `json:"revision"`
+	FailureCount     int        `json:"failureCount"`
+	CreatedAt        time.Time  `json:"createdAt"`
+}
+
 type Relationship struct {
 	ID                 string    `json:"id"`
 	FromEntity         string    `json:"fromEntity"`
@@ -278,11 +294,16 @@ type AuditEvent struct {
 }
 
 type WorkspaceState struct {
-	RecoveryMode     bool `json:"recoveryMode"`
-	DiscoveryPaused  bool `json:"discoveryPaused"`
-	EnrollmentPaused bool `json:"enrollmentPaused"`
-	UpdatesPaused    bool `json:"updatesPaused"`
-	SchemaVersion    int  `json:"schemaVersion"`
+	RecoveryMode          bool       `json:"recoveryMode"`
+	DiscoveryPaused       bool       `json:"discoveryPaused"`
+	EnrollmentPaused      bool       `json:"enrollmentPaused"`
+	UpdatesPaused         bool       `json:"updatesPaused"`
+	RetentionHours        int        `json:"retentionHours"`
+	MaxSamples            int        `json:"maxSamples"`
+	DroppedSamples        int64      `json:"droppedSamples"`
+	TelemetryBackpressure bool       `json:"telemetryBackpressure"`
+	LastRetentionAt       *time.Time `json:"lastRetentionAt,omitempty"`
+	SchemaVersion         int        `json:"schemaVersion"`
 }
 
 type State struct {
@@ -305,6 +326,7 @@ type State struct {
 	Collectors     map[string]CollectorDescriptorState `json:"collectors"`
 	Releases       map[string]Release                  `json:"releases"`
 	Assignments    map[string]Assignment               `json:"assignments"`
+	Rollouts       map[string]Rollout                  `json:"rollouts"`
 	AuditEvents    []AuditEvent                        `json:"auditEvents"`
 	Workspace      WorkspaceState                      `json:"workspace"`
 }

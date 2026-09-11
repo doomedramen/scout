@@ -88,8 +88,20 @@ func (s *Store) RotateCredential(ctx context.Context, id string, expected int64,
 		next.ID = id
 		next.Kind = current.Kind
 		next.Revision = current.Revision + 1
-		next.KeyVersion = current.KeyVersion + 1
+		if next.KeyVersion < 1 {
+			next.KeyVersion = current.KeyVersion
+		}
 		state.Credentials[id] = next
+		for jobID, job := range state.Jobs {
+			if job.Kind == "enrollment" && job.CredentialVersion < next.Revision && isActiveJob(job.State) {
+				job.State = "retry"
+				job.LeaseOwner = ""
+				job.LeaseExpiry = nil
+				job.NextAttempt = s.now().UTC()
+				job.Result = map[string]string{"code": "credential_rotated"}
+				state.Jobs[jobID] = job
+			}
+		}
 		result = next
 		return nil
 	})
@@ -105,6 +117,15 @@ func (s *Store) RevokeCredential(ctx context.Context, id string) error {
 		now := s.now().UTC()
 		item.RevokedAt = &now
 		state.Credentials[id] = item
+		for jobID, job := range state.Jobs {
+			if job.Kind == "enrollment" && job.CredentialVersion == item.Revision && isActiveJob(job.State) {
+				job.State = "paused"
+				job.LeaseOwner = ""
+				job.LeaseExpiry = nil
+				job.Result = map[string]string{"code": "credential_revoked"}
+				state.Jobs[jobID] = job
+			}
+		}
 		return nil
 	})
 }
@@ -139,6 +160,33 @@ func (s *Store) Trust(ctx context.Context, id string) (TrustRecord, error) {
 			return ErrNotFound
 		}
 		result = item
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) UpdateTrust(ctx context.Context, id string, expected int64, next TrustRecord) (TrustRecord, error) {
+	if next.Host == "" || next.Fingerprint == "" {
+		return TrustRecord{}, ErrInvalid
+	}
+	var result TrustRecord
+	err := s.mutate(ctx, func(state *State) error {
+		current, ok := state.Trust[id]
+		if !ok {
+			return ErrNotFound
+		}
+		if current.RevokedAt != nil {
+			return ErrRevoked
+		}
+		if current.Revision != expected {
+			return ErrConflict
+		}
+		next.ID = id
+		next.ScopeID = current.ScopeID
+		next.Revision = current.Revision + 1
+		next.OwnerEstablishedAt = current.OwnerEstablishedAt
+		state.Trust[id] = next
+		result = next
 		return nil
 	})
 	return result, err
@@ -467,11 +515,19 @@ func (s *Store) ScopeTrust(ctx context.Context, scopeID string, endpoint string,
 		if !ok {
 			return ErrNotFound
 		}
-		if scope.TrustRef == "" {
-			return nil
+		var trust TrustRecord
+		var trustOK bool
+		if scope.TrustRef != "" {
+			trust, trustOK = state.Trust[scope.TrustRef]
+		} else {
+			for _, item := range state.Trust {
+				if item.ScopeID == scopeID {
+					trust, trustOK = item, true
+					break
+				}
+			}
 		}
-		trust, ok := state.Trust[scope.TrustRef]
-		if !ok || trust.RevokedAt != nil {
+		if !trustOK || trust.RevokedAt != nil {
 			return nil
 		}
 		matched = strings.EqualFold(trust.Endpoint, endpoint) && strings.EqualFold(trust.Fingerprint, fingerprint)

@@ -11,9 +11,21 @@ type BatchResult struct {
 	Duplicate  bool      `json:"duplicate"`
 }
 
+type TelemetryStatus struct {
+	Samples         int        `json:"samples"`
+	DroppedSamples  int64      `json:"droppedSamples"`
+	MaxSamples      int        `json:"maxSamples"`
+	Backpressure    bool       `json:"backpressure"`
+	RetentionHours  int        `json:"retentionHours"`
+	LastRetentionAt *time.Time `json:"lastRetentionAt,omitempty"`
+}
+
 func (s *Store) IngestBatch(ctx context.Context, agentID, bootID, batchID, payloadHash string, samples []MetricSample, observations []Observation, dropped int) (BatchResult, error) {
 	var result BatchResult
 	err := s.mutate(ctx, func(state *State) error {
+		if state.Workspace.TelemetryBackpressure {
+			return ErrBackpressure
+		}
 		agent, ok := state.Agents[agentID]
 		if !ok {
 			return ErrUnauthorized
@@ -36,6 +48,10 @@ func (s *Store) IngestBatch(ctx context.Context, agentID, bootID, batchID, paylo
 		}
 		if device.DecommissionedAt != nil || device.Lifecycle == "decommissioned" {
 			return ErrRevoked
+		}
+		if state.Workspace.MaxSamples > 0 && len(state.Samples)+len(samples) > state.Workspace.MaxSamples {
+			state.Workspace.TelemetryBackpressure = true
+			return ErrBackpressure
 		}
 		state.BatchReceipts[key] = payloadHash
 		for _, sample := range samples {
@@ -253,6 +269,77 @@ func (s *Store) PruneSamples(ctx context.Context, before time.Time) (int, error)
 		return nil
 	})
 	return removed, err
+}
+
+func (s *Store) EnforceSampleLimit(ctx context.Context, maxSamples int) (int, error) {
+	if maxSamples < 1 {
+		return 0, ErrInvalid
+	}
+	removed := 0
+	err := s.mutate(ctx, func(state *State) error {
+		if len(state.Samples) <= maxSamples {
+			return nil
+		}
+		sort.SliceStable(state.Samples, func(i, j int) bool { return state.Samples[i].ReceivedAt.Before(state.Samples[j].ReceivedAt) })
+		removed = len(state.Samples) - maxSamples
+		state.Samples = append([]MetricSample(nil), state.Samples[removed:]...)
+		state.Workspace.DroppedSamples += int64(removed)
+		return nil
+	})
+	return removed, err
+}
+
+func (s *Store) CleanupTelemetry(ctx context.Context, now time.Time) (int, error) {
+	removed := 0
+	err := s.mutate(ctx, func(state *State) error {
+		keptSamples := state.Samples[:0]
+		for _, sample := range state.Samples {
+			if _, agentOK := state.Agents[sample.AgentID]; !agentOK {
+				removed++
+				continue
+			}
+			if _, deviceOK := state.Devices[sample.DeviceID]; !deviceOK {
+				removed++
+				continue
+			}
+			keptSamples = append(keptSamples, sample)
+		}
+		state.Samples = keptSamples
+		for id, observation := range state.Observations {
+			if !observation.ExpiresAt.IsZero() && observation.ExpiresAt.Before(now) {
+				delete(state.Observations, id)
+			}
+		}
+		if state.Workspace.TelemetryBackpressure && state.Workspace.MaxSamples > 0 && len(state.Samples) < state.Workspace.MaxSamples*9/10 {
+			state.Workspace.TelemetryBackpressure = false
+		}
+		return nil
+	})
+	return removed, err
+}
+
+func (s *Store) SetTelemetryBackpressure(ctx context.Context, enabled bool) error {
+	return s.mutate(ctx, func(state *State) error {
+		state.Workspace.TelemetryBackpressure = enabled
+		return nil
+	})
+}
+
+func (s *Store) TelemetryStatus(ctx context.Context) (TelemetryStatus, error) {
+	var result TelemetryStatus
+	err := s.read(ctx, func(state *State) error {
+		result = TelemetryStatus{Samples: len(state.Samples), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}
+		return nil
+	})
+	return result, err
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	result := value.UTC()
+	return &result
 }
 
 func (s *Store) StoreObservation(ctx context.Context, observation Observation) error {

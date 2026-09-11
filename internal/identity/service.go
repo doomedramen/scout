@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -44,6 +45,38 @@ func NewAuthority() (*Authority, error) {
 		return nil, err
 	}
 	return &Authority{certificate: parsed, privateKey: key, CAPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate})}, nil
+}
+
+// LoadAuthority loads the persistent CA used to sign agent certificates. The
+// server's client-CA trust bundle must contain the same certificate.
+func LoadAuthority(certificatePath, privateKeyPath string) (*Authority, error) {
+	if strings.TrimSpace(certificatePath) == "" || strings.TrimSpace(privateKeyPath) == "" {
+		return nil, fmt.Errorf("agent CA certificate and private key are required")
+	}
+	certificatePEM, err := os.ReadFile(certificatePath)
+	if err != nil {
+		return nil, fmt.Errorf("read agent CA certificate: %w", err)
+	}
+	privateKeyPEM, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read agent CA private key: %w", err)
+	}
+	pair, err := tls.X509KeyPair(certificatePEM, privateKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parse agent CA key pair: %w", err)
+	}
+	certificate, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("parse agent CA certificate: %w", err)
+	}
+	key, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok || !certificate.IsCA || certificate.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return nil, fmt.Errorf("agent CA must be an ECDSA certificate-signing CA")
+	}
+	if err := certificate.CheckSignatureFrom(certificate); err != nil {
+		return nil, fmt.Errorf("agent CA self-signature invalid")
+	}
+	return &Authority{certificate: certificate, privateKey: key, CAPEM: append([]byte(nil), certificatePEM...)}, nil
 }
 
 func randomSerial() (*big.Int, error) {

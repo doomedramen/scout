@@ -147,14 +147,110 @@ func (s *Store) PutAssignment(ctx context.Context, assignment Assignment) (Assig
 	}
 	var result Assignment
 	err := s.mutate(ctx, func(state *State) error {
-		if _, ok := state.Devices[assignment.DeviceID]; !ok {
+		device, ok := state.Devices[assignment.DeviceID]
+		if !ok {
 			return ErrNotFound
+		}
+		if device.Excluded || device.Lifecycle == "decommissioned" {
+			return ErrForbidden
+		}
+		release, ok := state.Releases[assignment.DesiredRelease]
+		if !ok {
+			return ErrNotFound
+		}
+		if release.RevokedAt != nil || release.Generation != assignment.Generation {
+			return ErrConflict
+		}
+		if existing, ok := state.Assignments[assignment.DeviceID]; ok {
+			if existing.Generation > assignment.Generation {
+				return ErrConflict
+			}
+			if existing.DesiredRelease == assignment.DesiredRelease && existing.Generation == assignment.Generation {
+				result = existing
+				return nil
+			}
 		}
 		if assignment.ID == "" {
 			assignment.ID = NewID()
 		}
 		state.Assignments[assignment.DeviceID] = assignment
 		result = assignment
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) PutRollout(ctx context.Context, rollout Rollout) (Rollout, error) {
+	if rollout.ReleaseID == "" || rollout.Mode == "" || rollout.Concurrency < 1 || rollout.Concurrency > 100 {
+		return Rollout{}, ErrInvalid
+	}
+	switch rollout.Mode {
+	case "manual", "automatic", "pinned":
+	default:
+		return Rollout{}, ErrInvalid
+	}
+	var result Rollout
+	err := s.mutate(ctx, func(state *State) error {
+		if _, ok := state.Releases[rollout.ReleaseID]; !ok {
+			return ErrNotFound
+		}
+		if rollout.ID == "" {
+			rollout.ID = NewID()
+		}
+		if rollout.Revision == 0 {
+			rollout.Revision = 1
+		}
+		if rollout.CreatedAt.IsZero() {
+			rollout.CreatedAt = s.now().UTC()
+		}
+		rollout.Targets = cloneStrings(rollout.Targets)
+		state.Rollouts[rollout.ID] = rollout
+		result = rollout
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) Rollout(ctx context.Context, id string) (Rollout, error) {
+	var result Rollout
+	err := s.read(ctx, func(state *State) error {
+		item, ok := state.Rollouts[id]
+		if !ok {
+			return ErrNotFound
+		}
+		item.Targets = cloneStrings(item.Targets)
+		result = item
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) ListRollouts(ctx context.Context) ([]Rollout, error) {
+	result := []Rollout{}
+	err := s.read(ctx, func(state *State) error {
+		for _, item := range state.Rollouts {
+			item.Targets = cloneStrings(item.Targets)
+			result = append(result, item)
+		}
+		sort.Slice(result, func(i, j int) bool { return result[i].CreatedAt.After(result[j].CreatedAt) })
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) UpdateRollout(ctx context.Context, id string, update func(*Rollout) error) (Rollout, error) {
+	var result Rollout
+	err := s.mutate(ctx, func(state *State) error {
+		item, ok := state.Rollouts[id]
+		if !ok {
+			return ErrNotFound
+		}
+		if err := update(&item); err != nil {
+			return err
+		}
+		item.Revision++
+		state.Rollouts[id] = item
+		result = item
 		return nil
 	})
 	return result, err

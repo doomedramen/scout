@@ -26,18 +26,20 @@ import (
 	"scout.local/scout/internal/collector"
 	"scout.local/scout/internal/store"
 	"scout.local/scout/internal/telemetry"
+	"scout.local/scout/internal/updates"
 )
 
 const AgentVersion = "0.1.0"
 
 type Config struct {
-	ServerURL      string
-	InvitationFile string
-	DataDir        string
-	Root           string
-	Interval       time.Duration
-	HTTPClient     *http.Client
-	Version        string
+	ServerURL        string
+	InvitationFile   string
+	DataDir          string
+	Root             string
+	Interval         time.Duration
+	HTTPClient       *http.Client
+	Version          string
+	ReleaseTrustFile string
 }
 
 type persistedIdentity struct {
@@ -49,6 +51,7 @@ type persistedIdentity struct {
 	PrivateKeyPEM  string    `json:"privateKeyPem"`
 	ExpiresAt      time.Time `json:"expiresAt"`
 	Version        string    `json:"version"`
+	Generation     int64     `json:"generation"`
 }
 
 type Runtime struct {
@@ -143,7 +146,73 @@ func (r *Runtime) ReportOnce(ctx context.Context) error {
 	}
 	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}})
 	_ = r.post(ctx, "/api/v1/agent/v1/heartbeat", heartbeat)
+	_ = r.syncUpdate(ctx)
 	return nil
+}
+
+func (r *Runtime) syncUpdate(ctx context.Context) error {
+	if r.Config.ReleaseTrustFile == "" {
+		return nil
+	}
+	data, err := r.getResponse(ctx, "/api/v1/agent/v1/desired-state", r.identity.AgentToken)
+	if err != nil {
+		return err
+	}
+	var desired struct {
+		UpdateAssignment *struct {
+			Assignment store.Assignment `json:"assignment"`
+			Release    updates.Manifest `json:"release"`
+			Artifact   string           `json:"artifactPath"`
+		} `json:"updateAssignment"`
+	}
+	if err := json.Unmarshal(data, &desired); err != nil {
+		return err
+	}
+	if desired.UpdateAssignment == nil {
+		return nil
+	}
+	assignment := desired.UpdateAssignment.Assignment
+	manifest := desired.UpdateAssignment.Release
+	if assignment.ExpiresAt.Before(time.Now().UTC()) || assignment.State == "paused" || assignment.State == "failed" {
+		return nil
+	}
+	if updates.IsDowngrade(manifest.Generation, r.identity.Generation) || manifest.Generation == r.identity.Generation && manifest.Version != r.identity.Version {
+		return r.reportUpdateResult(ctx, assignment, "rejected", "downgrade")
+	}
+	if err := updates.Compatible(manifest, "linux", runtimeArch(), telemetry.ProtocolVersion); err != nil {
+		return r.reportUpdateResult(ctx, assignment, "rejected", "incompatible")
+	}
+	trust, err := updates.LoadTrustFile(filepath.Clean(r.Config.ReleaseTrustFile))
+	if err != nil {
+		return err
+	}
+	artifactPath := filepath.Join(r.Config.DataDir, "updates", strings.TrimPrefix(manifest.Digest, "sha256:"))
+	if err := updates.Download(ctx, r.client, r.serverPath(desired.UpdateAssignment.Artifact), artifactPath, manifest.Digest, manifest.Bytes, r.identity.AgentToken); err != nil {
+		return r.reportUpdateResult(ctx, assignment, "failed", "download")
+	}
+	artifact, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return err
+	}
+	if err := manifest.Verify(artifact, trust); err != nil {
+		return r.reportUpdateResult(ctx, assignment, "rejected", "verification")
+	}
+	installer, err := updates.NewInstaller(filepath.Join(r.Config.DataDir, "updater"))
+	if err != nil {
+		return err
+	}
+	if err := installer.Stage(ctx, manifest, artifact); err != nil {
+		return r.reportUpdateResult(ctx, assignment, "failed", "staging")
+	}
+	return r.reportUpdateResult(ctx, assignment, "staged", "")
+}
+
+func (r *Runtime) reportUpdateResult(ctx context.Context, assignment store.Assignment, state, code string) error {
+	body, err := json.Marshal(map[string]any{"assignmentId": assignment.ID, "generation": assignment.Generation, "state": state, "installedVersion": r.identity.Version, "errorCode": code})
+	if err != nil {
+		return err
+	}
+	return r.post(ctx, "/api/v1/agent/v1/update-results", body)
 }
 
 func (r *Runtime) loadOrEnroll(ctx context.Context) error {
@@ -263,12 +332,24 @@ func (r *Runtime) post(ctx context.Context, path string, body []byte) error {
 	return err
 }
 func (r *Runtime) postResponse(ctx context.Context, path string, body []byte, token string) ([]byte, error) {
+	return r.requestResponse(ctx, http.MethodPost, path, body, token)
+}
+
+func (r *Runtime) getResponse(ctx context.Context, path, token string) ([]byte, error) {
+	return r.requestResponse(ctx, http.MethodGet, path, nil, token)
+}
+
+func (r *Runtime) requestResponse(ctx context.Context, method, path string, body []byte, token string) ([]byte, error) {
 	base, err := url.Parse(r.Config.ServerURL)
 	if err != nil {
 		return nil, err
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + path
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), strings.NewReader(string(body)))
+	var reader io.Reader
+	if body != nil {
+		reader = strings.NewReader(string(body))
+	}
+	request, err := http.NewRequestWithContext(ctx, method, base.String(), reader)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +368,13 @@ func (r *Runtime) postResponse(ctx context.Context, path string, body []byte, to
 		return nil, fmt.Errorf("Scout API returned HTTP %d", response.StatusCode)
 	}
 	return data, nil
+}
+
+func (r *Runtime) serverPath(path string) string {
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		return path
+	}
+	return strings.TrimRight(r.Config.ServerURL, "/") + "/" + strings.TrimLeft(path, "/")
 }
 
 func (r *Runtime) flushSpool(ctx context.Context) error {

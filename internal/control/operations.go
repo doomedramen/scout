@@ -13,7 +13,6 @@ func (a *App) registerOperationsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/devices/{deviceId}/decommission", a.decommission)
 	mux.HandleFunc("POST /api/v1/devices/{deviceId}/reenable", a.reenable)
 	mux.HandleFunc("GET /api/v1/audit", a.auditEvents)
-	mux.HandleFunc("POST /api/v1/recovery/reconcile", a.reconcileRecovery)
 }
 
 func (a *App) pauseControl(w http.ResponseWriter, r *http.Request) {
@@ -121,20 +120,6 @@ func (a *App) auditEvents(w http.ResponseWriter, r *http.Request) {
 		events = events[:500]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": events, "nextCursor": nil})
-}
-
-func (a *App) reconcileRecovery(w http.ResponseWriter, r *http.Request) {
-	_, ok := a.requireSensitive(w, r)
-	if !ok {
-		return
-	}
-	state, err := a.Store.SetWorkspace(r.Context(), func(value *store.WorkspaceState) error { value.RecoveryMode = false; return nil })
-	if err != nil {
-		writeMappedError(w, r, err)
-		return
-	}
-	a.recordOwnerAudit(r, "recovery.reconcile", "workspace", map[string]any{"success": true})
-	writeJSON(w, http.StatusOK, state)
 }
 
 func timePtr(value time.Time) *time.Time { return &value }

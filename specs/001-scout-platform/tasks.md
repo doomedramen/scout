@@ -40,33 +40,33 @@ Independent test: protected setup and one native Linux agent reports real measur
 
 Independent test: deploy and restore the US1 fixture on a clean host; preserve identities/history and pause restored authority. Scheduled before remote enrollment so recovery exists before credential use expands.
 
-- [ ] T018 [US7] Add container images and production Compose/server TLS/persistent volume configuration in packaging/containers/ and compose.yaml; preserve local development commands and avoid default host/socket mounts (FR-031).
-- [ ] T019 [US7] Add backup/restore metadata, key requirements and schema/version checks in scripts/backup.sh, scripts/restore.sh and internal/store/recovery.go; restore atomically into a separate verified destination (FR-032).
-- [ ] T020 [US7] Implement restored-workspace recovery mode, session invalidation and owner policy/credential/revocation reconciliation in internal/control/recovery.go and apps/web/src/views/recovery.tsx (FR-032).
-- [ ] T021 [US7] Implement retention, orphan cleanup and disk-pressure/backpressure with visible dropped-sample status in internal/telemetry/retention.go and internal/control/settings.go; test bounded buffering/retention without erasing exclusions (FR-033).
+- [X] T018 [US7] Add container images and production Compose/server TLS/persistent volume configuration in packaging/containers/ and compose.yaml; preserve local development commands and avoid default host/socket mounts (FR-031).
+- [X] T019 [US7] Add backup/restore metadata, key requirements and schema/version checks in scripts/backup.sh, scripts/restore.sh and internal/store/recovery.go; restore atomically into a separate verified destination (FR-032).
+- [X] T020 [US7] Implement restored-workspace recovery mode, session invalidation and owner policy/credential/revocation reconciliation in internal/control/recovery.go and apps/web/src/views/recovery.tsx (FR-032).
+- [X] T021 [US7] Implement retention, orphan cleanup and disk-pressure/backpressure with visible dropped-sample status in internal/telemetry/retention.go and internal/control/settings.go; test bounded buffering/retention without erasing exclusions (FR-033).
 - [ ] T022 [US7] Create scripts/test-restore.sh and docs/operations.md covering clean container/VM deployment, separate-key restore, stale authorization, rollback and recovery; record SC-001 and SC-011 evidence (FR-031, FR-032, FR-036).
 
 ## Phase 5: US5 — Signed agent lifecycle (P1)
 
 Independent test: update an internet-blocked agent through the server and recover from interrupted/bad releases. Existing manual bootstrap is enough; automatic enrollment is not needed.
 
-- [ ] T023 [US5] Add signature/tamper/platform/downgrade and interrupted-slot fixtures in internal/updates/verification_test.go and tests/integration/updates_test.go (FR-020 through FR-025).
-- [ ] T024 [US5] Implement manifest verification, immutable artifact storage and bounded offline release import in internal/updates/releases.go and internal/control/releases.go; keep signing keys outside server (FR-021, FR-022).
-- [ ] T025 [US5] Implement publisher tooling and trust-transition/revocation verification in scripts/release/ and internal/updates/trust.go; use test keys only in fixtures and document local trust recovery (FR-022, FR-025).
-- [ ] T026 [US5] Implement manual/automatic/pinned policies, windows, canaries, concurrency and failure pauses in internal/updates/rollout.go and internal/control/rollouts.go; fence stale assignments (FR-023).
-- [ ] T027 [US5] Implement server-only artifact download/resume and desired-state validation in apps/agent/ and internal/updates/download.go; preserve identity/configuration and reject invalid transitions (FR-020, FR-022).
-- [ ] T028 [US5] Implement constrained guardian, local peer authorization, crash journal, atomic slots, fsync, readiness, single rollback and guardian self-upgrade recovery in apps/updater/ and packaging/linux/ (FR-024).
-- [ ] T029 [US5] Wire release import, rollout progress, pins, policies and truthful installed/desired versions in apps/web/src/views/updates.tsx (FR-025).
+- [X] T023 [US5] Add signature/tamper/platform/downgrade and interrupted-slot fixtures in internal/updates/verification_test.go and tests/integration/updates_test.go (FR-020 through FR-025).
+- [X] T024 [US5] Implement manifest verification, immutable artifact storage and bounded offline release import in internal/updates/releases.go and internal/control/releases.go; keep signing keys outside server (FR-021, FR-022).
+- [X] T025 [US5] Implement publisher tooling and trust-transition/revocation verification in scripts/release/ and internal/updates/trust.go; use test keys only in fixtures and document local trust recovery (FR-022, FR-025).
+- [X] T026 [US5] Implement manual/automatic/pinned policies, windows, canaries, concurrency and failure pauses in internal/updates/rollout.go and internal/control/rollouts.go; fence stale assignments (FR-023).
+- [X] T027 [US5] Implement server-only artifact download/resume and desired-state validation in apps/agent/ and internal/updates/download.go; preserve identity/configuration and reject invalid transitions (FR-020, FR-022).
+- [X] T028 [US5] Implement constrained guardian, local peer authorization, crash journal, atomic slots, fsync, readiness, single rollback and guardian self-upgrade recovery in apps/updater/ and packaging/linux/ (FR-024).
+- [X] T029 [US5] Wire release import, rollout progress, pins, policies and truthful installed/desired versions in apps/web/src/views/updates.tsx (FR-025).
 - [ ] T030 [US5] Create scripts/test-updates.sh using disposable VMs; exercise public-internet denial, offline import, all interrupted stages, startup rollback, stale policy and key transition; record SC-008, SC-009, SC-012.
 
 ## Phase 6: US3 — Scoped access and missing prerequisites (P1)
 
 Independent test: seed candidates directly, resolve missing credentials/trust/privilege/connectivity, and observe eligible jobs resume. Scheduling before US2 makes its automatic flow safe.
 
-- [ ] T031 [US3] Add scope/secret/worker negative contract cases in tests/integration/access_test.go, including wrong target, revoked grant, ordinary-agent redemption, host mismatch and output leakage (FR-011, FR-012, FR-013).
-- [ ] T032 [US3] Implement site/scope access bindings, encrypted credential metadata/write-only routes, rotation/revocation and version invalidation in internal/secrets/broker.go and internal/control/access.go (FR-012).
-- [ ] T033 [US3] Implement per-site known_hosts/CA trust records, normalized host:port matching and audited key changes in internal/enrollment/trust.go and internal/control/trust.go (FR-013).
-- [ ] T034 [US3] Implement unmet-prerequisite classification, request deduplication, access-change retry and safe diagnostics in internal/enrollment/access.go and internal/store/access.go (FR-011).
+- [X] T031 [US3] Add scope/secret/worker negative contract cases in tests/integration/access_test.go, including wrong target, revoked grant, ordinary-agent redemption, host mismatch and output leakage (FR-011, FR-012, FR-013).
+- [X] T032 [US3] Implement site/scope access bindings, encrypted credential metadata/write-only routes, rotation/revocation and version invalidation in internal/secrets/broker.go and internal/control/access.go (FR-012).
+- [X] T033 [US3] Implement per-site known_hosts/CA trust records, normalized host:port matching and audited key changes in internal/enrollment/trust.go and internal/control/trust.go (FR-013).
+- [X] T034 [US3] Implement unmet-prerequisite classification, request deduplication, access-change retry and safe diagnostics in internal/enrollment/access.go and internal/store/access.go (FR-011).
 - [ ] T035 [US3] Wire scoped credential entry, trust resolution and missing-access queue in apps/web/src/views/access.tsx; explain privileged access and never expose saved values (FR-011, FR-012).
 - [ ] T036 [US3] Verify resumed work and all secret/trust rejection cases in tests/integration/access_test.go and tests/e2e/access.spec.ts; record SC-005 and SC-012 without using production credentials.
 

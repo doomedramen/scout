@@ -941,6 +941,57 @@ tbody tr:last-child td {
   white-space: nowrap;
   border: 0;
 }
+.recovery-panel {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 28px;
+  padding: 22px;
+  border: 1px solid #69583b;
+  border-radius: 10px;
+  background: #292720;
+}
+.recovery-icon {
+  display: grid;
+  flex: 0 0 42px;
+  place-items: center;
+  height: 42px;
+  border-radius: 9px;
+  color: #e1c98a;
+  background: #3b3322;
+}
+.recovery-copy {
+  display: grid;
+  flex: 1;
+  gap: 13px;
+}
+.recovery-heading,
+.recovery-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.recovery-heading h2 {
+  margin: 0;
+}
+.recovery-heading [data-slot="badge"] {
+  color: #e1c98a;
+  border-color: #75633e;
+}
+.recovery-state {
+  flex-wrap: wrap;
+  color: #c2b98e;
+  font-size: 11px;
+}
+.recovery-state span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.recovery-copy .form-success {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 @media (max-width: 700px) {
   .auth-shell {
     padding: 30px 14px 55px;
@@ -955,5 +1006,9 @@ tbody tr:last-child td {
   }
   .release-list [data-slot="badge"] {
     margin-left: 30px;
+  }
+  .recovery-panel {
+    align-items: flex-start;
+    padding: 18px;
   }
 }

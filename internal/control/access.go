@@ -21,6 +21,7 @@ func (a *App) registerAccessRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/credentials/{credentialId}", a.revokeCredential)
 	mux.HandleFunc("GET /api/v1/trust", a.listTrust)
 	mux.HandleFunc("POST /api/v1/trust", a.createTrust)
+	mux.HandleFunc("PATCH /api/v1/trust/{trustId}", a.updateTrust)
 	mux.HandleFunc("GET /api/v1/access-requests", a.listAccessRequests)
 	mux.HandleFunc("GET /api/v1/jobs", a.listJobs)
 	mux.HandleFunc("POST /api/v1/bootstrap-invitations", a.createBootstrapInvitation)

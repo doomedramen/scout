@@ -11,7 +11,7 @@ export class APIError extends Error {
   }
 }
 
-export type Status = { mode: string; database: string; enrollmentAvailable: boolean };
+export type Status = { mode: string; database: string; enrollmentAvailable: boolean; recoveryMode?: boolean; telemetry?: { samples: number; droppedSamples: number; maxSamples: number; backpressure: boolean; retentionHours: number } };
 export type Metric = { value: number | null; availability: string; unit: string; observedAt: string; min?: number | null; max?: number | null };
 export type MetricSeries = { metric: string; unit: string; points: Metric[] };
 export type CollectorState = { id: string; provider: string; state: string; diagnostic?: string; lastSuccess?: string };
@@ -77,4 +77,7 @@ export const api = {
   scopes: () => request<ListResponse<Scope>>("/scopes"),
   invitation: (displayName: string, siteId: string) => request<Invitation>("/bootstrap-invitations", { method: "POST", body: JSON.stringify({ displayName, siteId }) }),
   topology: (siteId = "") => request<{ nodes: Array<Record<string, unknown>>; relationships: Array<Record<string, unknown>> }>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
+  recoveryStatus: () => request<{ workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean }; telemetry: Record<string, unknown> }>("/recovery/status"),
+  reconcileRecovery: () => request("/recovery/reconcile", { method: "POST", body: JSON.stringify({}) }),
+  telemetrySettings: () => request<Record<string, unknown>>("/settings/telemetry"),
 };

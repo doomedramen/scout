@@ -25,12 +25,13 @@ func main() {
 	dataDir := flag.String("data-dir", os.Getenv("SCOUT_AGENT_DATA_DIR"), "agent data directory")
 	root := flag.String("root", "/", "host filesystem root, primarily for tests")
 	interval := flag.Duration("interval", 15*time.Second, "report interval")
+	releaseTrustFile := flag.String("release-trust-file", os.Getenv("SCOUT_RELEASE_TRUST_FILE"), "trusted release public keys")
 	flag.Parse()
 	if !*daemon {
 		printSnapshot()
 		return
 	}
-	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval})
+	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval, ReleaseTrustFile: *releaseTrustFile})
 	if err != nil {
 		log.Fatal(err)
 	}
