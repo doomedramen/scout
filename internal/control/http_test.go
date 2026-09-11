@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -13,10 +14,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
 	"scout.local/scout/internal/telemetry"
 )
@@ -46,6 +50,84 @@ func TestStatus(t *testing.T) {
 				t.Fatal("database error leaked")
 			}
 		})
+	}
+}
+
+func TestDevelopmentKeyFileIsProvisionedAndStable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets", "wrapping-key")
+	first, err := loadKeyRing(Config{SecretKeyFile: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o400 {
+		t.Fatalf("key permissions = %o, want 400", got)
+	}
+	envelope, err := first.EncryptSecret("credential-1", "ssh", []byte("stable-value"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := loadKeyRing(Config{SecretKeyFile: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := second.DecryptSecret("credential-1", "ssh", secrets.Envelope{Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(plaintext, []byte("stable-value")) {
+		t.Fatalf("decrypted value = %q", plaintext)
+	}
+}
+
+func TestProductionKeyFileIsNeverAutoProvisioned(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets", "wrapping-key")
+	if _, err := loadKeyRing(Config{Production: true, SecretKeyFile: path}); err == nil {
+		t.Fatal("production accepted a missing key file")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("production key file stat error = %v", err)
+	}
+}
+
+func TestConfiguredWebRootDoesNotShadowAPI(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "index.html"), []byte("<main>Scout UI</main>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(store.NewMemory(), nil, Config{SetupToken: "setup-secret-123456789", WebDir: directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	page, err := http.Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer page.Body.Close()
+	if page.StatusCode != http.StatusOK {
+		t.Fatalf("web root status = %d", page.StatusCode)
+	}
+	body, err := io.ReadAll(page.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte("Scout UI")) {
+		t.Fatalf("web root body = %q", body)
+	}
+
+	status, err := http.Get(server.URL + "/api/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer status.Body.Close()
+	if status.StatusCode != http.StatusOK {
+		t.Fatalf("API status = %d", status.StatusCode)
 	}
 }
 

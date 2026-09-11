@@ -1,0 +1,37 @@
+name: scout
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: scout
+      POSTGRES_DB: scout
+      POSTGRES_PASSWORD: ${SCOUT_DB_PASSWORD:-scout-local-only}
+    volumes:
+      - scout-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scout -d scout"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCOUT_PRODUCTION: "false"
+      SCOUT_LISTEN: "0.0.0.0:8080"
+      SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
+      SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
+      SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
+      SCOUT_WEB_DIR: /usr/local/share/scout/web
+    ports:
+      - "${SCOUT_SERVER_BIND:-127.0.0.1:8080}:8080"
+    volumes:
+      - scout-server-data:/var/lib/scout
+
+volumes:
+  scout-postgres:
+  scout-server-data:

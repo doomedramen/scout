@@ -17,9 +17,7 @@ services:
       retries: 10
   server:
     profiles: ["production"]
-    build:
-      context: .
-      dockerfile: packaging/containers/server.Dockerfile
+    image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
     depends_on:
       postgres:
         condition: service_healthy

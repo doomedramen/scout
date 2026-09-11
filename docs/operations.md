@@ -44,6 +44,19 @@ do not provision or contact a target. The restore script performs a live
 restore only when SCOUT_RESTORE_LAB=1 is set and all required destination and
 confirmation variables are present.
 
+For a local UI/API evaluation using the published image, copy
+`compose.quickstart.yaml` to a new directory and run:
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quickstart.yaml -o compose.yaml
+docker compose up -d
+~~~
+
+This quickstart is bound to localhost, uses development mode without TLS or
+agent mTLS, and uses the documented local-only setup token. It is not a
+production deployment. Set `SCOUT_IMAGE` to a pinned GHCR or Docker Hub tag
+when reproducing a specific release.
+
 ## Production-shaped Compose
 
 The production profile is intentionally explicit. Provision these inputs
@@ -65,12 +78,14 @@ After provisioning the secret, TLS, and database inputs, an owner can start
 the profile with:
 
 ~~~sh
-docker compose --profile production up --build -d
+docker compose --profile production up --pull always -d
 ~~~
 
 Use the equivalent docker-compose command if the standalone binary is
 installed. The current verification host has Docker 29.8.0 but no Compose
-plugin, so a live Compose deployment is not claimed.
+plugin, so a live Compose deployment is not claimed. The production service
+pulls `${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}`; pin
+`SCOUT_IMAGE` to a release tag or digest for a reproducible deployment.
 
 Complete first-owner setup through the HTTPS UI or API using the provisioned
 one-time token. Enable MFA before creating reusable credentials or enabling

@@ -31,6 +31,7 @@ type Database interface{ PingContext(context.Context) error }
 type Config struct {
 	Production         bool
 	AllowedOrigin      string
+	WebDir             string
 	SetupToken         string
 	SetupTokenFile     string
 	SecretKeyFile      string
@@ -133,6 +134,20 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 
 func loadKeyRing(config Config) (*secrets.KeyRing, error) {
 	if config.SecretKeyFile != "" {
+		keyRing, err := secrets.LoadKeyFile(config.SecretKeyFile)
+		if err == nil || config.Production {
+			return keyRing, err
+		}
+		if _, statErr := os.Stat(config.SecretKeyFile); !os.IsNotExist(statErr) {
+			return nil, err
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return nil, err
+		}
+		if err := secrets.WriteProvisionedKey(config.SecretKeyFile, key); err != nil {
+			return nil, err
+		}
 		return secrets.LoadKeyFile(config.SecretKeyFile)
 	}
 	if config.Production {
@@ -191,6 +206,9 @@ func (a *App) Handler() http.Handler {
 	a.registerRecoveryRoutes(mux)
 	a.registerSettingsRoutes(mux)
 	a.registerUpdateRoutes(mux)
+	if directory := strings.TrimSpace(a.Config.WebDir); directory != "" {
+		mux.Handle("/", http.FileServer(http.Dir(directory)))
+	}
 	return a.middleware(mux)
 }
 

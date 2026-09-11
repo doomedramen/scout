@@ -8,6 +8,9 @@ repository has run the named fixture or an owner-authorized live lab.
 | --- | --- | --- | --- |
 | Control and shared Go code | Go 1.27.1, Darwin arm64 | Fixture verified | go test ./... and go vet paths pass on 2026-09-11. Linux deployment is still a separate acceptance run. |
 | Web application | Node.js v24.14.0, npm 11.19.0 | Build verified | npm ci, npm run check, npm run build, and browser fixture tests pass. |
+| Published server image | GHCR `ghcr.io/doomedramen/scout`, Linux amd64/arm64 | Workflow configured | `.github/workflows/publish-images.yml` builds the server plus web UI on main/version-tag pushes. Make the GHCR package public before using the unauthenticated quickstart. |
+| Published agent image | GHCR `ghcr.io/doomedramen/scout-agent`, Linux amd64/arm64 | Workflow configured | The same workflow publishes the native agent image; native systemd acceptance remains open. |
+| Docker Hub mirror | `docker.io/<namespace>/scout` and `scout-agent` | Optional | Configure `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets; no Docker Hub credential was used during verification. |
 | Database image | postgres:17-alpine | Integration fixture verified | Disposable PostgreSQL integration script passed when a compatible local container was available. |
 | Docker engine | Docker 29.8.0 on Darwin arm64 | Runtime present | The host has Docker, but no Compose plugin. No live provider collector was run. |
 | Docker Compose | Not installed on verification host | Not verified | The production profile is checked in; install Compose before clean-host deployment. |

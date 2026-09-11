@@ -31,6 +31,79 @@ scripts        Local development setup
 docs           Product, architecture, and security decisions
 ```
 
+## Docker quick start (copy/paste)
+
+For a local, localhost-only evaluation, use the published multi-architecture
+server image. It includes the Scout API and web UI, starts PostgreSQL, and
+persists its database and development encryption key in named volumes. This
+quickstart intentionally runs without TLS or agent mTLS and must not be
+exposed to the internet.
+
+The shortest setup is:
+
+```sh
+mkdir scout && cd scout
+curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quickstart.yaml -o compose.yaml
+docker compose up -d
+```
+
+The equivalent Compose file, for direct copy/paste, is:
+
+```yaml
+name: scout
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: scout
+      POSTGRES_DB: scout
+      POSTGRES_PASSWORD: ${SCOUT_DB_PASSWORD:-scout-local-only}
+    volumes:
+      - scout-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scout -d scout"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SCOUT_PRODUCTION: "false"
+      SCOUT_LISTEN: "0.0.0.0:8080"
+      SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
+      SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
+      SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
+      SCOUT_WEB_DIR: /usr/local/share/scout/web
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - scout-server-data:/var/lib/scout
+
+volumes:
+  scout-postgres:
+  scout-server-data:
+```
+
+Open `http://localhost:8080`, use setup token
+`local-only-change-me`, and choose an owner password. Stop it with
+`docker compose down`; named volumes are retained. The default image is
+published at [GitHub Container Registry](https://github.com/doomedramen/scout/pkgs/container/scout).
+If the package is private, run `docker login ghcr.io` first. Use the
+production-shaped [Compose file](compose.yaml) and [operations guide](docs/operations.md)
+for TLS, agent mTLS, separately provisioned keys, and owner-authorized
+deployment.
+
+The image workflow publishes `scout` (server plus UI) and `scout-agent` for
+Linux AMD64 and ARM64 on pushes to `main` and version tags. To mirror them to
+Docker Hub as well, configure repository secrets `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN`; the workflow then publishes
+`docker.io/<username>/scout` and `docker.io/<username>/scout-agent`.
+
 ```sh
 npm ci
 npm run setup
@@ -63,7 +136,7 @@ Build a Linux agent from any supported development host:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o apps/agent/dist/scout-agent-linux-amd64 ./apps/agent
 ```
 
-Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The Compose file currently runs PostgreSQL only; full server packaging is pending.
+Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The published container packages the control server and web UI; source development still uses the Vite server.
 
 This repository now contains the runnable implementation slices described by
 the handoff. Fixture and local integration coverage exists for owner

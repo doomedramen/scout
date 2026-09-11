@@ -14,6 +14,10 @@ Read in order:
 
 ## Current repository state
 
+> Historical note: the inventory below describes the pre-implementation
+> handoff. Current implementation status and acceptance evidence live in
+> [evidence.md](evidence.md) and [tasks.md](tasks.md).
+
 Application baseline is commit `7d189a1`. Subsequent specification commits add this handoff but do not implement its tasks. Recheck Git status and recent commits before touching files; another agent or the owner may have made newer changes.
 
 What exists:
@@ -39,7 +43,7 @@ What does not exist: owner authentication, enrolled device identities, real tele
 
 ## Execution instructions
 
-Use only **gpt-5.6-luna** unless the owner explicitly changes that instruction. Do not spawn additional agents unless separately authorized by applicable instructions. Commit regularly without co-author trailers. Push when a remote is configured; currently no remote exists. Do not invent or create a remote repository without owner direction.
+Use only **gpt-5.6-luna** unless the owner explicitly changes that instruction. Do not spawn additional agents unless separately authorized by applicable instructions. Commit regularly without co-author trailers. Push when a remote is configured; the repository's `origin` remote is configured. Do not invent or create a remote repository without owner direction.
 
 Select `SPECIFY_FEATURE_DIRECTORY` as described in quickstart.md, validate prerequisites, and begin T001. Work in task order and keep the application runnable. The first deliverable is T001–T017: protected owner setup, one authenticated Linux agent, real stored observations and truthful stale/offline behavior. Continue to the full release unless the owner limits the assignment; this first slice is not completion of the whole product.
 

@@ -138,4 +138,30 @@ This file records executed verification only. Planned targets from the specifica
 - T064 is reconciled and pushed to the configured `origin` remote. Open
   lab-dependent tasks remain unchecked above; fixture evidence is not being
   presented as live Linux, provider, power-loss, browser-viewport, or capacity
-  acceptance.
+  acceptance. The owner-requested container distribution work below extends
+  this handover without changing those acceptance boundaries.
+
+## Requested container distribution and quickstart
+
+- The server container now builds the React production bundle and serves it
+  from the Go control plane at the same origin as `/api`. The agent and server
+  Dockerfiles accept Buildx target arguments for Linux AMD64 and ARM64 while
+  remaining compatible with the local legacy builder. A clean local
+  `docker build` passed for both `scout:local` and `scout-agent:local` after
+  adding the missing `golang.org/x/sys` checksums to `go.sum`.
+- The server image smoke test passed UI serving, API status, PostgreSQL
+  connectivity, owner setup, and restart persistence. The test used unique
+  local Docker resources and removed them on exit; it contacted no external
+  device or provider.
+- `docker-compose -f compose.quickstart.yaml config` and
+  `docker-compose -f compose.yaml --profile production config` passed. An
+  isolated `docker-compose` quickstart run using `scout:local` passed the
+  copy/paste path through UI fetch, PostgreSQL readiness, setup, and server
+  restart. The verification host has standalone `docker-compose`, not the
+  `docker compose` plugin.
+- `.github/workflows/publish-images.yml` now publishes provenance- and
+  SBOM-enabled multi-architecture `scout` and `scout-agent` images to GHCR on
+  main/version-tag pushes. Docker Hub mirroring is conditional on repository
+  secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; no registry credential
+  was used here, and no GitHub-hosted publish run has been claimed as local
+  evidence.

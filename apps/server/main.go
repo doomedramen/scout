@@ -45,7 +45,7 @@ func main() {
 		database = db
 	}
 	production := os.Getenv("SCOUT_PRODUCTION") == "true"
-	config := control.Config{Production: production, AllowedOrigin: os.Getenv("SCOUT_ALLOWED_ORIGIN"), SetupToken: os.Getenv("SCOUT_SETUP_TOKEN"), SetupTokenFile: os.Getenv("SCOUT_SETUP_TOKEN_FILE"), SecretKeyFile: os.Getenv("SCOUT_SECRET_KEY_FILE"), AgentCAFile: os.Getenv("SCOUT_AGENT_CA_FILE"), AgentCAKeyFile: os.Getenv("SCOUT_AGENT_CA_KEY_FILE"), StartRecovery: os.Getenv("SCOUT_RECOVERY_MODE") == "true", ReleaseTrustFile: os.Getenv("SCOUT_RELEASE_TRUST_FILE"), ArtifactDir: os.Getenv("SCOUT_ARTIFACT_DIR"), AgentRequireMTLS: os.Getenv("SCOUT_REQUIRE_AGENT_MTLS") == "true"}
+	config := control.Config{Production: production, AllowedOrigin: os.Getenv("SCOUT_ALLOWED_ORIGIN"), WebDir: os.Getenv("SCOUT_WEB_DIR"), SetupToken: os.Getenv("SCOUT_SETUP_TOKEN"), SetupTokenFile: os.Getenv("SCOUT_SETUP_TOKEN_FILE"), SecretKeyFile: os.Getenv("SCOUT_SECRET_KEY_FILE"), AgentCAFile: os.Getenv("SCOUT_AGENT_CA_FILE"), AgentCAKeyFile: os.Getenv("SCOUT_AGENT_CA_KEY_FILE"), StartRecovery: os.Getenv("SCOUT_RECOVERY_MODE") == "true", ReleaseTrustFile: os.Getenv("SCOUT_RELEASE_TRUST_FILE"), ArtifactDir: os.Getenv("SCOUT_ARTIFACT_DIR"), AgentRequireMTLS: os.Getenv("SCOUT_REQUIRE_AGENT_MTLS") == "true"}
 	app, err := control.NewApp(func() *store.Store {
 		if db != nil {
 			return store.NewSQL(db)

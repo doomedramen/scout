@@ -14,7 +14,7 @@ npm run snapshot -w @scout/agent
 
 The last command currently prints local identity/interface metadata only. Existing tests cover the health handler, not monitoring security or the target platform. A successful baseline is not acceptance of any unfinished story.
 
-Optional local development:
+Optional source development:
 
 ```sh
 npm run setup
@@ -22,7 +22,7 @@ npm run db:up
 npm run dev
 ```
 
-Setup preserves an existing private .env. Do not print, commit, copy into a handoff, or repurpose its secrets. The existing Compose file starts only PostgreSQL, and the UI's populated screens are demo data. The project supports both docker compose and docker-compose. If Docker's configured credential helper is unavailable, repair the local runtime configuration or use a documented disposable configuration for a public image; do not alter the user's global Docker settings silently.
+Setup preserves an existing private .env. Do not print, commit, copy into a handoff, or repurpose its secrets. Source development starts PostgreSQL and Vite separately. For a localhost-only published-image evaluation with the API and UI in one container, use the copy/paste quickstart in [README.md](../../README.md) or `compose.quickstart.yaml`. The project supports both docker compose and docker-compose. If Docker's configured credential helper is unavailable, repair the local runtime configuration or use a documented disposable configuration for a public image; do not alter the user's global Docker settings silently.
 
 ## Select the Spec Kit feature
 
