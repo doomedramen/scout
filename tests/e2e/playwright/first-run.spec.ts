@@ -39,4 +39,15 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await expect(page.getByText("Invitation created. It is single-use and expires in five minutes.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Native Linux (recommended)" })).toBeVisible();
   await expect(page.getByText(/api\/v1\/bootstrap\/agent\/install\.sh/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Incidents", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Incidents and alert rules" })).toBeVisible();
+  await expect(page.getByText("No incidents match these filters.")).toBeVisible();
+  await page.getByRole("tab", { name: /Rules/ }).click();
+  await expect(page.getByRole("heading", { name: "Rule editor" })).toBeVisible();
+  await expect(page.getByText("Automatic defaults", { exact: true })).toBeVisible();
+  await page.getByLabel("Rule name").fill("Playwright CPU baseline");
+  await page.getByRole("button", { name: "Create rule" }).click();
+  await expect(page.getByText("Alert rule created.")).toBeVisible();
+  await expect(page.getByText("Playwright CPU baseline", { exact: true })).toBeVisible();
 });

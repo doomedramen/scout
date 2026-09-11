@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity,
+  BellRing,
   CircleHelp,
   Download,
   KeyRound,
@@ -17,6 +18,7 @@ import { api, type Device, type Status } from "@/lib/api";
 import { AccessView } from "@/views/access";
 import { AgentSetupView } from "@/views/agent-setup";
 import { EnrollmentView } from "@/views/enrollment";
+import { IncidentsView } from "@/views/incidents";
 import { NetworkView } from "@/views/network";
 import { RecoveryView } from "@/views/recovery";
 import { ScopesView } from "@/views/scopes";
@@ -25,10 +27,11 @@ import { SetupView } from "@/views/setup";
 import { SystemsView } from "@/views/systems";
 import { UpdatesView } from "@/views/updates";
 
-type Page = "Systems" | "Network" | "Updates" | "Access" | "Scopes" | "Enrollment" | "Services";
+type Page = "Systems" | "Incidents" | "Network" | "Updates" | "Access" | "Scopes" | "Enrollment" | "Services";
 
 const pages = [
   { name: "Systems" as const, icon: LayoutList },
+  { name: "Incidents" as const, icon: BellRing },
   { name: "Network" as const, icon: Network },
   { name: "Scopes" as const, icon: ScanSearch },
   { name: "Enrollment" as const, icon: ServerCog },
@@ -39,6 +42,7 @@ const pages = [
 
 const pageDetails: Record<Page, { title: string; description: string }> = {
   Systems: { title: "All systems", description: "Every machine. One clear view." },
+  Incidents: { title: "Incidents", description: "See what needs attention, with evidence and history." },
   Network: { title: "Network map", description: "Understand how infrastructure connects, with evidence." },
   Scopes: { title: "Scopes", description: "Define where Scout may observe and enroll." },
   Enrollment: { title: "Enrollment", description: "Bounded discovery and automatic enrollment progress." },
@@ -209,6 +213,7 @@ export default function App() {
                 onSetup={() => setHelp(true)}
               />
             )}
+            {page === "Incidents" && <IncidentsView />}
             {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}

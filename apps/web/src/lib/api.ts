@@ -112,6 +112,116 @@ export type Scope = {
   };
 };
 
+export type NumericAlertCondition = {
+  metric: string;
+  entityId?: string;
+  operator: "gt" | "lt";
+  triggerValue: number;
+  clearValue: number;
+  triggerSeconds: number;
+  clearSeconds: number;
+};
+
+export type StateAlertCondition = {
+  state: string;
+  entityId?: string;
+  servicePattern?: string;
+  collectorId?: string;
+  triggerSeconds: number;
+  clearSeconds: number;
+  minimumConsecutiveSamples?: number;
+};
+
+export type AlertCondition = NumericAlertCondition | StateAlertCondition;
+
+export type AlertRule = {
+  id: string;
+  name: string;
+  targetKind: "fleet" | "site" | "device";
+  targetId?: string;
+  kind: "numeric" | "state";
+  severity: "warning" | "critical";
+  enabled: boolean;
+  condition: AlertCondition;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  retiredAt?: string;
+};
+
+export type AlertRuleInput = Omit<AlertRule, "id" | "revision" | "createdAt" | "updatedAt" | "retiredAt">;
+
+export type AlertRulePatch = {
+  expectedRevision: number;
+  name?: string;
+  severity?: AlertRule["severity"];
+  enabled?: boolean;
+  condition?: AlertCondition;
+};
+
+export type AlertOverride = {
+  id: string;
+  lineageId: string;
+  targetKind: "site" | "device";
+  targetId: string;
+  severity: AlertRule["severity"];
+  enabled: boolean;
+  condition: AlertCondition;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AlertOverrideInput = Omit<AlertOverride, "id" | "lineageId" | "revision" | "createdAt" | "updatedAt">;
+
+export type AlertOverridePatch = {
+  expectedRevision: number;
+  severity?: AlertOverride["severity"];
+  enabled?: boolean;
+  condition?: AlertCondition;
+};
+
+export type IncidentEvidence = {
+  value?: number | null;
+  unit?: string | null;
+  threshold?: number | null;
+  source?: string;
+  rawState?: string | null;
+  observedAt?: string;
+};
+
+export type Incident = {
+  id: string;
+  lineageId: string;
+  entityId: string;
+  deviceId: string;
+  siteId?: string | null;
+  status: "active" | "resolved" | "closed";
+  severity: AlertRule["severity"];
+  ruleSnapshot: { name: string; kind: AlertRule["kind"]; condition: AlertCondition };
+  openedAt: string;
+  observedAt: string;
+  acknowledgedAt?: string;
+  acknowledgedBy?: string;
+  closedAt?: string;
+  closeReason?: string;
+  evidenceState: "fresh" | "unknown" | "unsupported";
+  evidence?: IncidentEvidence;
+  notificationSuppression: { suppressed: boolean; reasons: string[] };
+  revision: number;
+};
+
+export type IncidentTransition = {
+  id: string;
+  incidentId: string;
+  sequence: number;
+  kind: "triggered" | "acknowledged" | "unknown" | "fresh" | "recovered" | "administrative_close";
+  occurredAt: string;
+  actor?: string;
+  evidence?: IncidentEvidence;
+  effectiveRevision: number;
+};
+
 export type Invitation = {
   deviceId: string;
   invitation: string;
@@ -425,6 +535,42 @@ export const api = {
       enabled: boolean;
     },
   ) => request<Scope>(`/scopes/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  alertRules: (query = "") => request<ListResponse<AlertRule>>(`/alert-rules${query}`),
+  createAlertRule: (value: AlertRuleInput) =>
+    request<AlertRule>("/alert-rules", { method: "POST", body: JSON.stringify(value) }),
+  updateAlertRule: (id: string, value: AlertRulePatch) =>
+    request<AlertRule>(`/alert-rules/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  retireAlertRule: (id: string, expectedRevision: number) =>
+    request<void>(`/alert-rules/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  alertOverrides: (ruleId: string, query = "") =>
+    request<ListResponse<AlertOverride>>(`/alert-rules/${encodeURIComponent(ruleId)}/overrides${query}`),
+  createAlertOverride: (ruleId: string, value: AlertOverrideInput) =>
+    request<AlertOverride>(`/alert-rules/${encodeURIComponent(ruleId)}/overrides`, {
+      method: "POST",
+      body: JSON.stringify(value),
+    }),
+  updateAlertOverride: (ruleId: string, overrideId: string, value: AlertOverridePatch) =>
+    request<AlertOverride>(`/alert-rules/${encodeURIComponent(ruleId)}/overrides/${encodeURIComponent(overrideId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(value),
+    }),
+  deleteAlertOverride: (ruleId: string, overrideId: string, expectedRevision: number) =>
+    request<void>(`/alert-rules/${encodeURIComponent(ruleId)}/overrides/${encodeURIComponent(overrideId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  incidents: (query = "") => request<ListResponse<Incident>>(`/incidents${query}`),
+  incident: (id: string) => request<Incident>(`/incidents/${encodeURIComponent(id)}`),
+  incidentTransitions: (id: string, query = "") =>
+    request<ListResponse<IncidentTransition>>(`/incidents/${encodeURIComponent(id)}/transitions${query}`),
+  acknowledgeIncident: (id: string, expectedRevision: number) =>
+    request<Incident>(`/incidents/${encodeURIComponent(id)}/acknowledgment`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
   invitation: (displayName: string, siteId: string) =>
     request<Invitation>("/bootstrap-invitations", {
       method: "POST",
