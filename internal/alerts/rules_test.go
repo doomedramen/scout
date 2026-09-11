@@ -10,8 +10,8 @@ import (
 func TestDefaultRuleTemplatesAreCompleteAndOwnerEditsArePreserved(t *testing.T) {
 	now := time.Date(2026, 9, 11, 19, 0, 0, 0, time.UTC)
 	templates := DefaultRuleTemplates(now)
-	if len(templates) != 7 {
-		t.Fatalf("default rule count = %d, want 7", len(templates))
+	if len(templates) != 8 {
+		t.Fatalf("default rule count = %d, want 8", len(templates))
 	}
 	byTemplate := make(map[string]store.AlertRule, len(templates))
 	for _, rule := range templates {
@@ -20,7 +20,7 @@ func TestDefaultRuleTemplatesAreCompleteAndOwnerEditsArePreserved(t *testing.T) 
 		}
 		byTemplate[rule.TemplateKey] = rule
 	}
-	for _, key := range []string{"host_offline", "cpu_high", "memory_high", "filesystem_high", "systemd_failed", "collector_degraded", "storage_fault"} {
+	for _, key := range []string{"host_offline", "cpu_high", "memory_high", "filesystem_high", "systemd_failed", "service_required_inactive", "collector_degraded", "storage_fault"} {
 		if _, ok := byTemplate[key]; !ok {
 			t.Fatalf("missing default template %q", key)
 		}
@@ -30,6 +30,12 @@ func TestDefaultRuleTemplatesAreCompleteAndOwnerEditsArePreserved(t *testing.T) 
 	}
 	if got := byTemplate["host_offline"]; got.TriggerSeconds != 90 || got.Severity != SeverityCritical {
 		t.Fatalf("unexpected offline default: %+v", got)
+	}
+	if got := byTemplate["systemd_failed"]; got.CollectorID != SystemdCollectorID || got.MinimumConsecutiveSamples != 2 || got.ClearSeconds != 30 {
+		t.Fatalf("unexpected systemd failure default: %+v", got)
+	}
+	if got := byTemplate["service_required_inactive"]; got.CollectorID != SystemdCollectorID || got.TriggerSeconds != 60 || got.ClearSeconds != 60 || got.Severity != SeverityWarning {
+		t.Fatalf("unexpected must-run default: %+v", got)
 	}
 
 	edited := byTemplate["cpu_high"]

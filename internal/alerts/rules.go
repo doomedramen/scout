@@ -102,8 +102,26 @@ func DefaultRuleTemplates(now time.Time) []store.AlertRule {
 			Kind:                      string(RuleKindState),
 			TriggerState:              "failed",
 			ClearState:                "active",
-			MinimumConsecutiveSamples: 1,
+			CollectorID:               SystemdCollectorID,
+			MinimumConsecutiveSamples: 2,
+			ClearSeconds:              30,
 			Severity:                  SeverityCritical,
+			TargetKind:                TargetFleet,
+			Enabled:                   true,
+			CreatedAt:                 now,
+			UpdatedAt:                 now,
+		},
+		{
+			TemplateKey:               "service_required_inactive",
+			Name:                      "Required systemd service inactive",
+			Kind:                      string(RuleKindState),
+			TriggerState:              "inactive",
+			ClearState:                "active",
+			CollectorID:               SystemdCollectorID,
+			TriggerSeconds:            60,
+			ClearSeconds:              60,
+			MinimumConsecutiveSamples: 1,
+			Severity:                  SeverityWarning,
 			TargetKind:                TargetFleet,
 			Enabled:                   true,
 			CreatedAt:                 now,
@@ -141,7 +159,7 @@ func DefaultRuleTemplates(now time.Time) []store.AlertRule {
 // ProvisionDefaultRules adds only missing template keys. An existing rule is
 // left byte-for-byte unchanged, including disabled and retired defaults.
 func ProvisionDefaultRules(existing []store.AlertRule, now time.Time) []store.AlertRule {
-	result := make([]store.AlertRule, 0, len(existing)+7)
+	result := make([]store.AlertRule, 0, len(existing)+8)
 	seen := make(map[string]struct{}, len(existing))
 	for _, rule := range existing {
 		result = append(result, cloneRule(rule))
@@ -258,7 +276,7 @@ func (rule EffectiveRule) EvaluatorRule() (Rule, error) {
 		return Rule{}, err
 	}
 	result := Rule{
-		ID: rule.Rule.ID, LineageID: rule.Rule.ID, Revision: rule.Rule.Revision, Name: rule.Rule.Name, Kind: RuleKind(rule.Rule.Kind), Metric: rule.Rule.Metric, EntityID: rule.Rule.EntityID,
+		ID: rule.Rule.ID, LineageID: rule.Rule.ID, Revision: rule.Rule.Revision, TemplateKey: rule.Rule.TemplateKey, Name: rule.Rule.Name, Kind: RuleKind(rule.Rule.Kind), Metric: rule.Rule.Metric, EntityID: rule.Rule.EntityID,
 		Operator: Operator(rule.Rule.Operator), TriggerFor: time.Duration(rule.Rule.TriggerSeconds) * time.Second, ClearFor: time.Duration(rule.Rule.ClearSeconds) * time.Second,
 		TriggerState: rule.Rule.TriggerState, ClearState: rule.Rule.ClearState, ServicePattern: rule.Rule.ServicePattern, CollectorID: rule.Rule.CollectorID, MinimumConsecutiveSamples: rule.Rule.MinimumConsecutiveSamples, Severity: rule.Rule.Severity, Enabled: rule.Rule.Enabled,
 	}

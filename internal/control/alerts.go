@@ -736,6 +736,8 @@ func apiStateName(value string) string {
 		return "host_offline"
 	case "failed":
 		return "service_failed"
+	case "inactive":
+		return "service_required_inactive"
 	case "degraded":
 		return "collector_degraded"
 	case "fault":

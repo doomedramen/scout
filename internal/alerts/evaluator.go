@@ -49,26 +49,29 @@ const (
 )
 
 type Rule struct {
-	ID                        string
-	LineageID                 string
-	Revision                  int64
-	Name                      string
-	Kind                      RuleKind
-	Metric                    string
-	EntityID                  string
-	Operator                  Operator
-	TriggerValue              float64
-	ClearValue                float64
-	TriggerState              string
-	ClearState                string
-	ServicePattern            string
-	CollectorID               string
-	TriggerFor                time.Duration
-	ClearFor                  time.Duration
-	MinimumConsecutiveSamples int
-	MaxEvidenceAge            time.Duration
-	Severity                  string
-	Enabled                   bool
+	ID                               string
+	LineageID                        string
+	Revision                         int64
+	TemplateKey                      string
+	Name                             string
+	Kind                             RuleKind
+	Metric                           string
+	EntityID                         string
+	Operator                         Operator
+	TriggerValue                     float64
+	ClearValue                       float64
+	TriggerState                     string
+	ClearState                       string
+	ServicePattern                   string
+	CollectorID                      string
+	TriggerFor                       time.Duration
+	ClearFor                         time.Duration
+	MinimumConsecutiveSamples        int
+	MinimumConsecutiveTriggerSamples int
+	MinimumConsecutiveClearSamples   int
+	MaxEvidenceAge                   time.Duration
+	Severity                         string
+	Enabled                          bool
 }
 
 type Observation struct {
@@ -79,6 +82,7 @@ type Observation struct {
 	Evidence   EvidenceState
 	Unit       string
 	Source     string
+	Labels     map[string]string
 	ObservedAt time.Time
 	ReceivedAt time.Time
 }
@@ -334,6 +338,14 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 	if minimum < 1 {
 		minimum = 1
 	}
+	triggerMinimum := rule.MinimumConsecutiveTriggerSamples
+	if triggerMinimum < 1 {
+		triggerMinimum = minimum
+	}
+	clearMinimum := rule.MinimumConsecutiveClearSamples
+	if clearMinimum < 1 {
+		clearMinimum = minimum
+	}
 	if state.activeIncident != nil {
 		state.activeIncident.Evidence = EvidenceFresh
 		state.activeIncident.Value = cloneFloat(observation.Value)
@@ -347,7 +359,7 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 				state.recoverySince = &value
 			}
 			state.recoveryConsecutive++
-			if durationReached(now, *state.recoverySince, rule.ClearFor) && state.recoveryConsecutive >= minimum {
+			if durationReached(now, *state.recoverySince, rule.ClearFor) && state.recoveryConsecutive >= clearMinimum {
 				e.closeIncident(state, rule, now, "recovered", TransitionRecovered, &transitions)
 			}
 		} else {
@@ -362,7 +374,7 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 			state.pendingSince = &value
 		}
 		state.triggerConsecutive++
-		if durationReached(now, *state.pendingSince, rule.TriggerFor) && state.triggerConsecutive >= minimum {
+		if durationReached(now, *state.pendingSince, rule.TriggerFor) && state.triggerConsecutive >= triggerMinimum {
 			e.openIncident(state, rule, observation, now, &transitions)
 		}
 	} else {
@@ -537,6 +549,9 @@ func matchesRule(rule Rule, observation Observation) bool {
 		return false
 	}
 	if rule.Metric != "" && observation.Metric != rule.Metric {
+		return false
+	}
+	if !serviceRuleMatchesObservation(rule, observation) {
 		return false
 	}
 	return true

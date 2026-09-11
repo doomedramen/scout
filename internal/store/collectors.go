@@ -97,7 +97,7 @@ func (s *Store) PutServiceEntity(ctx context.Context, entity ServiceEntity) erro
 		}
 		entity.Labels = cloneMap(entity.Labels)
 		state.ServiceEntities[serviceEntityKey(entity)] = entity
-		return nil
+		return markAlertWorkState(state, AlertWorkAllLineages, entity.ID, s.now().UTC())
 	})
 }
 
