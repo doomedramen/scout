@@ -503,3 +503,48 @@ For future results append: task and requirement IDs, commit, date, exact command
 - No real ntfy endpoint, notification credential, production database, real
   device, or production deployment was used. The browser test proves ntfy
   server acceptance only; it does not claim subscriber receipt.
+
+## T018 — systemd fixtures and collector contract cases
+
+- Requirements: FR-014, FR-015, FR-016, FR-032; SC-005.
+- Date: 2026-09-11 (Europe/London); implementation commit: `9953e11`.
+- Added the controlled `systemd-units.json` fixture and tests for loaded
+  active, inactive, failed, and activating/transitional services; excludes
+  unloaded units and non-service units. Tests also cover exact and wildcard
+  must-run selectors, bounded glob-only syntax (rejecting regex, character
+  classes, path expansion, empty/oversize patterns, and more than 100
+  patterns), the 1,000-entity partial inventory bound, and denied/unavailable
+  D-Bus access.
+- Exact verification commands and outcomes: `go test
+  ./internal/collector/systemd -count=1`; `go test ./... -count=1`; `go test
+  ./... -race -count=1`; `go vet ./...`; `npm run check`; `npm run
+  format:check`; and `git diff --check` passed. All service data came from
+  the repository fixture or an in-process fake manager; no host system bus
+  was contacted.
+- Remaining limits: T020 wires service states into incident evaluation and
+  must-run alert defaults. No Linux host compatibility or provider support
+  claim is made from fixtures.
+
+## T019 — bounded read-only systemd adapter
+
+- Requirements: FR-014, FR-015, FR-016, FR-032; SC-005.
+- Date: 2026-09-11 (Europe/London); implementation commit: `9953e11`.
+- Added a pinned `go-systemd/v22` adapter that opens only the system bus and
+  calls `ListUnitsByPatternsContext` for `*.service`. It never exposes unit
+  mutation methods, limits inventory to 1,000 loaded services, marks
+  truncation as partial with a bounded diagnostic, maps active/inactive/
+  failed/activating/deactivating/reloading and unknown states to typed
+  statuses, preserves source/sub-state labels, and expires observations after
+  three 30-second intervals. Must-run configuration is validated and matched
+  with only `*` and `?`; the descriptor declares `systemd:read`, 30-second
+  collection, 5-second deadline, and the existing shared registry/catalog
+  integration.
+- The adapter is fixture-injectable for deterministic tests, propagates
+  cancellation, classifies access denial separately from unavailable bus
+  errors, and closes its caller-owned D-Bus connection. No real host bus,
+  production credential, production database, device, or deployment was
+  used.
+- Remaining limits: T020 must persist the resulting entities and connect
+  service failures/must-run inactivity to automatic incidents. Live systemd
+  distribution/architecture support remains unvalidated until the controlled
+  Linux script in T021.
