@@ -141,11 +141,11 @@ func TestAuthenticatedFirstAgentStoresRealBatchAndHeartbeat(t *testing.T) {
 	defer server.Close()
 	client := server.Client()
 
-	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "setup-secret-123456789", "password": "correct horse battery staple"}, nil, nil)
+	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "setup-secret-123456789", "password": "ScoutAa1"}, nil, nil)
 	if setup.Code != http.StatusCreated {
 		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
 	}
-	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "correct horse battery staple"}, nil, nil)
+	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "ScoutAa1"}, nil, nil)
 	if login.Code != http.StatusOK {
 		t.Fatalf("login: %d %s", login.Code, login.Body)
 	}

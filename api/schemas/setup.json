@@ -5,7 +5,13 @@
   "required": ["setupToken", "password"],
   "properties": {
     "setupToken": { "type": "string", "minLength": 16, "maxLength": 256, "writeOnly": true },
-    "password": { "type": "string", "minLength": 12, "maxLength": 256, "writeOnly": true }
+    "password": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "description": "At least 8 characters, including uppercase, lowercase, and a number.",
+      "writeOnly": true
+    }
   },
   "additionalProperties": false
 }

@@ -3,7 +3,7 @@ import test from "node:test";
 
 const baseURL = process.env.SCOUT_E2E_URL ?? "";
 const setupToken = process.env.SCOUT_E2E_SETUP_TOKEN ?? "";
-const password = process.env.SCOUT_E2E_PASSWORD ?? "correct horse battery staple";
+const password = process.env.SCOUT_E2E_PASSWORD ?? "ScoutAa1";
 
 async function session() {
   if (setupToken) {

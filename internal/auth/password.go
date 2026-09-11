@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -20,8 +22,8 @@ const (
 )
 
 func HashPassword(password string) (string, error) {
-	if len(password) < 12 || len(password) > 256 {
-		return "", fmt.Errorf("password must be 12 to 256 characters")
+	if err := validatePassword(password); err != nil {
+		return "", err
 	}
 	salt := make([]byte, argonSaltLength)
 	if _, err := rand.Read(salt); err != nil {
@@ -29,6 +31,28 @@ func HashPassword(password string) (string, error) {
 	}
 	key := argon2.IDKey([]byte(password), salt, argonIterations, argonMemory, argonParallelism, argonKeyLength)
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s", argonMemory, argonIterations, argonParallelism, base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
+}
+
+func validatePassword(password string) error {
+	length := utf8.RuneCountInString(password)
+	if length < 8 || length > 256 {
+		return fmt.Errorf("password must be 8 to 256 characters")
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, character := range password {
+		switch {
+		case unicode.IsUpper(character):
+			hasUpper = true
+		case unicode.IsLower(character):
+			hasLower = true
+		case unicode.IsDigit(character):
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return fmt.Errorf("password must include an uppercase letter, a lowercase letter, and a number")
+	}
+	return nil
 }
 
 func CheckPassword(encoded, password string) bool {

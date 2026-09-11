@@ -65,7 +65,7 @@ export function SetupView({ onSignedIn }: { onSignedIn: () => void }) {
             Password
             <Input
               required
-              minLength={12}
+              minLength={8}
               type="password"
               autoComplete={setupMode ? "new-password" : "current-password"}
               value={password}

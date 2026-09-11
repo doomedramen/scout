@@ -8,7 +8,7 @@ test(
   "owner setup, session cookies, and CSRF protect inventory mutations",
   { skip: !baseURL || !setupToken },
   async () => {
-    const password = "correct horse battery staple";
+    const password = "ScoutAa1";
     const setup = await fetch(`${baseURL}/api/v1/setup`, {
       method: "POST",
       headers: { "content-type": "application/json" },

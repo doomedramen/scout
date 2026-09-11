@@ -32,7 +32,7 @@ func TestSetupIsSingletonAndInventoryRequiresOwnerSession(t *testing.T) {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			response := integrationPost(t, server.URL+"/api/v1/setup", map[string]string{"setupToken": "integration-setup-token", "password": "correct horse battery staple"})
+			response := integrationPost(t, server.URL+"/api/v1/setup", map[string]string{"setupToken": "integration-setup-token", "password": "ScoutAa1"})
 			responses <- response.StatusCode
 		}()
 	}
