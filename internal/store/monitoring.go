@@ -311,6 +311,9 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 		if err := markRollupWorkSQL(ctx, tx, seriesID, item.ObservedAt, storage.StorageGeneration); err != nil {
 			return BatchResult{}, err
 		}
+		if err := markAlertWorkSQLTx(ctx, tx, AlertWorkAllLineages, item.EntityID); err != nil {
+			return BatchResult{}, err
+		}
 	}
 	for index, item := range observations {
 		item.ID = NewID()
@@ -346,6 +349,11 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (id) DO NOTHING`, item.ID, item.ReporterID, item.CollectorID, item.SubjectID, item.Kind, payloadJSON, item.ObservedAt.UTC(), item.ReceivedAt.UTC(), item.ExpiresAt.UTC(), item.Confidence, storage.StorageGeneration); err != nil {
 			return BatchResult{}, fmt.Errorf("store telemetry observation %d: %w", index, err)
+		}
+		if item.SubjectID != "" {
+			if err := markAlertWorkSQLTx(ctx, tx, AlertWorkAllLineages, item.SubjectID); err != nil {
+				return BatchResult{}, err
+			}
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -551,6 +559,24 @@ func markRollupWorkSQL(ctx context.Context, tx *sql.Tx, seriesID string, observe
 			  lease_until = NULL, last_error = NULL`, seriesID, resolution, bucketStart, generation); err != nil {
 			return fmt.Errorf("mark %d-second rollup work for %s: %w", resolution, seriesID, err)
 		}
+	}
+	return nil
+}
+
+func markAlertWorkSQLTx(ctx context.Context, tx *sql.Tx, lineageID, entityID string) error {
+	if lineageID == "" {
+		lineageID = AlertWorkAllLineages
+	}
+	if entityID == "" {
+		return ErrInvalid
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO alert_work(lineage_id, entity_id, dirty_generation, lease_epoch, lease_owner, lease_until, attempts, last_error, created_at, updated_at)
+		VALUES ($1, $2, 1, 0, '', NULL, 0, '', now(), now())
+		ON CONFLICT (lineage_id, entity_id) DO UPDATE SET
+		  dirty_generation = alert_work.dirty_generation + 1,
+		  last_error = '', updated_at = now()`, lineageID, entityID); err != nil {
+		return fmt.Errorf("mark alert work for %s: %w", entityID, err)
 	}
 	return nil
 }

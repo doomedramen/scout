@@ -133,6 +133,51 @@ func TestConfiguredWebRootDoesNotShadowAPI(t *testing.T) {
 	}
 }
 
+func TestDevelopmentSensitiveMutationDoesNotRequireMFA(t *testing.T) {
+	repository := store.NewMemory()
+	app, err := NewApp(repository, nil, Config{SetupToken: "setup-secret-123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	client := server.Client()
+
+	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "setup-secret-123456789", "password": "ScoutAa1"}, nil, nil)
+	if setup.Code != http.StatusCreated {
+		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
+	}
+	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "ScoutAa1"}, nil, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	var loginBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal([]byte(login.Body), &loginBody); err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"X-CSRF-Token": []string{loginBody.CSRFToken}}
+	siteResponse := postJSON(t, client, server.URL+"/api/v1/sites", map[string]any{"name": "development-lab"}, login.Cookies, header)
+	if siteResponse.Code != http.StatusCreated {
+		t.Fatalf("site: %d %s", siteResponse.Code, siteResponse.Body)
+	}
+	var site store.Site
+	if err := json.Unmarshal([]byte(siteResponse.Body), &site); err != nil {
+		t.Fatal(err)
+	}
+	scopeResponse := postJSON(t, client, server.URL+"/api/v1/scopes", map[string]any{
+		"siteId":  site.ID,
+		"ranges":  []string{"192.0.2.0/24"},
+		"methods": []string{"tcp"},
+		"ports":   []int{22},
+		"enabled": true,
+	}, login.Cookies, header)
+	if scopeResponse.Code != http.StatusCreated {
+		t.Fatalf("development scope: %d %s", scopeResponse.Code, scopeResponse.Body)
+	}
+}
+
 func TestAgentBootstrapArtifactsArePublicAndArchitectureBound(t *testing.T) {
 	directory := t.TempDir()
 	agent := []byte("linux-agent-amd64")

@@ -3,7 +3,7 @@ import { KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APIError, api, type AccessRequest, type Credential, type TrustRecord } from "@/lib/api";
+import { APIError, api, type AccessRequest, type Credential, type Owner, type TrustRecord } from "@/lib/api";
 
 function splitValues(value: string) {
   return value
@@ -13,6 +13,8 @@ function splitValues(value: string) {
 }
 
 export function AccessView() {
+  const [development, setDevelopment] = useState(false);
+  const [owner, setOwner] = useState<Owner | null>(null);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [trust, setTrust] = useState<TrustRecord[]>([]);
@@ -25,18 +27,80 @@ export function AccessView() {
   const [trustEndpoint, setTrustEndpoint] = useState("");
   const [fingerprint, setFingerprint] = useState("");
   const [busy, setBusy] = useState(false);
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [mfaPassword, setMfaPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaSecret, setMfaSecret] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   async function refresh() {
-    const [requestList, credentialList, trustList] = await Promise.all([
+    const [statusInfo, ownerInfo, requestList, credentialList, trustList] = await Promise.all([
+      api.status(),
+      api.owner(),
       api.accessRequests("open"),
       api.credentials(),
       api.trust(),
     ]);
+    setDevelopment(statusInfo.mode === "development");
+    setOwner(ownerInfo);
     setRequests(requestList.items);
     setCredentials(credentialList.items);
     setTrust(trustList.items);
+  }
+
+  async function beginMFA(event: FormEvent) {
+    event.preventDefault();
+    setSecurityBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api.beginMFA(mfaPassword);
+      setMfaSecret(result.secret);
+      setMfaPassword("");
+      setMessage("MFA secret generated. Add it to an authenticator, then confirm with the six-digit code.");
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "MFA setup could not be started");
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function confirmMFA(event: FormEvent) {
+    event.preventDefault();
+    setSecurityBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api.confirmMFA(mfaCode);
+      setOwner((current) => (current ? { ...current, mfaEnabled: true } : current));
+      setMfaSecret("");
+      setMfaCode("");
+      setRecoveryCodes(result.recoveryCodes);
+      setMessage("MFA enabled. Sensitive actions are unlocked for five minutes; save the recovery codes now.");
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "MFA code could not be confirmed");
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function reauthenticate(event: FormEvent) {
+    event.preventDefault();
+    setSecurityBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.reauth(mfaPassword, mfaCode);
+      setMfaPassword("");
+      setMfaCode("");
+      setMessage("Sensitive actions unlocked for five minutes.");
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "Re-authentication failed");
+    } finally {
+      setSecurityBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -121,6 +185,100 @@ export function AccessView() {
           {message}
         </p>
       )}
+      <section className="data-panel security-panel" aria-labelledby="owner-security-title">
+        <div className="section-heading">
+          <div>
+            <h3 id="owner-security-title">Owner security</h3>
+            <p>
+              {development
+                ? "Development mode keeps authentication and CSRF protection but bypasses the recent-MFA ceremony."
+                : "Scope changes, credentials, discovery, and agent invitations require recent MFA."}
+            </p>
+          </div>
+          <Badge variant="outline">
+            {development ? "Development bypass" : owner?.mfaEnabled ? "MFA enabled" : "MFA required"}
+          </Badge>
+        </div>
+        {development ? (
+          <p className="form-help">Production deployments still require MFA before sensitive changes.</p>
+        ) : !owner ? (
+          <p className="empty-inline">Loading owner security state…</p>
+        ) : owner.mfaEnabled ? (
+          <form className="security-form" onSubmit={reauthenticate}>
+            <p className="form-help">Re-authenticate to unlock sensitive changes for five minutes.</p>
+            <div className="form-inline security-form-fields">
+              <label>
+                Owner password
+                <Input
+                  required
+                  type="password"
+                  autoComplete="current-password"
+                  value={mfaPassword}
+                  onChange={(event) => setMfaPassword(event.target.value)}
+                />
+              </label>
+              <label>
+                Authenticator code
+                <Input
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                />
+              </label>
+              <Button type="submit" disabled={securityBusy}>
+                {securityBusy ? "Checking…" : "Unlock sensitive actions"}
+              </Button>
+            </div>
+          </form>
+        ) : !mfaSecret ? (
+          <form className="security-form" onSubmit={beginMFA}>
+            <p className="form-help">Set up an authenticator once before storing credentials or enrolling agents.</p>
+            <div className="form-inline security-form-fields">
+              <label>
+                Owner password
+                <Input
+                  required
+                  type="password"
+                  autoComplete="current-password"
+                  value={mfaPassword}
+                  onChange={(event) => setMfaPassword(event.target.value)}
+                />
+              </label>
+              <Button type="submit" disabled={securityBusy}>
+                {securityBusy ? "Preparing…" : "Set up MFA"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div className="security-form">
+            <p className="form-help">Add this secret to your authenticator app. It is shown only during setup.</p>
+            <code className="mfa-secret">{mfaSecret}</code>
+            <form className="form-inline security-form-fields" onSubmit={confirmMFA}>
+              <label>
+                Authenticator code
+                <Input
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                />
+              </label>
+              <Button type="submit" disabled={securityBusy}>
+                {securityBusy ? "Confirming…" : "Confirm MFA"}
+              </Button>
+            </form>
+          </div>
+        )}
+        {recoveryCodes.length > 0 && (
+          <div className="recovery-codes" role="status">
+            <strong>Save these recovery codes</strong>
+            <pre>{recoveryCodes.join("\n")}</pre>
+          </div>
+        )}
+      </section>
       <div className="access-columns">
         <form className="form-panel" onSubmit={createCredential}>
           <div className="panel-title">

@@ -48,6 +48,8 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 - Provide MFA before enabling stored credentials and remote enrollment in a production release.
 - Audit sign-in events, policy edits, secret access, enrollment attempts, exclusions, and identity revocations. Redact sensitive payloads.
 
+Development mode retains owner authentication and CSRF checks but bypasses the recent-MFA ceremony so local fixture and UI testing stays low-friction. Production mode always enforces recent MFA for sensitive mutations.
+
 ### Updates
 
 - Verify signed release metadata and artifacts on the agent independently of the server, using trusted publisher keys.

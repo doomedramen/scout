@@ -172,7 +172,7 @@ func (s *Service) RequireRecentMFA(ctx context.Context, token string) (store.Ses
 		return store.Session{}, err
 	}
 	if !s.Store.HasRecentMFA(session) {
-		return store.Session{}, store.ErrForbidden
+		return store.Session{}, store.ErrRecentMFA
 	}
 	return session, nil
 }

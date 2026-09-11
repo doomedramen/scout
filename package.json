@@ -11,14 +11,16 @@
     "setup": "node scripts/setup.mjs",
     "build": "turbo run build",
     "check": "turbo run check",
-    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\"",
-    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\"",
+    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
+    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
     "lint": "bash scripts/lint.sh",
+    "test:e2e:browser": "npm run build && playwright test",
     "test": "turbo run test",
     "db:up": "node scripts/compose.mjs up -d --wait postgres",
     "db:down": "node scripts/compose.mjs stop postgres"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "prettier": "^3.9.6",
     "turbo": "^2.10.12"
   }

@@ -104,6 +104,11 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 				device.MetricFreshness = map[string]Freshness{}
 			}
 			device.MetricFreshness[sample.Metric] = sample.Availability
+			if sample.EntityID != "" {
+				if err := markAlertWorkState(state, AlertWorkAllLineages, sample.EntityID, now); err != nil {
+					return err
+				}
+			}
 		}
 		for _, observation := range observations {
 			observation.ID = NewID()
@@ -112,6 +117,11 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 				observation.ReceivedAt = now
 			}
 			state.Observations[observation.ID] = observation
+			if observation.SubjectID != "" {
+				if err := markAlertWorkState(state, AlertWorkAllLineages, observation.SubjectID, now); err != nil {
+					return err
+				}
+			}
 		}
 		device.AgentVersion = agent.InstalledVersion
 		state.Devices[agent.DeviceID] = device

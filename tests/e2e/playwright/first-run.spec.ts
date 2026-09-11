@@ -1,0 +1,42 @@
+import { expect, test } from "@playwright/test";
+
+test("development owner can complete the first-run access workflow", async ({ page }) => {
+  const setupToken = process.env.SCOUT_E2E_SETUP_TOKEN ?? "playwright-setup";
+  const password = "ScoutAa1";
+  const siteName = "playwright-lab";
+
+  await page.goto("/");
+  await page.getByLabel("One-time setup token").fill(setupToken);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Create owner" }).click();
+
+  await expect(page.getByRole("heading", { name: "Sign in to Scout" })).toBeVisible();
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Access" }).click();
+  await expect(page.getByText("Development bypass", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Scopes" }).click();
+  await expect(page.getByRole("heading", { name: "Sites and scopes" })).toBeVisible();
+  await page.getByLabel("Site name").fill(siteName);
+  await page.getByRole("button", { name: "Add site" }).click();
+
+  await page.getByRole("combobox").selectOption({ label: siteName });
+  await page.getByLabel("Ranges CIDRs or literal addresses").fill("192.0.2.0/24");
+  await page.getByRole("button", { name: "Save disabled scope" }).click();
+  await expect(
+    page.getByText("Scope saved disabled. Enable it only after reviewing access and exclusions."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Enable scope" }).click();
+  await expect(page.getByText("Enabled", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Systems" }).click();
+  await page.getByRole("button", { name: "Agent setup" }).first().click();
+  await expect(page.getByRole("heading", { name: "Install the first Linux agent" })).toBeVisible();
+  await page.getByRole("button", { name: "Create one-time invitation" }).click();
+  await expect(page.getByText("Invitation created. It is single-use and expires in five minutes.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Native Linux (recommended)" })).toBeVisible();
+  await expect(page.getByText(/api\/v1\/bootstrap\/agent\/install\.sh/)).toBeVisible();
+});

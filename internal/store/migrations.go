@@ -46,6 +46,7 @@ func migrations() []migration {
 		{version: 1, sql: initialMigrationSQL},
 		{version: 2, sql: monitoringMigrationSQL},
 		{version: 3, sql: alertRulesMigrationSQL},
+		{version: 4, sql: incidentsMigrationSQL},
 	}
 }
 
@@ -267,4 +268,79 @@ CREATE TABLE IF NOT EXISTS alert_overrides (
   UNIQUE (lineage_id, target_kind, target_id)
 );
 CREATE INDEX IF NOT EXISTS alert_overrides_target_idx ON alert_overrides(target_kind, target_id);
+`
+
+const incidentsMigrationSQL = `
+CREATE TABLE IF NOT EXISTS alert_evaluations (
+  lineage_id text NOT NULL,
+  entity_id text NOT NULL,
+  effective_revision bigint NOT NULL DEFAULT 0 CHECK (effective_revision >= 0),
+  evidence_state text NOT NULL CHECK (evidence_state IN ('fresh', 'unknown', 'unsupported')),
+  last_observed_at timestamptz,
+  last_received_at timestamptz,
+  pending_since timestamptz,
+  recovery_since timestamptz,
+  last_valid_at timestamptz,
+  trigger_consecutive integer NOT NULL DEFAULT 0 CHECK (trigger_consecutive >= 0),
+  recovery_consecutive integer NOT NULL DEFAULT 0 CHECK (recovery_consecutive >= 0),
+  incident_id text,
+  updated_at timestamptz NOT NULL,
+  PRIMARY KEY (lineage_id, entity_id)
+);
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id text PRIMARY KEY,
+  lineage_id text NOT NULL,
+  entity_id text NOT NULL,
+  device_id text NOT NULL DEFAULT '',
+  rule_revision bigint NOT NULL DEFAULT 0 CHECK (rule_revision >= 0),
+  rule_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+  severity text NOT NULL CHECK (severity IN ('warning', 'critical')),
+  status text NOT NULL CHECK (status IN ('active', 'resolved', 'closed')),
+  evidence_state text NOT NULL CHECK (evidence_state IN ('fresh', 'unknown', 'unsupported')),
+  value double precision,
+  unit text NOT NULL DEFAULT '',
+  source text NOT NULL DEFAULT '',
+  opened_at timestamptz NOT NULL,
+  observed_at timestamptz NOT NULL,
+  evaluated_at timestamptz NOT NULL,
+  acknowledged_at timestamptz,
+  acknowledged_by text NOT NULL DEFAULT '',
+  closed_at timestamptz,
+  close_reason text NOT NULL DEFAULT '',
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS active_incident_lineage_entity_idx ON incidents(lineage_id, entity_id) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS incidents_status_time_idx ON incidents(status, evaluated_at DESC, id);
+
+CREATE TABLE IF NOT EXISTS incident_transitions (
+  id text PRIMARY KEY,
+  incident_id text NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  sequence bigint NOT NULL CHECK (sequence >= 1),
+  kind text NOT NULL,
+  actor text NOT NULL DEFAULT '',
+  evidence_state text NOT NULL CHECK (evidence_state IN ('fresh', 'unknown', 'unsupported')),
+  reason text NOT NULL DEFAULT '',
+  value double precision,
+  observed_at timestamptz,
+  occurred_at timestamptz NOT NULL,
+  rule_revision bigint NOT NULL DEFAULT 0 CHECK (rule_revision >= 0),
+  UNIQUE (incident_id, sequence)
+);
+CREATE INDEX IF NOT EXISTS incident_transitions_incident_idx ON incident_transitions(incident_id, sequence);
+
+CREATE TABLE IF NOT EXISTS alert_work (
+  lineage_id text NOT NULL,
+  entity_id text NOT NULL,
+  dirty_generation bigint NOT NULL DEFAULT 1 CHECK (dirty_generation >= 1),
+  lease_epoch bigint NOT NULL DEFAULT 0 CHECK (lease_epoch >= 0),
+  lease_owner text NOT NULL DEFAULT '',
+  lease_until timestamptz,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  last_error text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  PRIMARY KEY (lineage_id, entity_id)
+);
+CREATE INDEX IF NOT EXISTS alert_work_ready_idx ON alert_work(lease_until, updated_at, lineage_id, entity_id);
 `

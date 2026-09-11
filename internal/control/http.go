@@ -464,6 +464,11 @@ func (a *App) requireSensitive(w http.ResponseWriter, r *http.Request) (store.Se
 	if !ok {
 		return store.Session{}, false
 	}
+	if !a.Config.Production {
+		// Development keeps authentication and CSRF protection, but avoids
+		// forcing an MFA ceremony around every local test mutation.
+		return session, true
+	}
 	if _, err := a.Auth.RequireRecentMFA(r.Context(), cookieValue(r, a.Auth.SessionCookieName())); err != nil {
 		writeMappedError(w, r, err)
 		return store.Session{}, false

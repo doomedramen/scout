@@ -213,6 +213,72 @@ type AlertOverride struct {
 	UpdatedAt                 time.Time `json:"updatedAt"`
 }
 
+type AlertEvaluation struct {
+	LineageID           string     `json:"lineageId"`
+	EntityID            string     `json:"entityId"`
+	EffectiveRevision   int64      `json:"effectiveRevision"`
+	EvidenceState       string     `json:"evidenceState"`
+	LastObservedAt      *time.Time `json:"lastObservedAt,omitempty"`
+	LastReceivedAt      *time.Time `json:"lastReceivedAt,omitempty"`
+	PendingSince        *time.Time `json:"pendingSince,omitempty"`
+	RecoverySince       *time.Time `json:"recoverySince,omitempty"`
+	LastValidAt         *time.Time `json:"lastValidAt,omitempty"`
+	TriggerConsecutive  int        `json:"triggerConsecutive"`
+	RecoveryConsecutive int        `json:"recoveryConsecutive"`
+	IncidentID          string     `json:"incidentId,omitempty"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+}
+
+type Incident struct {
+	ID             string         `json:"id"`
+	LineageID      string         `json:"lineageId"`
+	EntityID       string         `json:"entityId"`
+	DeviceID       string         `json:"deviceId,omitempty"`
+	RuleRevision   int64          `json:"ruleRevision"`
+	RuleSnapshot   map[string]any `json:"ruleSnapshot"`
+	Severity       string         `json:"severity"`
+	Status         string         `json:"status"`
+	EvidenceState  string         `json:"evidenceState"`
+	Value          *float64       `json:"value,omitempty"`
+	Unit           string         `json:"unit,omitempty"`
+	Source         string         `json:"source,omitempty"`
+	OpenedAt       time.Time      `json:"openedAt"`
+	ObservedAt     time.Time      `json:"observedAt"`
+	EvaluatedAt    time.Time      `json:"evaluatedAt"`
+	AcknowledgedAt *time.Time     `json:"acknowledgedAt,omitempty"`
+	AcknowledgedBy string         `json:"acknowledgedBy,omitempty"`
+	ClosedAt       *time.Time     `json:"closedAt,omitempty"`
+	CloseReason    string         `json:"closeReason,omitempty"`
+	Revision       int64          `json:"revision"`
+}
+
+type IncidentTransition struct {
+	ID            string     `json:"id"`
+	IncidentID    string     `json:"incidentId"`
+	Sequence      int64      `json:"sequence"`
+	Kind          string     `json:"kind"`
+	Actor         string     `json:"actor,omitempty"`
+	EvidenceState string     `json:"evidenceState"`
+	Reason        string     `json:"reason,omitempty"`
+	Value         *float64   `json:"value,omitempty"`
+	ObservedAt    *time.Time `json:"observedAt,omitempty"`
+	OccurredAt    time.Time  `json:"occurredAt"`
+	RuleRevision  int64      `json:"ruleRevision"`
+}
+
+type AlertWorkItem struct {
+	LineageID       string     `json:"lineageId"`
+	EntityID        string     `json:"entityId"`
+	DirtyGeneration int64      `json:"dirtyGeneration"`
+	LeaseEpoch      int64      `json:"leaseEpoch"`
+	LeaseOwner      string     `json:"leaseOwner,omitempty"`
+	LeaseUntil      *time.Time `json:"leaseUntil,omitempty"`
+	Attempts        int        `json:"attempts"`
+	LastError       string     `json:"lastError,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
 type BootstrapInvitation struct {
 	TokenHash       string     `json:"tokenHash"`
 	DeviceID        string     `json:"deviceId"`
@@ -428,33 +494,37 @@ type WorkspaceState struct {
 }
 
 type State struct {
-	Version          int                                 `json:"version"`
-	Owner            *Owner                              `json:"owner,omitempty"`
-	Sessions         map[string]Session                  `json:"sessions"`
-	Sites            map[string]Site                     `json:"sites"`
-	Scopes           map[string]Scope                    `json:"scopes"`
-	Devices          map[string]Device                   `json:"devices"`
-	Invitations      map[string]BootstrapInvitation      `json:"invitations"`
-	Agents           map[string]AgentIdentity            `json:"agents"`
-	Credentials      map[string]CredentialRef            `json:"credentials"`
-	Trust            map[string]TrustRecord              `json:"trust"`
-	AccessRequests   map[string]AccessRequest            `json:"accessRequests"`
-	Candidates       map[string]Candidate                `json:"candidates"`
-	Workers          map[string]WorkerIdentity           `json:"workers"`
-	Jobs             map[string]Job                      `json:"jobs"`
-	BatchReceipts    map[string]string                   `json:"batchReceipts"`
-	Samples          []MetricSample                      `json:"samples"`
-	Observations     map[string]Observation              `json:"observations"`
-	Relationships    map[string]Relationship             `json:"relationships"`
-	Collectors       map[string]CollectorDescriptorState `json:"collectors"`
-	AlertRules       map[string]AlertRule                `json:"alertRules"`
-	AlertOverrides   map[string]AlertOverride            `json:"alertOverrides"`
-	Releases         map[string]Release                  `json:"releases"`
-	Assignments      map[string]Assignment               `json:"assignments"`
-	UpdatePolicies   map[string]DeviceUpdatePolicy       `json:"updatePolicies"`
-	CollectorConfigs map[string]CollectorConfig          `json:"collectorConfigs"`
-	ServiceEntities  map[string]ServiceEntity            `json:"serviceEntities"`
-	Rollouts         map[string]Rollout                  `json:"rollouts"`
-	AuditEvents      []AuditEvent                        `json:"auditEvents"`
-	Workspace        WorkspaceState                      `json:"workspace"`
+	Version             int                                 `json:"version"`
+	Owner               *Owner                              `json:"owner,omitempty"`
+	Sessions            map[string]Session                  `json:"sessions"`
+	Sites               map[string]Site                     `json:"sites"`
+	Scopes              map[string]Scope                    `json:"scopes"`
+	Devices             map[string]Device                   `json:"devices"`
+	Invitations         map[string]BootstrapInvitation      `json:"invitations"`
+	Agents              map[string]AgentIdentity            `json:"agents"`
+	Credentials         map[string]CredentialRef            `json:"credentials"`
+	Trust               map[string]TrustRecord              `json:"trust"`
+	AccessRequests      map[string]AccessRequest            `json:"accessRequests"`
+	Candidates          map[string]Candidate                `json:"candidates"`
+	Workers             map[string]WorkerIdentity           `json:"workers"`
+	Jobs                map[string]Job                      `json:"jobs"`
+	BatchReceipts       map[string]string                   `json:"batchReceipts"`
+	Samples             []MetricSample                      `json:"samples"`
+	Observations        map[string]Observation              `json:"observations"`
+	Relationships       map[string]Relationship             `json:"relationships"`
+	Collectors          map[string]CollectorDescriptorState `json:"collectors"`
+	AlertRules          map[string]AlertRule                `json:"alertRules"`
+	AlertOverrides      map[string]AlertOverride            `json:"alertOverrides"`
+	AlertEvaluations    map[string]AlertEvaluation          `json:"alertEvaluations"`
+	Incidents           map[string]Incident                 `json:"incidents"`
+	IncidentTransitions map[string]IncidentTransition       `json:"incidentTransitions"`
+	AlertWork           map[string]AlertWorkItem            `json:"alertWork"`
+	Releases            map[string]Release                  `json:"releases"`
+	Assignments         map[string]Assignment               `json:"assignments"`
+	UpdatePolicies      map[string]DeviceUpdatePolicy       `json:"updatePolicies"`
+	CollectorConfigs    map[string]CollectorConfig          `json:"collectorConfigs"`
+	ServiceEntities     map[string]ServiceEntity            `json:"serviceEntities"`
+	Rollouts            map[string]Rollout                  `json:"rollouts"`
+	AuditEvents         []AuditEvent                        `json:"auditEvents"`
+	Workspace           WorkspaceState                      `json:"workspace"`
 }

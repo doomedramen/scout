@@ -978,6 +978,43 @@ tbody tr:last-child td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+.security-panel {
+  gap: 13px;
+}
+.security-form {
+  display: grid;
+  gap: 12px;
+}
+.security-form-fields {
+  align-items: end;
+}
+.security-form-fields > button {
+  min-height: 36px;
+}
+.mfa-secret {
+  width: fit-content;
+  padding: 10px 12px;
+  border: 1px solid #3b414b;
+  border-radius: 6px;
+  background: #15181c;
+  color: #e7e9ed;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+.recovery-codes {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #715c31;
+  border-radius: 6px;
+  background: #211d13;
+  color: #f0d99d;
+}
+.recovery-codes pre {
+  margin: 0;
+  font: inherit;
+  line-height: 1.5;
+}
 .form-panel,
 .data-panel {
   display: grid;

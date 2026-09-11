@@ -148,6 +148,17 @@ npm run dev
 
 Open the Vite URL printed in the terminal (normally `http://127.0.0.1:5173`). The API binds to `127.0.0.1:8080`. Setup creates a private, ignored `.env` with a random local database password; existing files are never overwritten. The development runner loads it automatically. Both the Compose plugin and standalone `docker-compose` are supported.
 
+Run the browser regression journey against an isolated in-memory server with:
+
+```bash
+npx playwright install chromium   # first run only
+npm run test:e2e:browser
+```
+
+The test creates a disposable owner, site, scope, and agent invitation. Set
+`SCOUT_E2E_URL` and `SCOUT_E2E_SETUP_TOKEN` to point it at a separately managed
+development server; never point it at production.
+
 The UI also runs without a database and reports its actual connection state. Use **Explore demo** to inspect illustrative systems, filtering, host charts, and network membership. Leaving demo clears those fixtures. No network devices are contacted by the UI.
 
 ```sh

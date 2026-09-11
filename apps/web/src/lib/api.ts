@@ -119,6 +119,12 @@ export type Invitation = {
   instructions: string;
 };
 
+export type Owner = {
+  id: string;
+  mfaEnabled: boolean;
+  createdAt: string;
+};
+
 export type AccessRequest = {
   id: string;
   deviceId: string;
@@ -357,7 +363,7 @@ export const api = {
       if (!response.ok) throw new APIError(response.status, null);
       return response.json() as Promise<Status>;
     }),
-  owner: () => request<{ id: string; mfaEnabled: boolean; createdAt: string }>("/owner"),
+  owner: () => request<Owner>("/owner"),
   setup: (setupToken: string, password: string) =>
     request<{ id: string }>("/setup", {
       method: "POST",
@@ -372,6 +378,11 @@ export const api = {
     return result;
   },
   signOut: () => request<void>("/sessions/current", { method: "DELETE" }),
+  reauth: (password: string, totpCode: string) =>
+    request<void>("/sessions/reauth", {
+      method: "POST",
+      body: JSON.stringify({ password, totpCode }),
+    }),
   beginMFA: (password: string) =>
     request<{ secret: string; otpauth: string }>("/owner/mfa/setup", {
       method: "POST",

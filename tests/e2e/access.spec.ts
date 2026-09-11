@@ -67,6 +67,12 @@ test("owner access is write-only, CSRF protected, and separate from worker acces
       targets: ["192.0.2.10:22"],
     }),
   });
-  assert.equal(sensitiveWithoutMFA.status, 403);
-  assert.doesNotMatch(await sensitiveWithoutMFA.text(), /never-returned/);
+  const status = await fetch(`${baseURL}/api/status`);
+  const statusBody = await status.json();
+  if (statusBody.mode === "development") {
+    assert.equal(sensitiveWithoutMFA.status, 201);
+  } else {
+    assert.equal(sensitiveWithoutMFA.status, 403);
+    assert.doesNotMatch(await sensitiveWithoutMFA.text(), /never-returned/);
+  }
 });

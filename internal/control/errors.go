@@ -50,6 +50,8 @@ func mapError(err error) (int, string, string, bool) {
 		return http.StatusUnauthorized, "expired", "The presented authorization has expired", false
 	case errors.Is(err, store.ErrRevoked):
 		return http.StatusForbidden, "revoked", "The presented authorization has been revoked", false
+	case errors.Is(err, store.ErrRecentMFA):
+		return http.StatusForbidden, "recent_mfa_required", "Recent MFA verification is required for this action", false
 	case errors.Is(err, store.ErrConflict), errors.Is(err, store.ErrDuplicate):
 		return http.StatusConflict, "conflict", "State conflict; refresh and retry", false
 	case errors.Is(err, store.ErrBackpressure):

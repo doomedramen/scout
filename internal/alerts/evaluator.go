@@ -85,6 +85,7 @@ type Incident struct {
 	LineageID      string
 	EntityID       string
 	RuleRevision   int64
+	RuleSnapshot   map[string]any
 	Severity       string
 	Status         IncidentStatus
 	Evidence       EvidenceState
@@ -120,6 +121,7 @@ type EvaluationState struct {
 	Evidence            EvidenceState
 	LastObservedAt      time.Time
 	LastReceivedAt      time.Time
+	LastValidAt         time.Time
 	PendingSince        *time.Time
 	RecoverySince       *time.Time
 	TriggerConsecutive  int
@@ -175,6 +177,7 @@ type Evaluator struct {
 	clock        Clock
 	states       map[string]*evaluationState
 	nextIncident uint64
+	incidentID   func() string
 }
 
 type evaluationState struct {
@@ -184,6 +187,7 @@ type evaluationState struct {
 	evidence            EvidenceState
 	lastObservedAt      time.Time
 	lastReceivedAt      time.Time
+	lastValidAt         time.Time
 	pendingSince        *time.Time
 	recoverySince       *time.Time
 	triggerConsecutive  int
@@ -197,6 +201,48 @@ func NewEvaluator(clock Clock) *Evaluator {
 		clock = wallClock{}
 	}
 	return &Evaluator{clock: clock, states: map[string]*evaluationState{}}
+}
+
+// Restore hydrates one evaluator key from durable state before evaluating a
+// newly received observation. The in-memory evaluator remains the source of
+// timing semantics; the store is the source of restart-safe state.
+func (e *Evaluator) Restore(rule Rule, entityID string, state EvaluationState) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if entityID == "" {
+		entityID = state.EntityID
+	}
+	if entityID == "" {
+		entityID = rule.EntityID
+	}
+	key := evaluationKey(rule, entityID)
+	item := &evaluationState{
+		lineageID:           ruleLineageID(rule),
+		entityID:            entityID,
+		ruleRevision:        state.RuleRevision,
+		evidence:            state.Evidence,
+		lastObservedAt:      state.LastObservedAt,
+		lastReceivedAt:      state.LastReceivedAt,
+		lastValidAt:         state.LastValidAt,
+		pendingSince:        cloneTime(state.PendingSince),
+		recoverySince:       cloneTime(state.RecoverySince),
+		triggerConsecutive:  state.TriggerConsecutive,
+		recoveryConsecutive: state.RecoveryConsecutive,
+		activeIncident:      cloneIncident(state.ActiveIncident),
+		lastIncident:        cloneIncident(state.LastIncident),
+	}
+	if item.evidence == "" {
+		item.evidence = EvidenceUnknown
+	}
+	e.states[key] = item
+}
+
+// SetIncidentIDGenerator lets durable callers use globally unique IDs while
+// keeping deterministic in-memory IDs useful in unit tests.
+func (e *Evaluator) SetIncidentIDGenerator(generator func() string) {
+	e.mu.Lock()
+	e.incidentID = generator
+	e.mu.Unlock()
 }
 
 func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResult {
@@ -220,6 +266,7 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 		e.closeForRuleChange(state, rule, now, &transitions)
 		state.lastObservedAt = time.Time{}
 		state.lastReceivedAt = time.Time{}
+		state.lastValidAt = time.Time{}
 	}
 	state.ruleRevision = rule.Revision
 	state.lineageID = ruleLineageID(rule)
@@ -262,6 +309,10 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 		if state.evidence != evidence && state.activeIncident != nil {
 			transitions = append(transitions, Transition{Kind: TransitionEvidenceState, IncidentID: state.activeIncident.ID, LineageID: state.lineageID, EntityID: state.entityID, RuleRevision: rule.Revision, Evidence: evidence, OccurredAt: now})
 		}
+		if state.activeIncident != nil {
+			state.activeIncident.Evidence = evidence
+			state.activeIncident.EvaluatedAt = now
+		}
 		state.evidence = evidence
 		state.pendingSince = nil
 		state.recoverySince = nil
@@ -273,6 +324,7 @@ func (e *Evaluator) Evaluate(rule Rule, observation Observation) EvaluationResul
 		transitions = append(transitions, Transition{Kind: TransitionEvidenceState, IncidentID: state.activeIncident.ID, LineageID: state.lineageID, EntityID: state.entityID, RuleRevision: rule.Revision, Evidence: EvidenceFresh, OccurredAt: now})
 	}
 	state.evidence = EvidenceFresh
+	state.lastValidAt = observation.ObservedAt
 
 	trigger, clear := conditions(rule, observation)
 	minimum := rule.MinimumConsecutiveSamples
@@ -384,11 +436,16 @@ func (e *Evaluator) State(rule Rule, entityID string) EvaluationState {
 }
 
 func (e *Evaluator) openIncident(state *evaluationState, rule Rule, observation Observation, now time.Time, transitions *[]Transition) {
+	incidentID := fmt.Sprintf("incident-%d", atomic.AddUint64(&e.nextIncident, 1))
+	if e.incidentID != nil {
+		incidentID = e.incidentID()
+	}
 	incident := &Incident{
-		ID:           fmt.Sprintf("incident-%d", atomic.AddUint64(&e.nextIncident, 1)),
+		ID:           incidentID,
 		LineageID:    state.lineageID,
 		EntityID:     state.entityID,
 		RuleRevision: rule.Revision,
+		RuleSnapshot: snapshotRule(rule),
 		Severity:     rule.Severity,
 		Status:       IncidentActive,
 		Evidence:     EvidenceFresh,
@@ -447,6 +504,7 @@ func (e *Evaluator) snapshot(state *evaluationState) EvaluationState {
 		Evidence:            state.evidence,
 		LastObservedAt:      state.lastObservedAt,
 		LastReceivedAt:      state.lastReceivedAt,
+		LastValidAt:         state.lastValidAt,
 		PendingSince:        cloneTime(state.pendingSince),
 		RecoverySince:       cloneTime(state.recoverySince),
 		TriggerConsecutive:  state.triggerConsecutive,
@@ -518,6 +576,7 @@ func cloneIncident(value *Incident) *Incident {
 	}
 	copy := *value
 	copy.Value = cloneFloat(value.Value)
+	copy.RuleSnapshot = cloneRuleSnapshot(value.RuleSnapshot)
 	copy.AcknowledgedAt = cloneTime(value.AcknowledgedAt)
 	copy.ClosedAt = cloneTime(value.ClosedAt)
 	return &copy
