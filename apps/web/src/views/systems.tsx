@@ -137,7 +137,7 @@ export function SystemsView({
           " " +
           (device.hostname ?? "") +
           " " +
-          device.addresses.join(" ") +
+          (device.addresses ?? []).join(" ") +
           " " +
           stateLabel(device) +
           " " +
@@ -323,7 +323,7 @@ function SystemRow({ device, onSelect }: { device: Device; onSelect: (device: De
           <i className={"dot " + stateClass} aria-hidden="true" />
           <span>
             <strong>{device.displayName}</strong>
-            <small>{device.addresses[0] ?? device.hostname ?? "Address unavailable"}</small>
+            <small>{(device.addresses ?? [])[0] ?? device.hostname ?? "Address unavailable"}</small>
           </span>
         </button>
       </td>

@@ -312,6 +312,10 @@ func (a *App) testNotificationDestination(w http.ResponseWriter, r *http.Request
 		writeMappedError(w, r, store.ErrNotFound)
 		return
 	}
+	if !destination.Enabled {
+		writeMappedError(w, r, store.ErrConflict)
+		return
+	}
 	if destination.Revision != request.ExpectedRevision {
 		writeMappedError(w, r, store.ErrConflict)
 		return

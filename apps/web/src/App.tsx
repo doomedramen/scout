@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity,
   BellRing,
+  Bell,
   CircleHelp,
   Download,
   KeyRound,
@@ -20,6 +21,7 @@ import { AgentSetupView } from "@/views/agent-setup";
 import { EnrollmentView } from "@/views/enrollment";
 import { IncidentsView } from "@/views/incidents";
 import { NetworkView } from "@/views/network";
+import { NotificationsView } from "@/views/notifications";
 import { RecoveryView } from "@/views/recovery";
 import { ScopesView } from "@/views/scopes";
 import { ServicesView } from "@/views/services";
@@ -27,11 +29,13 @@ import { SetupView } from "@/views/setup";
 import { SystemsView } from "@/views/systems";
 import { UpdatesView } from "@/views/updates";
 
-type Page = "Systems" | "Incidents" | "Network" | "Updates" | "Access" | "Scopes" | "Enrollment" | "Services";
+type Page =
+  "Systems" | "Incidents" | "Network" | "Notifications" | "Updates" | "Access" | "Scopes" | "Enrollment" | "Services";
 
 const pages = [
   { name: "Systems" as const, icon: LayoutList },
   { name: "Incidents" as const, icon: BellRing },
+  { name: "Notifications" as const, icon: Bell },
   { name: "Network" as const, icon: Network },
   { name: "Scopes" as const, icon: ScanSearch },
   { name: "Enrollment" as const, icon: ServerCog },
@@ -44,6 +48,7 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   Systems: { title: "All systems", description: "Every machine. One clear view." },
   Incidents: { title: "Incidents", description: "See what needs attention, with evidence and history." },
   Network: { title: "Network map", description: "Understand how infrastructure connects, with evidence." },
+  Notifications: { title: "Notifications", description: "Choose where Scout sends alerts and when it stays quiet." },
   Scopes: { title: "Scopes", description: "Define where Scout may observe and enroll." },
   Enrollment: { title: "Enrollment", description: "Bounded discovery and automatic enrollment progress." },
   Access: { title: "Access", description: "Resolve credentials and trust without exposing secrets." },
@@ -215,6 +220,7 @@ export default function App() {
             )}
             {page === "Incidents" && <IncidentsView />}
             {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} />}
+            {page === "Notifications" && <NotificationsView />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}
             {page === "Access" && <AccessView />}

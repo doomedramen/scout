@@ -198,8 +198,9 @@ export function DeviceView({
           <h1>{device.displayName}</h1>
           <p>
             <span className={"dot " + (device.availability === "online" ? "healthy" : "muted")} />
-            {device.availability} <span className="divider">/</span> {device.addresses[0] ?? "Address unavailable"}{" "}
-            <span className="divider">/</span> {device.platform} {device.architecture}
+            {device.availability} <span className="divider">/</span>{" "}
+            {(device.addresses ?? [])[0] ?? "Address unavailable"} <span className="divider">/</span> {device.platform}{" "}
+            {device.architecture}
           </p>
         </div>
         <label className="range-select">

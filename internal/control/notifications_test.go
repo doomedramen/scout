@@ -44,7 +44,7 @@ func TestNotificationDestinationControlRedactsSecretsAndTestsSavedRevision(t *te
 	headers := http.Header{"X-CSRF-Token": []string{loginBody.CSRFToken}}
 
 	created := postJSON(t, client, server.URL+"/api/v1/notification-destinations", map[string]any{
-		"name": "Local ntfy", "baseUrl": receiver.server.URL, "topic": "scout_alerts", "token": "secret-token", "allowPlainHttp": true,
+		"name": "Local ntfy", "baseUrl": receiver.server.URL, "topic": "scout_alerts", "token": "secret-token", "allowPlainHttp": true, "enabled": true,
 	}, login.Cookies, headers)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create destination: %d %s", created.Code, created.Body)
@@ -101,20 +101,32 @@ func TestNotificationDestinationControlRedactsSecretsAndTestsSavedRevision(t *te
 	if updated.Code != http.StatusOK || !strings.Contains(updated.Body, `"revision":2`) || !strings.Contains(updated.Body, `"hasToken":true`) {
 		t.Fatalf("update destination: %d %s", updated.Code, updated.Body)
 	}
-	removedToken := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 2, "token": nil}, login.Cookies, headers)
-	if removedToken.Code != http.StatusOK || !strings.Contains(removedToken.Body, `"hasToken":false`) {
+	paused := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 2, "enabled": false}, login.Cookies, headers)
+	if paused.Code != http.StatusOK || !strings.Contains(paused.Body, `"revision":3`) || !strings.Contains(paused.Body, `"enabled":false`) {
+		t.Fatalf("pause destination: %d %s", paused.Code, paused.Body)
+	}
+	disabledTest := postJSON(t, client, server.URL+"/api/v1/notification-destinations/"+id+"/test", map[string]any{"expectedRevision": 3}, login.Cookies, headers)
+	if disabledTest.Code != http.StatusConflict || receiver.count.Load() != 1 {
+		t.Fatalf("disabled destination test: %d %s (receiver requests: %d)", disabledTest.Code, disabledTest.Body, receiver.count.Load())
+	}
+	reenabled := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 3, "enabled": true}, login.Cookies, headers)
+	if reenabled.Code != http.StatusOK || !strings.Contains(reenabled.Body, `"revision":4`) || !strings.Contains(reenabled.Body, `"enabled":true`) {
+		t.Fatalf("re-enable destination: %d %s", reenabled.Code, reenabled.Body)
+	}
+	removedToken := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 4, "token": nil}, login.Cookies, headers)
+	if removedToken.Code != http.StatusOK || !strings.Contains(removedToken.Body, `"revision":5`) || !strings.Contains(removedToken.Body, `"hasToken":false`) {
 		t.Fatalf("remove destination token: %d %s", removedToken.Code, removedToken.Body)
 	}
-	stale := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 2, "enabled": false}, login.Cookies, headers)
+	stale := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 4, "enabled": false}, login.Cookies, headers)
 	if stale.Code != http.StatusConflict {
 		t.Fatalf("stale destination update: %d %s", stale.Code, stale.Body)
 	}
-	nullTopic := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 3, "topic": nil}, login.Cookies, headers)
+	nullTopic := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 5, "topic": nil}, login.Cookies, headers)
 	if nullTopic.Code != http.StatusBadRequest {
 		t.Fatalf("null topic update: %d %s", nullTopic.Code, nullTopic.Body)
 	}
 
-	retired := doJSONRequest(t, client, http.MethodDelete, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 3}, login.Cookies, headers)
+	retired := doJSONRequest(t, client, http.MethodDelete, server.URL+"/api/v1/notification-destinations/"+id, map[string]any{"expectedRevision": 5}, login.Cookies, headers)
 	if retired.Code != http.StatusNoContent {
 		t.Fatalf("retire destination: %d %s", retired.Code, retired.Body)
 	}

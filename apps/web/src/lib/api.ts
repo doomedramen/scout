@@ -235,6 +235,69 @@ export type Owner = {
   createdAt: string;
 };
 
+export type NotificationDestination = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  maskedTopic: string;
+  hasToken: boolean;
+  allowPlainHttp: boolean;
+  enabled: boolean;
+  revision: number;
+  lastTestAt?: string | null;
+};
+
+export type NotificationDelivery = {
+  id: string;
+  destinationId: string;
+  incidentId?: string | null;
+  transitionId?: string | null;
+  status: "queued" | "sending" | "retry" | "accepted" | "failed" | "cancelled" | "suppressed" | "expired";
+  attempts: number;
+  nextAttemptAt?: string | null;
+  acceptedAt?: string | null;
+  expiresAt: string;
+  safeError?: string | null;
+  destinationRevision: number;
+};
+
+export type SuppressionWindow = {
+  id: string;
+  name: string;
+  targetKind: "fleet" | "site" | "device";
+  targetId?: string;
+  enabled: boolean;
+  mode: "recurring" | "oneTime";
+  timezone?: string;
+  weekdays?: number[];
+  startLocal?: string;
+  endLocal?: string;
+  startsAt?: string;
+  endsAt?: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MonitoringWorkspace = {
+  recoveryMode: boolean;
+  discoveryPaused: boolean;
+  enrollmentPaused: boolean;
+  updatesPaused: boolean;
+  notificationsPaused: boolean;
+  policyRevision: number;
+  notificationQueueOverflows: number;
+};
+
+export type MonitoringSettings = {
+  revision: number;
+  defaultsVersion: string;
+  notificationsPaused: boolean;
+  retention: { rawDays: number; fiveMinuteDays: number; hourlyDays: number };
+  diskBudgetBytes: number;
+  updatedAt: string;
+};
+
 export type AccessRequest = {
   id: string;
   deviceId: string;
@@ -577,9 +640,95 @@ export const api = {
       body: JSON.stringify({ displayName, siteId }),
     }),
   topology: (siteId = "") => request<Topology>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
+  notificationDestinations: () => request<ListResponse<NotificationDestination>>("/notification-destinations"),
+  createNotificationDestination: (value: {
+    name: string;
+    baseUrl: string;
+    topic: string;
+    token?: string;
+    enabled: boolean;
+    allowPlainHttp: boolean;
+  }) =>
+    request<NotificationDestination>("/notification-destinations", {
+      method: "POST",
+      body: JSON.stringify(value),
+    }),
+  updateNotificationDestination: (
+    id: string,
+    value: {
+      expectedRevision: number;
+      name?: string;
+      baseUrl?: string;
+      topic?: string;
+      token?: string | null;
+      enabled?: boolean;
+      allowPlainHttp?: boolean;
+    },
+  ) =>
+    request<NotificationDestination>(`/notification-destinations/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(value),
+    }),
+  deleteNotificationDestination: (id: string, expectedRevision: number) =>
+    request<void>(`/notification-destinations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  testNotificationDestination: (id: string, expectedRevision: number) =>
+    request<{ deliveryId: string; status: string }>(`/notification-destinations/${encodeURIComponent(id)}/test`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  notificationDeliveries: (query = "") =>
+    request<ListResponse<NotificationDelivery>>(`/notification-deliveries${query}`),
+  suppressionWindows: (query = "") => request<ListResponse<SuppressionWindow>>(`/suppression-windows${query}`),
+  createSuppressionWindow: (value: {
+    name: string;
+    targetKind: SuppressionWindow["targetKind"];
+    targetId?: string;
+    enabled: boolean;
+    mode: SuppressionWindow["mode"];
+    timezone?: string;
+    weekdays?: number[];
+    startLocal?: string;
+    endLocal?: string;
+    startsAt?: string;
+    endsAt?: string;
+  }) => request<SuppressionWindow>("/suppression-windows", { method: "POST", body: JSON.stringify(value) }),
+  updateSuppressionWindow: (
+    id: string,
+    value: {
+      expectedRevision: number;
+      name?: string;
+      targetKind?: SuppressionWindow["targetKind"];
+      targetId?: string;
+      enabled?: boolean;
+      mode?: SuppressionWindow["mode"];
+      timezone?: string;
+      weekdays?: number[];
+      startLocal?: string;
+      endLocal?: string;
+      startsAt?: string;
+      endsAt?: string;
+    },
+  ) =>
+    request<SuppressionWindow>(`/suppression-windows/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(value),
+    }),
+  deleteSuppressionWindow: (id: string, expectedRevision: number) =>
+    request<void>(`/suppression-windows/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  resumeNotifications: (expectedRevision: number) =>
+    request<MonitoringSettings>("/monitoring/notifications/resume", {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
   recoveryStatus: () =>
     request<{
-      workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean };
+      workspace: MonitoringWorkspace;
       telemetry: Record<string, unknown>;
     }>("/recovery/status"),
   reconcileRecovery: () => request("/recovery/reconcile", { method: "POST", body: JSON.stringify({}) }),

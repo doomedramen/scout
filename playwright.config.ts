@@ -8,6 +8,7 @@ export default defineConfig({
   testDir: "./tests/e2e/playwright",
   timeout: 30_000,
   fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
