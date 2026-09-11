@@ -49,6 +49,7 @@ func migrations() []migration {
 		{version: 4, sql: incidentsMigrationSQL},
 		{version: 5, sql: alertConditionFieldsMigrationSQL},
 		{version: 6, sql: notificationDestinationsMigrationSQL},
+		{version: 7, sql: notificationDeliveriesMigrationSQL},
 	}
 }
 
@@ -374,4 +375,33 @@ CREATE TABLE IF NOT EXISTS notification_destinations (
   updated_at timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS notification_destinations_active_idx ON notification_destinations(retired_at, enabled, updated_at);
+`
+
+const notificationDeliveriesMigrationSQL = `
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id text PRIMARY KEY,
+  destination_id text NOT NULL REFERENCES notification_destinations(id),
+  destination_revision bigint NOT NULL CHECK (destination_revision >= 1),
+  incident_id text,
+  transition_id text,
+  summary_key text,
+  status text NOT NULL CHECK (status IN ('queued', 'sending', 'retry', 'accepted', 'failed', 'cancelled', 'suppressed', 'expired')),
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0 AND attempts <= 6),
+  next_attempt_at timestamptz,
+  expires_at timestamptz NOT NULL,
+  lease_epoch bigint NOT NULL DEFAULT 0 CHECK (lease_epoch >= 0),
+  lease_owner text NOT NULL DEFAULT '',
+  lease_until timestamptz,
+  accepted_at timestamptz,
+  remote_id text NOT NULL DEFAULT '',
+  safe_error text NOT NULL DEFAULT '',
+  payload jsonb NOT NULL CHECK (jsonb_typeof(payload) = 'object'),
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  CHECK (transition_id IS NOT NULL OR summary_key IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS notification_deliveries_transition_uq ON notification_deliveries(destination_id, transition_id) WHERE transition_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS notification_deliveries_summary_uq ON notification_deliveries(destination_id, summary_key) WHERE summary_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS notification_deliveries_pending_idx ON notification_deliveries(status, next_attempt_at, expires_at, destination_id, created_at);
+CREATE INDEX IF NOT EXISTS notification_deliveries_incident_idx ON notification_deliveries(incident_id, updated_at DESC, id DESC);
 `

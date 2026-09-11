@@ -236,6 +236,79 @@ type NotificationDestination struct {
 	SecretKeyVersion     int        `json:"secretKeyVersion,omitempty"`
 }
 
+const (
+	NotificationDeliveryQueued     = "queued"
+	NotificationDeliverySending    = "sending"
+	NotificationDeliveryRetry      = "retry"
+	NotificationDeliveryAccepted   = "accepted"
+	NotificationDeliveryFailed     = "failed"
+	NotificationDeliveryCancelled  = "cancelled"
+	NotificationDeliverySuppressed = "suppressed"
+	NotificationDeliveryExpired    = "expired"
+)
+
+type NotificationDelivery struct {
+	ID                  string     `json:"id"`
+	DestinationID       string     `json:"destinationId"`
+	DestinationRevision int64      `json:"destinationRevision"`
+	IncidentID          string     `json:"incidentId,omitempty"`
+	TransitionID        string     `json:"transitionId,omitempty"`
+	SummaryKey          string     `json:"summaryKey,omitempty"`
+	Status              string     `json:"status"`
+	Attempts            int        `json:"attempts"`
+	NextAttemptAt       *time.Time `json:"nextAttemptAt,omitempty"`
+	ExpiresAt           time.Time  `json:"expiresAt"`
+	LeaseEpoch          int64      `json:"leaseEpoch"`
+	LeaseOwner          string     `json:"leaseOwner,omitempty"`
+	LeaseUntil          *time.Time `json:"leaseUntil,omitempty"`
+	AcceptedAt          *time.Time `json:"acceptedAt,omitempty"`
+	RemoteID            string     `json:"remoteId,omitempty"`
+	SafeError           string     `json:"safeError,omitempty"`
+	Payload             []byte     `json:"payload,omitempty"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+}
+
+type NotificationDeliveryQuery struct {
+	DestinationID string
+	IncidentID    string
+	Status        string
+	Cursor        string
+	Limit         int
+}
+
+type NotificationDeliveryPage struct {
+	Items      []NotificationDelivery
+	NextCursor string
+}
+
+type NotificationDeliveryEnqueueResult struct {
+	Enqueued int
+	Dropped  int
+}
+
+type NotificationDeliveryOutcome struct {
+	Accepted   bool
+	Cancelled  bool
+	Retryable  bool
+	RemoteID   string
+	SafeError  string
+	RetryAfter time.Duration
+	Now        time.Time
+}
+
+type NotificationDeliveryStats struct {
+	Queued        int64 `json:"queued"`
+	Sending       int64 `json:"sending"`
+	Retry         int64 `json:"retry"`
+	Accepted      int64 `json:"accepted"`
+	Failed        int64 `json:"failed"`
+	Cancelled     int64 `json:"cancelled"`
+	Suppressed    int64 `json:"suppressed"`
+	Expired       int64 `json:"expired"`
+	QueueOverflow int64 `json:"queueOverflow"`
+}
+
 type AlertEvaluation struct {
 	LineageID           string     `json:"lineageId"`
 	EntityID            string     `json:"entityId"`
@@ -499,21 +572,22 @@ type AuditEvent struct {
 }
 
 type WorkspaceState struct {
-	RecoveryMode          bool       `json:"recoveryMode"`
-	DiscoveryPaused       bool       `json:"discoveryPaused"`
-	EnrollmentPaused      bool       `json:"enrollmentPaused"`
-	UpdatesPaused         bool       `json:"updatesPaused"`
-	RetentionHours        int        `json:"retentionHours"`
-	MaxSamples            int        `json:"maxSamples"`
-	TelemetryBudgetBytes  int64      `json:"telemetryBudgetBytes"`
-	DroppedSamples        int64      `json:"droppedSamples"`
-	TelemetryBackpressure bool       `json:"telemetryBackpressure"`
-	LastRetentionAt       *time.Time `json:"lastRetentionAt,omitempty"`
-	PauseRequested        bool       `json:"pauseRequested"`
-	PausePending          bool       `json:"pausePending"`
-	ExecutionHolders      []string   `json:"executionHolders,omitempty"`
-	PolicyRevision        int64      `json:"policyRevision"`
-	SchemaVersion         int        `json:"schemaVersion"`
+	RecoveryMode               bool       `json:"recoveryMode"`
+	DiscoveryPaused            bool       `json:"discoveryPaused"`
+	EnrollmentPaused           bool       `json:"enrollmentPaused"`
+	UpdatesPaused              bool       `json:"updatesPaused"`
+	RetentionHours             int        `json:"retentionHours"`
+	MaxSamples                 int        `json:"maxSamples"`
+	TelemetryBudgetBytes       int64      `json:"telemetryBudgetBytes"`
+	DroppedSamples             int64      `json:"droppedSamples"`
+	TelemetryBackpressure      bool       `json:"telemetryBackpressure"`
+	LastRetentionAt            *time.Time `json:"lastRetentionAt,omitempty"`
+	PauseRequested             bool       `json:"pauseRequested"`
+	PausePending               bool       `json:"pausePending"`
+	ExecutionHolders           []string   `json:"executionHolders,omitempty"`
+	PolicyRevision             int64      `json:"policyRevision"`
+	NotificationQueueOverflows int64      `json:"notificationQueueOverflows"`
+	SchemaVersion              int        `json:"schemaVersion"`
 }
 
 type State struct {
@@ -539,6 +613,7 @@ type State struct {
 	AlertRules               map[string]AlertRule                `json:"alertRules"`
 	AlertOverrides           map[string]AlertOverride            `json:"alertOverrides"`
 	NotificationDestinations map[string]NotificationDestination  `json:"notificationDestinations"`
+	NotificationDeliveries   map[string]NotificationDelivery     `json:"notificationDeliveries"`
 	AlertEvaluations         map[string]AlertEvaluation          `json:"alertEvaluations"`
 	Incidents                map[string]Incident                 `json:"incidents"`
 	IncidentTransitions      map[string]IncidentTransition       `json:"incidentTransitions"`

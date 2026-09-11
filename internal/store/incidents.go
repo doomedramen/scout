@@ -195,6 +195,14 @@ func (s *Store) GetAlertEvaluation(ctx context.Context, lineageID, entityID stri
 // ApplyAlertEvaluation commits the evaluator checkpoint, incident snapshot,
 // and append-only transitions as one store transaction.
 func (s *Store) ApplyAlertEvaluation(ctx context.Context, evaluation AlertEvaluation, incident *Incident, transitions []IncidentTransition) error {
+	return s.ApplyAlertEvaluationWithDeliveries(ctx, evaluation, incident, transitions, nil)
+}
+
+// ApplyAlertEvaluationWithDeliveries commits the evaluator checkpoint,
+// incident snapshot, transitions, and notification delivery intents together.
+// A queue overflow may drop a notification intent, but never rolls back the
+// authoritative incident state.
+func (s *Store) ApplyAlertEvaluationWithDeliveries(ctx context.Context, evaluation AlertEvaluation, incident *Incident, transitions []IncidentTransition, deliveries []NotificationDelivery) error {
 	if strings.TrimSpace(evaluation.LineageID) == "" || strings.TrimSpace(evaluation.EntityID) == "" {
 		return ErrInvalid
 	}
@@ -205,9 +213,12 @@ func (s *Store) ApplyAlertEvaluation(ctx context.Context, evaluation AlertEvalua
 		evaluation.UpdatedAt = s.now().UTC()
 	}
 	if s.db != nil {
-		return s.applyAlertEvaluationSQL(ctx, evaluation, incident, transitions)
+		return s.applyAlertEvaluationSQL(ctx, evaluation, incident, transitions, deliveries)
 	}
 	return s.mutate(ctx, func(state *State) error {
+		target := state
+		working := cloneState(*state)
+		state = &working
 		if incident != nil {
 			if err := validateIncident(*incident); err != nil {
 				return err
@@ -255,7 +266,13 @@ func (s *Store) ApplyAlertEvaluation(ctx context.Context, evaluation AlertEvalua
 			state.IncidentTransitions[transition.ID] = cloneIncidentTransition(transition)
 			transitions[index] = transition
 		}
+		if len(deliveries) > 0 {
+			if _, err := enqueueNotificationDeliveriesState(state, deliveries, s.now().UTC()); err != nil {
+				return err
+			}
+		}
 		state.AlertEvaluations[alertEvaluationKey(evaluation.LineageID, evaluation.EntityID)] = cloneAlertEvaluation(evaluation)
+		*target = working
 		return nil
 	})
 }
@@ -564,7 +581,7 @@ func (s *Store) getAlertEvaluationSQL(ctx context.Context, lineageID, entityID s
 	return item, nil
 }
 
-func (s *Store) applyAlertEvaluationSQL(ctx context.Context, evaluation AlertEvaluation, incident *Incident, transitions []IncidentTransition) error {
+func (s *Store) applyAlertEvaluationSQL(ctx context.Context, evaluation AlertEvaluation, incident *Incident, transitions []IncidentTransition, deliveries []NotificationDelivery) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -650,6 +667,22 @@ func (s *Store) applyAlertEvaluationSQL(ctx context.Context, evaluation AlertEva
 		evaluation.LastValidAt, evaluation.TriggerConsecutive, evaluation.RecoveryConsecutive, evaluation.IncidentID, evaluation.UpdatedAt.UTC())
 	if err != nil {
 		return fmt.Errorf("persist alert evaluation: %w", err)
+	}
+	if len(deliveries) > 0 {
+		state, err := readWorkspaceStateTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		result, err := enqueueNotificationDeliveriesSQLTx(ctx, tx, deliveries, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if result.Dropped > 0 {
+			state.Workspace.NotificationQueueOverflows += int64(result.Dropped)
+			if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
+				return err
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit alert evaluation: %w", err)

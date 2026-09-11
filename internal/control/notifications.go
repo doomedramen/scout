@@ -39,12 +39,40 @@ type notificationDestinationPatch struct {
 }
 
 func (a *App) registerNotificationRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/notification-deliveries", a.listNotificationDeliveries)
 	mux.HandleFunc("GET /api/v1/notification-destinations", a.listNotificationDestinations)
 	mux.HandleFunc("POST /api/v1/notification-destinations", a.createNotificationDestination)
 	mux.HandleFunc("GET /api/v1/notification-destinations/{destinationId}", a.getNotificationDestination)
 	mux.HandleFunc("PATCH /api/v1/notification-destinations/{destinationId}", a.updateNotificationDestination)
 	mux.HandleFunc("DELETE /api/v1/notification-destinations/{destinationId}", a.deleteNotificationDestination)
 	mux.HandleFunc("POST /api/v1/notification-destinations/{destinationId}/test", a.testNotificationDestination)
+}
+
+func (a *App) listNotificationDeliveries(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireOwner(w, r, false); !ok {
+		return
+	}
+	limit, cursor, err := alertPageParams(r)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	page, err := a.Store.ListNotificationDeliveries(r.Context(), store.NotificationDeliveryQuery{
+		DestinationID: strings.TrimSpace(r.URL.Query().Get("destinationId")),
+		IncidentID:    strings.TrimSpace(r.URL.Query().Get("incidentId")),
+		Status:        strings.TrimSpace(r.URL.Query().Get("status")),
+		Cursor:        cursor,
+		Limit:         limit,
+	})
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	items := make([]any, 0, len(page.Items))
+	for _, item := range page.Items {
+		items = append(items, notificationDeliveryResponse(item))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": nullableCursor(page.NextCursor)})
 }
 
 func (a *App) listNotificationDestinations(w http.ResponseWriter, r *http.Request) {
@@ -411,6 +439,38 @@ func notificationDestinationResponse(item store.NotificationDestination) map[str
 		"enabled":        item.Enabled,
 		"revision":       item.Revision,
 		"lastTestAt":     lastTestAt,
+	}
+}
+
+func notificationDeliveryResponse(item store.NotificationDelivery) map[string]any {
+	var incidentID, transitionID, nextAttemptAt, acceptedAt, safeError any
+	if item.IncidentID != "" {
+		incidentID = item.IncidentID
+	}
+	if item.TransitionID != "" {
+		transitionID = item.TransitionID
+	}
+	if item.NextAttemptAt != nil {
+		nextAttemptAt = item.NextAttemptAt.UTC()
+	}
+	if item.AcceptedAt != nil {
+		acceptedAt = item.AcceptedAt.UTC()
+	}
+	if item.SafeError != "" {
+		safeError = item.SafeError
+	}
+	return map[string]any{
+		"id":                  item.ID,
+		"destinationId":       item.DestinationID,
+		"incidentId":          incidentID,
+		"transitionId":        transitionID,
+		"status":              item.Status,
+		"attempts":            item.Attempts,
+		"nextAttemptAt":       nextAttemptAt,
+		"acceptedAt":          acceptedAt,
+		"expiresAt":           item.ExpiresAt.UTC(),
+		"safeError":           safeError,
+		"destinationRevision": item.DestinationRevision,
 	}
 }
 

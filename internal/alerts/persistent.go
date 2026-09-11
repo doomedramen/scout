@@ -104,7 +104,19 @@ func (p *PersistentEvaluator) EvaluateAndPersist(ctx context.Context, rule Rule,
 		durableIncident = incidentToStore(result.State.LastIncident, deviceID, ruleSnapshot)
 	}
 	durableTransitions := transitionsToStore(result.Transitions)
-	if err := p.Store.ApplyAlertEvaluation(ctx, durableEvaluation, durableIncident, durableTransitions); err != nil {
+	var deliveryIntents []store.NotificationDelivery
+	if len(durableTransitions) > 0 && durableIncident != nil {
+		destinations, destinationErr := p.Store.ListNotificationDestinations(ctx)
+		if destinationErr != nil {
+			return EvaluationResult{}, destinationErr
+		}
+		var buildErr error
+		deliveryIntents, buildErr = BuildNotificationDeliveryIntents(destinations, durableIncident, durableTransitions, p.Clock.Now().UTC())
+		if buildErr != nil {
+			return EvaluationResult{}, buildErr
+		}
+	}
+	if err := p.Store.ApplyAlertEvaluationWithDeliveries(ctx, durableEvaluation, durableIncident, durableTransitions, deliveryIntents); err != nil {
 		return EvaluationResult{}, err
 	}
 	return result, nil
@@ -238,7 +250,7 @@ func transitionsToStore(items []Transition) []store.IncidentTransition {
 		if !item.ObservedAt.IsZero() {
 			observedAt = timePointer(item.ObservedAt)
 		}
-		result = append(result, store.IncidentTransition{IncidentID: item.IncidentID, Kind: string(item.Kind), RuleRevision: item.RuleRevision, EvidenceState: string(item.Evidence), Reason: item.Reason, Value: cloneFloat(item.Value), ObservedAt: observedAt, OccurredAt: item.OccurredAt})
+		result = append(result, store.IncidentTransition{ID: store.NewID(), IncidentID: item.IncidentID, Kind: string(item.Kind), RuleRevision: item.RuleRevision, EvidenceState: string(item.Evidence), Reason: item.Reason, Value: cloneFloat(item.Value), ObservedAt: observedAt, OccurredAt: item.OccurredAt})
 	}
 	return result
 }

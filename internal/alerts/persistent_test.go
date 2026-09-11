@@ -133,6 +133,50 @@ func TestPersistentEvaluatorRestartsThroughRecoveryAndUnknownEvidence(t *testing
 	}
 }
 
+func TestPersistentEvaluatorQueuesNotificationIntentWithIncident(t *testing.T) {
+	ctx := context.Background()
+	start := time.Date(2026, 9, 11, 22, 0, 0, 0, time.UTC)
+	clock := NewManualClock(start)
+	repository := store.NewMemory()
+	repository.SetClock(func() time.Time { return clock.Now() })
+	if _, err := repository.PutNotificationDestination(ctx, store.NotificationDestination{
+		ID: "persistent-destination", Name: "Persistent destination", BaseURL: "https://ntfy.example.test", MaskedTopic: "sc********s", Enabled: true,
+		SecretCiphertext: []byte("ciphertext"), SecretNonce: []byte("nonce"), SecretWrappedDataKey: []byte("wrapped"), SecretKeyVersion: 1,
+	}, 0); err != nil {
+		t.Fatal(err)
+	}
+	rule := Rule{ID: "persistent-cpu", LineageID: "persistent-cpu", Revision: 1, Kind: RuleKindNumeric, Metric: "cpu.utilization", Operator: OperatorGreaterThan, TriggerValue: 90, ClearValue: 85, Severity: SeverityCritical, Enabled: true}
+	evaluator := NewPersistentEvaluator(repository, clock, "alert-worker")
+	if _, err := evaluator.EvaluateAndPersist(ctx, rule, numericObservation("host-1", rule.Metric, 95, start), "device-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := repository.GetAlertEvaluation(ctx, rule.LineageID, "host-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := repository.ListNotificationDeliveries(ctx, store.NotificationDeliveryQuery{IncidentID: persisted.IncidentID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Status != store.NotificationDeliveryQueued || page.Items[0].DestinationRevision != 1 {
+		t.Fatalf("queued deliveries = %+v", page.Items)
+	}
+	if page.Items[0].Payload != nil || page.Items[0].LeaseOwner != "" {
+		t.Fatalf("delivery history exposed private fields = %+v", page.Items[0])
+	}
+
+	if _, err := evaluator.EvaluateAndPersist(ctx, rule, numericObservation("host-1", rule.Metric, 95, start), "device-1", nil); err != nil {
+		t.Fatal(err)
+	}
+	page, err = repository.ListNotificationDeliveries(ctx, store.NotificationDeliveryQuery{IncidentID: persisted.IncidentID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("duplicate delivery intent = %+v", page.Items)
+	}
+}
+
 func TestAlertWorkKeepsNewerGenerationAfterLeaseCompletion(t *testing.T) {
 	ctx := context.Background()
 	repository := store.NewMemory()

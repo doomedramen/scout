@@ -155,6 +155,47 @@ func TestNotificationDestinationControlRejectsUnsafeEndpoint(t *testing.T) {
 	}
 }
 
+func TestNotificationDeliveryHistoryControlRedactsQueuePayload(t *testing.T) {
+	ctx := t.Context()
+	repository := store.NewMemory()
+	destination, err := repository.PutNotificationDestination(ctx, store.NotificationDestination{
+		ID: "history-destination", Name: "History destination", BaseURL: "https://ntfy.example.test", MaskedTopic: "sc********s", Enabled: true,
+		SecretCiphertext: []byte("encrypted-token"), SecretNonce: []byte("nonce"), SecretWrappedDataKey: []byte("wrapped"), SecretKeyVersion: 1,
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.EnqueueNotificationDeliveries(ctx, []store.NotificationDelivery{{ID: "history-delivery", DestinationID: destination.ID, IncidentID: "history-incident", TransitionID: "history-transition", Payload: []byte(`{"message":"private payload","token":"private-token","priority":3}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(repository, nil, Config{SetupToken: "setup-secret-123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+	client := server.Client()
+	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "setup-secret-123456789", "password": "ScoutAa1"}, nil, nil)
+	if setup.Code != http.StatusCreated {
+		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
+	}
+	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "ScoutAa1"}, nil, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	response := getRequest(t, client, server.URL+"/api/v1/notification-deliveries?status=queued", login.Cookies, nil)
+	if response.Code != http.StatusOK || strings.Contains(response.Body, "private payload") || strings.Contains(response.Body, "private-token") || strings.Contains(response.Body, "encrypted-token") {
+		t.Fatalf("delivery history: %d %s", response.Code, response.Body)
+	}
+	if !strings.Contains(response.Body, `"id":"history-delivery"`) || !strings.Contains(response.Body, `"status":"queued"`) || !strings.Contains(response.Body, `"safeError":null`) {
+		t.Fatalf("delivery history response = %s", response.Body)
+	}
+	invalid := getRequest(t, client, server.URL+"/api/v1/notification-deliveries?status=unknown", login.Cookies, nil)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid delivery status: %d %s", invalid.Code, invalid.Body)
+	}
+}
+
 type controlNotificationReceiver struct {
 	server *httptest.Server
 	count  atomic.Int32
