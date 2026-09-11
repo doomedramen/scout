@@ -14,7 +14,7 @@ Scout should make infrastructure understandable at a glance and let an owner tra
 
 ## Visual direction
 
-Use restrained color, strong typography, clear spacing, and compact but readable data views. Reserve semantic colors for health and action; always pair color with text or symbols. Offer light and dark themes. Motion should explain graph changes and preserve spatial context without making routine monitoring distracting.
+Follow the supplied Beszel references: compact system rows, inline CPU/memory/disk bars, restrained dark panels, and paired host charts. Use charcoal (#141619), panel (#191c20), border (#30343b), text (#e7e9ed), muted green (#74ad90), and amber (#cbb074). Use Avenir Next with Segoe UI and sans-serif fallbacks; tabular numbers align metrics. Keep the header and navigation horizontal, inventory full-width, and host charts in two columns. Topology occupies its own view rather than displacing the practical system table. Reserve semantic colors for health and action; always pair color with text or symbols. Start with dark theme, adding light theme later. Motion should explain graph changes and preserve spatial context without making routine monitoring distracting.
 
 The graph complements a usable list; it must not become the only navigation method. Keyboard access, visible focus, reduced motion, and meaningful loading, empty, failure, and stale states are part of the initial design.
 

@@ -2,9 +2,11 @@
 
 ## Control plane
 
-The control plane owns inventory, agent identities, discovery policy, enrollment approvals, metric retention, alert rules, and the topology graph. The browser talks to this service; agents establish outbound authenticated connections to it.
+The Go control plane owns inventory, agent identities, discovery policy, enrollment authorization, metric retention, alert rules, and the topology graph in PostgreSQL. The React/TypeScript browser application uses shadcn/ui and talks to this service; Go agents establish outbound authenticated connections to it. Turborepo coordinates build and development tasks.
 
 Start with a modular server and a separate agent rather than many independently deployed services. Keep credential handling and enrollment behind a narrow interface so an isolated worker can execute privileged operations later.
+
+The first release has one owner. Enrollment runs automatically within the owner's configured scopes using supplied access; no routine per-device approval is required. The initial agent is bootstrapped by the owner, then every newly enrolled agent contributes observations that extend coverage. Preserve exactly one agent identity per device through idempotent installation and reconciliation.
 
 ## Agent
 
@@ -14,13 +16,15 @@ Agents do not hold the owner's reusable SSH credentials, authorize other agents,
 
 Each agent has a distinct identity and capability set. Collection runs without root where possible; privileged collectors are optional and separately documented. Containerized collectors must describe their host visibility limits rather than silently reporting container metrics as host metrics.
 
+Service-aware collectors extend the same agent through an adapter registry and common scheduling contract. Hypervisors, container runtimes, and other services share transport, health reporting, and entity relationships without baking vendor-specific APIs into the agent core. See [service collectors](service-collectors.md).
+
 ## Discovery and enrollment
 
 1. The owner defines allowed CIDRs, exclusions, discovery methods, rate limits, and installation policy.
 2. Agents submit observations with timestamps and provenance.
 3. The server creates or updates candidate devices. An IP address alone is not a stable device identity.
 4. A candidate becomes an access request when approved monitoring needs credentials or another installation method.
-5. The owner supplies an existing secret reference or creates a narrowly scoped credential and approves enrollment, unless an existing policy already authorizes it.
+5. The owner supplies an existing secret reference or creates a narrowly scoped credential for the configured scope. Enrollment proceeds automatically when scope and access permit it.
 6. The enrollment worker validates target scope and SSH host identity, installs a verified agent artifact, and supplies a short-lived, single-use bootstrap token bound to the intended enrollment.
 7. The agent exchanges its bootstrap token for its own renewable identity. The worker releases the credential and records the outcome.
 

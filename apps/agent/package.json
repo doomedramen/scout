@@ -1,0 +1,10 @@
+{
+  "name": "@scout/agent",
+  "private": true,
+  "scripts": {
+    "build": "go build -o dist/scout-agent .",
+    "check": "go vet . ../../internal/collector/...",
+    "test": "go test -race . ../../internal/collector/...",
+    "snapshot": "go run ."
+  }
+}

@@ -15,7 +15,7 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 - Require explicit network scopes and exclusions; use conservative probe rates and concurrency limits.
 - Validate targets again at execution time, including resolved addresses, against approved scope. Prevent redirects or DNS changes from escaping scope.
 - Bind jobs to a target, approved artifact version, credential reference, policy version, and expiry.
-- Make automatic enrollment opt-in per policy. Provide a global stop control and per-device exclusion.
+- Creating an enrollment scope explicitly authorizes automatic installation within it using its assigned access. Do not require routine per-device approvals. Provide a global stop control and per-device exclusion.
 - Pin or explicitly verify SSH host keys. Do not silently trust changed keys.
 - Use verified, versioned artifacts and fixed installation operations. Do not interpolate discovered values into shell commands.
 - Use least-privilege SSH accounts and constrained elevation. Show required permissions before enrollment.
@@ -39,7 +39,7 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 ### Owner access
 
 - Never ship default credentials. Make initial owner setup exclusive and time-bounded.
-- Define administrator, operator, and viewer permissions. Restrict secret management and installation policy changes to explicitly authorized roles.
+- Support a single authenticated owner initially. Defer administrator, operator, and viewer roles to a later release; every sensitive action remains owner-only.
 - Protect browser sessions with secure cookies, CSRF defenses where relevant, expiration, and reauthentication for sensitive changes.
 - Provide MFA before enabling stored credentials and remote enrollment in a production release.
 - Audit sign-in events, policy edits, secret access, enrollment attempts, exclusions, and identity revocations. Redact sensitive payloads.
@@ -54,17 +54,17 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 
 ## Abuse and failure cases to test
 
-| Case | Required outcome |
-| --- | --- |
-| Compromised agent requests installation elsewhere | Rejected without an authorized enrollment job |
-| Replayed bootstrap token | Rejected after its first successful use or expiry |
-| Device changes SSH host key | Enrollment stops pending owner verification |
-| DNS resolves outside the approved network | Connection blocked |
-| Agent reports another agent's identity | Rejected and audited |
-| Discovery produces duplicate candidates | No duplicate concurrent enrollment |
-| Target or policy is revoked after queueing | Worker rejects job before execution |
-| Malicious hostname or metric label | Safely displayed; no command execution or unbounded cardinality |
-| Database backup is stolen | Secret values remain encrypted; key material is absent |
-| Agent goes offline or submits stale data | UI shows staleness; no false healthy status |
+| Case                                              | Required outcome                                                |
+| ------------------------------------------------- | --------------------------------------------------------------- |
+| Compromised agent requests installation elsewhere | Rejected without an authorized enrollment job                   |
+| Replayed bootstrap token                          | Rejected after its first successful use or expiry               |
+| Device changes SSH host key                       | Enrollment stops pending owner verification                     |
+| DNS resolves outside the approved network         | Connection blocked                                              |
+| Agent reports another agent's identity            | Rejected and audited                                            |
+| Discovery produces duplicate candidates           | No duplicate concurrent enrollment                              |
+| Target or policy is revoked after queueing        | Worker rejects job before execution                             |
+| Malicious hostname or metric label                | Safely displayed; no command execution or unbounded cardinality |
+| Database backup is stolen                         | Secret values remain encrypted; key material is absent          |
+| Agent goes offline or submits stale data          | UI shows staleness; no false healthy status                     |
 
 Before remote enrollment ships, review the actual implementation against these cases and document residual risks and recovery procedures.

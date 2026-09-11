@@ -1,0 +1,14 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": ["go.mod", "go.sum", "internal/**"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "check": { "dependsOn": ["^check"], "outputs": [] },
+    "test": { "outputs": [], "cache": false },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["SCOUT_DATABASE_URL", "SCOUT_LISTEN"]
+    }
+  }
+}

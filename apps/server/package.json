@@ -1,0 +1,10 @@
+{
+  "name": "@scout/server",
+  "private": true,
+  "scripts": {
+    "dev": "go run .",
+    "build": "go build -o dist/scout-server .",
+    "check": "go vet . ../../internal/control/...",
+    "test": "go test -race . ../../internal/control/..."
+  }
+}
