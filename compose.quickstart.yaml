@@ -3,6 +3,8 @@ name: scout
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
+    stop_grace_period: 1m
     environment:
       POSTGRES_USER: scout
       POSTGRES_DB: scout
@@ -14,23 +16,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   server:
     image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    restart: unless-stopped
+    stop_grace_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       SCOUT_PRODUCTION: "false"
-      SCOUT_LISTEN: "0.0.0.0:${SCOUT_CONTAINER_PORT:-8080}"
+      SCOUT_LISTEN: "0.0.0.0:8080"
       SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
       SCOUT_WEB_DIR: /usr/local/share/scout/web
     ports:
-      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:${SCOUT_CONTAINER_PORT:-8080}"
+      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:8080"
     volumes:
       - scout-server-data:/var/lib/scout
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   scout-postgres:

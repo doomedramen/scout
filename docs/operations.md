@@ -54,11 +54,12 @@ docker compose up -d
 
 This quickstart is bound to localhost, uses development mode without TLS or
 agent mTLS, and uses the documented local-only setup token. It is not a
-production deployment. The container listens on 8080 internally by default;
-set `SCOUT_PORT=18080` to change only the host port, or set
-`SCOUT_CONTAINER_PORT` to change the listener and mapped container port. Set
-`SCOUT_BIND_ADDRESS` to change the host bind address. Set `SCOUT_IMAGE` to a
-pinned GHCR or Docker Hub tag when reproducing a specific release.
+production deployment. Compose automatically reads `.env` beside the Compose
+file. Set `SCOUT_PORT=18080` to change the host port. Set
+`SCOUT_BIND_ADDRESS=0.0.0.0` only when network access is intentional and a
+firewall protects the host; this exposes the no-TLS quickstart on every host
+interface. Set `SCOUT_IMAGE` to a pinned GHCR or Docker Hub tag when
+reproducing a specific release.
 
 ## Production-shaped Compose
 

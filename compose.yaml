@@ -2,6 +2,8 @@ name: scout
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
+    stop_grace_period: 1m
     environment:
       POSTGRES_USER: scout
       POSTGRES_DB: scout
@@ -15,15 +17,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
   server:
     profiles: ["production"]
     image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    restart: unless-stopped
+    stop_grace_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       SCOUT_PRODUCTION: "true"
-      SCOUT_LISTEN: "0.0.0.0:${SCOUT_CONTAINER_PORT:-8443}"
+      SCOUT_LISTEN: "0.0.0.0:8443"
       SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD}@postgres:5432/scout?sslmode=disable
       SCOUT_SETUP_TOKEN_FILE: /etc/scout/secrets/setup-token
       SCOUT_SECRET_KEY_FILE: /etc/scout/secrets/wrapping-key
@@ -36,11 +41,18 @@ services:
       SCOUT_REQUIRE_AGENT_MTLS: "true"
       SCOUT_ALLOWED_ORIGIN: ${SCOUT_ALLOWED_ORIGIN:?Set SCOUT_ALLOWED_ORIGIN for the production profile}
     ports:
-      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8443}:${SCOUT_CONTAINER_PORT:-8443}"
+      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8443}:8443"
     volumes:
       - scout-server-data:/var/lib/scout
       - scout-secrets:/etc/scout/secrets:ro
       - scout-tls:/etc/scout/tls:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 volumes:
   scout-postgres:
   scout-server-data:

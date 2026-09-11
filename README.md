@@ -47,6 +47,19 @@ curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quic
 docker compose up -d
 ```
 
+Compose automatically reads a `.env` file beside `compose.yaml`. To use port
+8041 and make Scout reachable from other machines on your network, create:
+
+```dotenv
+SCOUT_PORT=8041
+SCOUT_BIND_ADDRESS=0.0.0.0
+```
+
+Then run `docker compose up -d` and open `http://<server-address>:8041`.
+Binding to `0.0.0.0` exposes this no-TLS quickstart on every host interface;
+use it only on a trusted network protected by a firewall. Omit
+`SCOUT_BIND_ADDRESS` to keep the safer localhost-only default.
+
 The equivalent Compose file, for direct copy/paste, is:
 
 ```yaml
@@ -55,6 +68,8 @@ name: scout
 services:
   postgres:
     image: postgres:17-alpine
+    restart: unless-stopped
+    stop_grace_period: 1m
     environment:
       POSTGRES_USER: scout
       POSTGRES_DB: scout
@@ -66,23 +81,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   server:
     image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    restart: unless-stopped
+    stop_grace_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       SCOUT_PRODUCTION: "false"
-      SCOUT_LISTEN: "0.0.0.0:${SCOUT_CONTAINER_PORT:-8080}"
+      SCOUT_LISTEN: "0.0.0.0:8080"
       SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
       SCOUT_WEB_DIR: /usr/local/share/scout/web
     ports:
-      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:${SCOUT_CONTAINER_PORT:-8080}"
+      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:8080"
     volumes:
       - scout-server-data:/var/lib/scout
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   scout-postgres:
@@ -91,17 +116,17 @@ volumes:
 
 Open `http://localhost:8080` (or `http://localhost:$SCOUT_PORT` when you set a
 custom port), use setup token `local-only-change-me`, and choose an owner
-password. Stop it with `docker compose down`; named volumes are retained. The
-container listens on port 8080 internally by default, so a host port conflict
-only requires setting one variable:
+password. Both services restart after failures and host reboots. The server
+container uses a read-only root filesystem, a small temporary filesystem, no
+Linux capabilities, and no-new-privileges. Stop it with `docker compose down`;
+named volumes are retained. The container listens on port 8080 internally, so
+a host port conflict only requires setting one variable:
 
 ```sh
 SCOUT_PORT=18080 docker compose up -d
 ```
 
-If you also need to change the internal listener, set `SCOUT_CONTAINER_PORT`;
-the Compose listener and target mapping follow it automatically. The default
-image is published at
+The default image is published at
 [GitHub Container Registry](https://github.com/doomedramen/scout/pkgs/container/scout).
 If the package is private, run `docker login ghcr.io` first. Use the
 production-shaped [Compose file](compose.yaml) and [operations guide](docs/operations.md)
