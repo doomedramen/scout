@@ -33,7 +33,7 @@ func (s *Store) IngestBatch(ctx context.Context, agentID, bootID, batchID, paylo
 		if agent.RevokedAt != nil {
 			return ErrRevoked
 		}
-		key := agentID + "\x00" + bootID + "\x00" + batchID
+		key := batchReceiptKey(agentID, bootID, batchID)
 		now := s.now().UTC()
 		if old, exists := state.BatchReceipts[key]; exists {
 			if old != payloadHash {

@@ -42,7 +42,10 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 }
 
 func migrations() []migration {
-	return []migration{{version: 1, sql: initialMigrationSQL}}
+	return []migration{
+		{version: 1, sql: initialMigrationSQL},
+		{version: 2, sql: monitoringMigrationSQL},
+	}
 }
 
 const initialMigrationSQL = `CREATE TABLE IF NOT EXISTS owners (
@@ -94,3 +97,120 @@ CREATE TABLE IF NOT EXISTS audit_events (id text PRIMARY KEY, actor_kind text NO
 CREATE INDEX IF NOT EXISTS audit_events_time_idx ON audit_events(event_time DESC);
 CREATE TABLE IF NOT EXISTS workspace_state (singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), recovery_mode boolean NOT NULL DEFAULT false, enrollment_paused boolean NOT NULL DEFAULT false, updates_paused boolean NOT NULL DEFAULT false, schema_version integer NOT NULL DEFAULT 1, state_json jsonb NOT NULL DEFAULT '{}'::jsonb, updated_at timestamptz NOT NULL DEFAULT now());
 INSERT INTO workspace_state(singleton, state_json) VALUES(true, '{}'::jsonb) ON CONFLICT(singleton) DO NOTHING;`
+
+const monitoringMigrationSQL = `
+CREATE TABLE IF NOT EXISTS monitoring_storage_state (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  storage_generation bigint NOT NULL DEFAULT 0 CHECK (storage_generation >= 0),
+  migration_generation bigint NOT NULL DEFAULT 0 CHECK (migration_generation >= 0),
+  phase text NOT NULL DEFAULT 'legacy' CHECK (phase IN ('legacy', 'importing', 'authoritative')),
+  legacy_state_hash text NOT NULL DEFAULT '',
+  legacy_sample_count bigint NOT NULL DEFAULT 0 CHECK (legacy_sample_count >= 0),
+  normalized_sample_count bigint NOT NULL DEFAULT 0 CHECK (normalized_sample_count >= 0),
+  legacy_receipt_count bigint NOT NULL DEFAULT 0 CHECK (legacy_receipt_count >= 0),
+  normalized_receipt_count bigint NOT NULL DEFAULT 0 CHECK (normalized_receipt_count >= 0),
+  legacy_observation_count bigint NOT NULL DEFAULT 0 CHECK (legacy_observation_count >= 0),
+  normalized_observation_count bigint NOT NULL DEFAULT 0 CHECK (normalized_observation_count >= 0),
+  parity_checked_at timestamptz,
+  cutover_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (migration_generation)
+);
+INSERT INTO monitoring_storage_state(singleton) VALUES (true) ON CONFLICT (singleton) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS monitoring_migration_checkpoints (
+  migration_generation bigint NOT NULL REFERENCES monitoring_storage_state(migration_generation),
+  stream text NOT NULL CHECK (stream IN ('devices', 'agents', 'receipts', 'samples', 'observations')),
+  next_index bigint NOT NULL DEFAULT 0 CHECK (next_index >= 0),
+  completed boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (migration_generation, stream)
+);
+
+CREATE TABLE IF NOT EXISTS metric_series (
+  id text PRIMARY KEY,
+  device_id text NOT NULL REFERENCES devices(id),
+  collector_id text NOT NULL,
+  entity_id text NOT NULL,
+  metric text NOT NULL,
+  unit text NOT NULL,
+  labels jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(labels) = 'object'),
+  interval_seconds integer NOT NULL DEFAULT 0 CHECK (interval_seconds >= 0),
+  first_seen timestamptz NOT NULL,
+  last_seen timestamptz NOT NULL,
+  storage_generation bigint NOT NULL DEFAULT 0 CHECK (storage_generation >= 0),
+  UNIQUE (device_id, collector_id, entity_id, metric, unit, labels)
+);
+CREATE INDEX IF NOT EXISTS metric_series_device_metric_idx ON metric_series(device_id, metric, entity_id);
+
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS series_id text;
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS boot_id text;
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS batch_id text;
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS batch_ordinal integer;
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS storage_generation bigint NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS metric_samples_series_time_idx ON metric_samples(series_id, observed_at DESC);
+CREATE INDEX IF NOT EXISTS metric_samples_batch_ordinal_idx
+  ON metric_samples(agent_id, boot_id, batch_id, batch_ordinal, received_at)
+  WHERE boot_id IS NOT NULL AND batch_id IS NOT NULL AND batch_ordinal IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS telemetry_receipts (
+  agent_id text NOT NULL REFERENCES agent_identities(id),
+  boot_id text NOT NULL,
+  batch_id text NOT NULL,
+  payload_hash text NOT NULL,
+  accepted_at timestamptz NOT NULL,
+  storage_generation bigint NOT NULL DEFAULT 0 CHECK (storage_generation >= 0),
+  PRIMARY KEY (agent_id, boot_id, batch_id)
+);
+CREATE TABLE IF NOT EXISTS telemetry_sample_ordinals (
+  agent_id text NOT NULL REFERENCES agent_identities(id),
+  boot_id text NOT NULL,
+  batch_id text NOT NULL,
+  batch_ordinal integer NOT NULL CHECK (batch_ordinal >= 0),
+  sample_id text NOT NULL,
+  received_at timestamptz NOT NULL,
+  PRIMARY KEY (agent_id, boot_id, batch_id, batch_ordinal)
+);
+
+ALTER TABLE observations ADD COLUMN IF NOT EXISTS storage_generation bigint NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS observations_subject_time_idx ON observations(subject_id, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS current_series (
+  series_id text PRIMARY KEY,
+  sample_id text NOT NULL,
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  value double precision,
+  availability text NOT NULL,
+  storage_generation bigint NOT NULL DEFAULT 0 CHECK (storage_generation >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS metric_aggregates (
+  series_id text NOT NULL,
+  resolution_seconds integer NOT NULL CHECK (resolution_seconds IN (300, 3600)),
+  bucket_start timestamptz NOT NULL,
+  count bigint NOT NULL CHECK (count >= 0),
+  sum double precision,
+  min double precision,
+  max double precision,
+  expected_count bigint NOT NULL DEFAULT 0 CHECK (expected_count >= 0),
+  covered_seconds integer NOT NULL DEFAULT 0 CHECK (covered_seconds >= 0),
+  bucket_seconds integer NOT NULL CHECK (bucket_seconds IN (300, 3600)),
+  partial boolean NOT NULL DEFAULT false,
+  generation bigint NOT NULL DEFAULT 0 CHECK (generation >= 0),
+  PRIMARY KEY (series_id, resolution_seconds, bucket_start)
+);
+
+CREATE TABLE IF NOT EXISTS rollup_work (
+  series_id text NOT NULL,
+  resolution_seconds integer NOT NULL CHECK (resolution_seconds IN (300, 3600)),
+  bucket_start timestamptz NOT NULL,
+  dirty_generation bigint NOT NULL CHECK (dirty_generation >= 0),
+  lease_epoch bigint NOT NULL DEFAULT 0 CHECK (lease_epoch >= 0),
+  lease_until timestamptz,
+  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  last_error text,
+  PRIMARY KEY (series_id, resolution_seconds, bucket_start)
+);
+CREATE INDEX IF NOT EXISTS rollup_work_ready_idx ON rollup_work(resolution_seconds, bucket_start, lease_until);
+`
