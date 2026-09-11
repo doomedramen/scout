@@ -104,3 +104,30 @@ For future results append: task and requirement IDs, commit, date, exact command
   dirty-work transactions off the legacy snapshot; T005 still adds crash,
   concurrency, interruption, and disk-budget fixtures. No production rollout,
   real device, or production credential was used.
+
+## T004 — authoritative SQL telemetry transactions
+
+- Requirements: FR-004, FR-005, FR-018, FR-023, FR-024; SC-002, SC-008.
+- Date: 2026-09-11 (Europe/London); commit: `4b9b7c5`.
+- After explicit migration cutover, ingestion uses one PostgreSQL transaction
+  for the receipt, sample ordinals, normalized samples, full series identity,
+  current-series projection, observations, five-minute/hourly rollup work, and
+  workspace counters. The receipt triple is idempotent and hash conflicts are
+  rejected. Current values use observed time then receipt time, while history
+  remains ordered and entity-specific. SQL history/status/observation/retention
+  paths are authoritative; device reads hydrate compatibility current metrics
+  from `current_series`. Legacy snapshot mutations strip samples, receipts,
+  and observations after cutover, preserving the non-telemetry state.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  passed against disposable PostgreSQL 17; `go test ./... -count=1` passed;
+  `go vet ./...` passed; `npm run format:check` passed; `git diff --check`
+  passed; and `go mod verify` passed. The SQL integration fixture covers
+  duplicate and conflicting replay, invalid-batch rollback, separate
+  full-identity entities, out-of-order history, current projection ordering,
+  dirty bucket creation, SQL observations, dropped counters, and empty legacy
+  telemetry backup fields.
+- Remaining limits: T005 still owns the dedicated concurrent-writer,
+  interrupted-migration, disk-budget, and rollback/replay load fixtures. SQL
+  rollup computation, tier selection, disk-budget policy, and incident
+  evaluation remain later tasks. No production rollout, real device, or
+  production credential was used.
