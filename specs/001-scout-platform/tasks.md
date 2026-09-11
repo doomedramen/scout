@@ -119,7 +119,7 @@ Independent test: revoke and exclude, rediscover without reinstalling, verify op
 - [ ] T061 Create scripts/test-load.sh and record 100-device/24-hour ingestion/read results, queue limits, disk pressure and retention sizing in specs/001-scout-platform/evidence.md; tune documented defaults only with evidence (SC-002, SC-006, FR-033).
 - [X] T062 Review and run the complete negative/security matrix in tests/integration/security_test.go and specs/001-scout-platform/acceptance-matrix.md; fix failures before enabling production enrollment or updates.
 - [ ] T063 Complete remaining browser accessibility/empty/error checks and split heavy chart code when measured bundle/loading behavior justifies it in apps/web/src/; record final UI evidence (FR-018, FR-019).
-- [ ] T064 Reconcile every FR and SC against evidence, update README.md and specs/001-scout-platform/evidence.md with accurate capability status, run final appropriate checks, commit without co-author trailers and push only to a configured remote. Do not mark unfinished lab-dependent acceptance complete.
+- [X] T064 Reconcile every FR and SC against evidence, update README.md and specs/001-scout-platform/evidence.md with accurate capability status, run final appropriate checks, commit without co-author trailers and push only to a configured remote. Do not mark unfinished lab-dependent acceptance complete.
 
 ## Dependencies and execution strategy
 

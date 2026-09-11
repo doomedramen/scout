@@ -8,11 +8,8 @@ try {
     `SCOUT_DB_PASSWORD=${password}\nSCOUT_DATABASE_URL=postgres://scout:${password}@127.0.0.1:5432/scout?sslmode=disable\n`,
     { mode: 0o600, flag: "wx" },
   );
-  console.log(
-    "Created private .env for local development. Run npm run db:up, then npm run dev.",
-  );
+  console.log("Created private .env for local development. Run npm run db:up, then npm run dev.");
 } catch (error) {
-  if (error.code === "EEXIST")
-    console.log(".env already exists; left unchanged.");
+  if (error.code === "EEXIST") console.log(".env already exists; left unchanged.");
   else throw error;
 }

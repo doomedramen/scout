@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["discovery", "enrollment", "updates"],
-  "properties": { "discovery": { "type": "boolean" }, "enrollment": { "type": "boolean" }, "updates": { "type": "boolean" } },
+  "properties": {
+    "discovery": { "type": "boolean" },
+    "enrollment": { "type": "boolean" },
+    "updates": { "type": "boolean" }
+  },
   "additionalProperties": false
 }

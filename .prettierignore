@@ -3,3 +3,5 @@ dist
 .turbo
 .env
 go.sum
+package-lock.json
+coverage

@@ -2,6 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["siteId", "ranges", "ports", "methods", "enabled"],
-  "properties": { "siteId": { "type": "string", "format": "uuid" }, "ranges": { "type": "array", "maxItems": 128, "items": { "type": "string" } }, "exclusions": { "type": "array", "maxItems": 1024, "items": { "type": "string" } }, "ports": { "type": "array", "maxItems": 64, "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }, "methods": { "type": "array", "items": { "enum": ["interface", "route", "neighbor", "tcp"] } }, "credentialRef": { "type": ["string", "null"], "format": "uuid" }, "trustRef": { "type": ["string", "null"], "format": "uuid" }, "enabled": { "type": "boolean" }, "limits": { "type": "object" } },
+  "properties": {
+    "siteId": { "type": "string", "format": "uuid" },
+    "ranges": { "type": "array", "maxItems": 128, "items": { "type": "string" } },
+    "exclusions": { "type": "array", "maxItems": 1024, "items": { "type": "string" } },
+    "ports": { "type": "array", "maxItems": 64, "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+    "methods": { "type": "array", "items": { "enum": ["interface", "route", "neighbor", "tcp"] } },
+    "credentialRef": { "type": ["string", "null"], "format": "uuid" },
+    "trustRef": { "type": ["string", "null"], "format": "uuid" },
+    "enabled": { "type": "boolean" },
+    "limits": { "type": "object" }
+  },
   "additionalProperties": false
 }

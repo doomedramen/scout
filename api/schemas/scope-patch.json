@@ -2,6 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["expectedRevision"],
-  "properties": { "expectedRevision": { "type": "integer", "minimum": 1 }, "ranges": { "type": "array" }, "exclusions": { "type": "array" }, "ports": { "type": "array" }, "methods": { "type": "array" }, "enabled": { "type": "boolean" }, "credentialRef": { "type": ["string", "null"] }, "trustRef": { "type": ["string", "null"] }, "limits": { "type": "object" } },
+  "properties": {
+    "expectedRevision": { "type": "integer", "minimum": 1 },
+    "ranges": { "type": "array" },
+    "exclusions": { "type": "array" },
+    "ports": { "type": "array" },
+    "methods": { "type": "array" },
+    "enabled": { "type": "boolean" },
+    "credentialRef": { "type": ["string", "null"] },
+    "trustRef": { "type": ["string", "null"] },
+    "limits": { "type": "object" }
+  },
   "additionalProperties": false
 }

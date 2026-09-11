@@ -2,6 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["series"],
-  "properties": { "series": { "type": "array", "items": { "type": "object", "required": ["metric", "unit", "points"], "properties": { "metric": { "type": "string" }, "unit": { "type": "string" }, "points": { "type": "array", "items": { "type": "object", "required": ["observedAt", "availability"], "properties": { "observedAt": { "type": "string", "format": "date-time" }, "value": { "type": ["number", "null"] }, "min": { "type": ["number", "null"] }, "max": { "type": ["number", "null"] }, "availability": { "enum": ["current", "stale", "missing", "unsupported", "unavailable"] } }, "additionalProperties": false } } }, "additionalProperties": false } } },
+  "properties": {
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metric", "unit", "points"],
+        "properties": {
+          "metric": { "type": "string" },
+          "unit": { "type": "string" },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["observedAt", "availability"],
+              "properties": {
+                "observedAt": { "type": "string", "format": "date-time" },
+                "value": { "type": ["number", "null"] },
+                "min": { "type": ["number", "null"] },
+                "max": { "type": ["number", "null"] },
+                "availability": { "enum": ["current", "stale", "missing", "unsupported", "unavailable"] }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
   "additionalProperties": false
 }

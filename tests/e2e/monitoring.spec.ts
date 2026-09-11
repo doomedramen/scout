@@ -38,11 +38,15 @@ test(
     assert.ok(Array.isArray(inventoryBody.items));
     assert.ok(inventoryBody.items.length <= 2);
 
-    const noData = await fetch(`${baseURL}/api/v1/devices?query=this-device-does-not-exist`, { headers: { cookie: cookies } });
+    const noData = await fetch(`${baseURL}/api/v1/devices?query=this-device-does-not-exist`, {
+      headers: { cookie: cookies },
+    });
     assert.equal(noData.status, 200);
     assert.deepEqual((await noData.json()).items, []);
 
-    const missingMetrics = await fetch(`${baseURL}/api/v1/devices/missing-device/metrics`, { headers: { cookie: cookies } });
+    const missingMetrics = await fetch(`${baseURL}/api/v1/devices/missing-device/metrics`, {
+      headers: { cookie: cookies },
+    });
     assert.equal(missingMetrics.status, 404);
 
     const topology = await fetch(`${baseURL}/api/v1/topology`, { headers: { cookie: cookies } });

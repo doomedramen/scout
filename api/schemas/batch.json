@@ -1,9 +1,33 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["protocolVersion", "bootId", "batchId", "observedAt", "collector", "samples", "observations", "droppedCount"],
+  "required": [
+    "protocolVersion",
+    "bootId",
+    "batchId",
+    "observedAt",
+    "collector",
+    "samples",
+    "observations",
+    "droppedCount"
+  ],
   "properties": {
-    "protocolVersion": { "const": 1 }, "bootId": { "type": "string", "minLength": 1, "maxLength": 128 }, "batchId": { "type": "string", "minLength": 1, "maxLength": 128 }, "observedAt": { "type": "string", "format": "date-time" }, "collector": { "type": "object", "required": ["id", "schemaVersion"], "properties": { "id": { "type": "string", "maxLength": 64 }, "schemaVersion": { "type": "integer", "minimum": 1 } }, "additionalProperties": false }, "samples": { "type": "array", "maxItems": 1000, "items": { "type": "object" } }, "observations": { "type": "array", "maxItems": 1000, "items": { "type": "object" } }, "droppedCount": { "type": "integer", "minimum": 0 }
+    "protocolVersion": { "const": 1 },
+    "bootId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "batchId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "collector": {
+      "type": "object",
+      "required": ["id", "schemaVersion"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "schemaVersion": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "samples": { "type": "array", "maxItems": 1000, "items": { "type": "object" } },
+    "observations": { "type": "array", "maxItems": 1000, "items": { "type": "object" } },
+    "droppedCount": { "type": "integer", "minimum": 0 }
   },
   "additionalProperties": false
 }

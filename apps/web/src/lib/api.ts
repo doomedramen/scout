@@ -417,21 +417,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ displayName, siteId }),
     }),
-  topology: (siteId = "") =>
-    request<Topology>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
+  topology: (siteId = "") => request<Topology>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
   recoveryStatus: () =>
-    request<{ workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean }; telemetry: Record<string, unknown> }>(
-      "/recovery/status",
-    ),
+    request<{
+      workspace: { recoveryMode: boolean; enrollmentPaused: boolean; updatesPaused: boolean };
+      telemetry: Record<string, unknown>;
+    }>("/recovery/status"),
   reconcileRecovery: () => request("/recovery/reconcile", { method: "POST", body: JSON.stringify({}) }),
   telemetrySettings: () => request<Record<string, unknown>>("/settings/telemetry"),
   accessRequests: (state = "") =>
     request<ListResponse<AccessRequest>>(`/access-requests${state ? `?state=${encodeURIComponent(state)}` : ""}`),
   credentials: () => request<ListResponse<Credential>>("/credentials"),
-  createCredential: (value: { kind: string; secret: string; allowedUse: string[]; targets: string[]; endpoint?: string }) =>
-    request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
+  createCredential: (value: {
+    kind: string;
+    secret: string;
+    allowedUse: string[];
+    targets: string[];
+    endpoint?: string;
+  }) => request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
   rotateCredential: (id: string, value: { secret: string; expectedRevision: number }) =>
-    request<Credential>(`/credentials/${encodeURIComponent(id)}/rotate`, { method: "POST", body: JSON.stringify(value) }),
+    request<Credential>(`/credentials/${encodeURIComponent(id)}/rotate`, {
+      method: "POST",
+      body: JSON.stringify(value),
+    }),
   revokeCredential: (id: string) => request<void>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }),
   trust: () => request<ListResponse<TrustRecord>>("/trust"),
   createTrust: (value: { scopeId?: string; host: string; endpoint: string; fingerprint: string; publicKey?: string }) =>
@@ -449,12 +457,19 @@ export const api = {
       concurrency?: number;
       sightings?: Array<{ address: string; source: string; port?: number; reachable: boolean }>;
     },
-  ) => request<{ items: Candidate[] }>(`/scopes/${encodeURIComponent(scopeId)}/discover`, { method: "POST", body: JSON.stringify(value) }),
-  enqueueCandidate: (id: string) =>
-    request<{ eligible: boolean; reason?: string; job?: Job; request?: AccessRequest }>(`/candidates/${encodeURIComponent(id)}/enroll`, {
+  ) =>
+    request<{ items: Candidate[] }>(`/scopes/${encodeURIComponent(scopeId)}/discover`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(value),
     }),
+  enqueueCandidate: (id: string) =>
+    request<{ eligible: boolean; reason?: string; job?: Job; request?: AccessRequest }>(
+      `/candidates/${encodeURIComponent(id)}/enroll`,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+    ),
   workers: () => request<ListResponse<Worker>>("/workers"),
   createWorker: (value: { name: string; siteIds: string[] }) =>
     request<Worker & { token: string }>("/workers", { method: "POST", body: JSON.stringify(value) }),
@@ -462,12 +477,21 @@ export const api = {
     request<Record<string, unknown>>("/control/pause", { method: "POST", body: JSON.stringify(value) }),
   controlState: () => request<Record<string, unknown>>("/control/state"),
   decommission: (id: string, value: { uninstall: boolean; reason: string }) =>
-    request<DecommissionResult>(`/devices/${encodeURIComponent(id)}/decommission`, { method: "POST", body: JSON.stringify(value) }),
+    request<DecommissionResult>(`/devices/${encodeURIComponent(id)}/decommission`, {
+      method: "POST",
+      body: JSON.stringify(value),
+    }),
   reenable: (id: string, expectedRevision: number) =>
-    request<Device>(`/devices/${encodeURIComponent(id)}/reenable`, { method: "POST", body: JSON.stringify({ expectedRevision }) }),
+    request<Device>(`/devices/${encodeURIComponent(id)}/reenable`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
   updatePolicy: (id: string) => request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`),
   setUpdatePolicy: (id: string, value: Omit<DeviceUpdatePolicy, "deviceId" | "revision" | "updatedAt">) =>
-    request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`, { method: "PATCH", body: JSON.stringify(value) }),
+    request<DeviceUpdatePolicy>(`/devices/${encodeURIComponent(id)}/update-policy`, {
+      method: "PATCH",
+      body: JSON.stringify(value),
+    }),
   releases: () => request<ListResponse<Release>>("/releases"),
   importRelease: (bundle: string) =>
     request<Release>("/releases/import", {
@@ -485,15 +509,23 @@ export const api = {
     canaries: number;
     failureThreshold: number;
   }) => request<RolloutResult>("/rollouts", { method: "POST", body: JSON.stringify(value) }),
-  pauseRollout: (id: string) => request<Rollout>(`/rollouts/${encodeURIComponent(id)}/pause`, { method: "POST", body: JSON.stringify({}) }),
+  pauseRollout: (id: string) =>
+    request<Rollout>(`/rollouts/${encodeURIComponent(id)}/pause`, { method: "POST", body: JSON.stringify({}) }),
   collectorDescriptors: () => request<ListResponse<CollectorDescriptor>>("/collectors"),
   services: (provider = "") =>
     request<ListResponse<ServiceEntity>>(`/services${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
-  collectors: (deviceId: string) => request<ListResponse<CollectorConfig>>(`/devices/${encodeURIComponent(deviceId)}/collectors`),
+  collectors: (deviceId: string) =>
+    request<ListResponse<CollectorConfig>>(`/devices/${encodeURIComponent(deviceId)}/collectors`),
   updateCollector: (
     deviceId: string,
     collectorId: string,
-    value: { provider: string; enabled: boolean; config: Record<string, string>; credentialRef?: string; expectedRevision?: number },
+    value: {
+      provider: string;
+      enabled: boolean;
+      config: Record<string, string>;
+      credentialRef?: string;
+      expectedRevision?: number;
+    },
   ) =>
     request<CollectorConfig>(`/devices/${encodeURIComponent(deviceId)}/collectors/${encodeURIComponent(collectorId)}`, {
       method: "PATCH",

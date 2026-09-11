@@ -114,3 +114,28 @@ This file records executed verification only. Planned targets from the specifica
   second-vantage placement, T049 browser viewport/accessibility journey, T055
   live Docker/Proxmox version and ACL compatibility, T059 full offline
   decommission lab, and T061 live capacity/disk-pressure measurement.
+
+## Final quality gate and handover
+
+- The repository now has a checked-in Prettier configuration and scripts. The
+  final `npm run format` pass rewrote the checked-in TypeScript, CSS, scripts,
+  JSON schemas, fixtures, and Compose/workflow configuration. `gofmt` was run
+  across all Go files and found no further changes.
+- `npm run lint` passed. It checks Go formatting, `go vet ./...`, Prettier
+  `format:check`, and the existing TypeScript workspace checks. The same gate
+  runs in `.github/workflows/quality.yml`; `npm run format` is the explicit
+  rewrite command.
+- Final checks passed: `npm test`, `npm run build`, `go test ./... -count=1`,
+  `npm run test:e2e -w @scout/web`, and `git diff --check`. The E2E smoke test
+  confirmed the local API status and unauthenticated inventory rejection; its
+  credentialed cases were skipped because no E2E credentials or alternate
+  authenticated URL were supplied in this run.
+- Final fixture scripts passed: `test-first-agent.sh`, `test-restore.sh`,
+  `test-updates.sh`, `test-enrollment.sh`, `test-collectors.sh`,
+  `test-decommission.sh`, and `test-load.sh`. These runs used local/in-memory
+  or deterministic fixtures only. No production credential, endpoint, or
+  real device was contacted.
+- T064 is reconciled and pushed to the configured `origin` remote. Open
+  lab-dependent tasks remain unchecked above; fixture evidence is not being
+  presented as live Linux, provider, power-loss, browser-viewport, or capacity
+  acceptance.

@@ -2,6 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["items", "nextCursor"],
-  "properties": { "items": { "type": "array", "items": { "$ref": "device.json" } }, "nextCursor": { "type": ["string", "null"] } },
+  "properties": {
+    "items": { "type": "array", "items": { "$ref": "device.json" } },
+    "nextCursor": { "type": ["string", "null"] }
+  },
   "additionalProperties": false
 }

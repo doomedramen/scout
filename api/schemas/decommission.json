@@ -2,6 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["uninstall", "reason"],
-  "properties": { "uninstall": { "type": "boolean" }, "reason": { "type": "string", "minLength": 1, "maxLength": 512 } },
+  "properties": {
+    "uninstall": { "type": "boolean" },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+  },
   "additionalProperties": false
 }

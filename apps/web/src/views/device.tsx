@@ -107,11 +107,7 @@ export function DeviceView({
     setLoading(true);
     setError("");
     const from = new Date(Date.now() - selectedRange.minutes * 60 * 1000).toISOString();
-    const query =
-      "?from=" +
-      encodeURIComponent(from) +
-      "&maxPoints=" +
-      String(selectedRange.maxPoints);
+    const query = "?from=" + encodeURIComponent(from) + "&maxPoints=" + String(selectedRange.maxPoints);
     Promise.all([api.device(selected.id), api.metrics(selected.id, query)])
       .then(([detail, metrics]) => {
         if (cancelled) return;
@@ -177,7 +173,9 @@ export function DeviceView({
     try {
       const updated = await api.reenable(device.id, device.revision);
       setDevice(updated);
-      setOperationMessage("Device re-enabled as a candidate. Scope and access checks must pass before monitoring resumes.");
+      setOperationMessage(
+        "Device re-enabled as a candidate. Scope and access checks must pass before monitoring resumes.",
+      );
       onChanged?.(updated);
     } catch (caught) {
       setOperationError(caught instanceof APIError ? caught.message : "Device could not be re-enabled");
@@ -206,7 +204,11 @@ export function DeviceView({
         </div>
         <label className="range-select">
           <span className="sr-only">History range</span>
-          <select aria-label="History range" value={range} onChange={(event) => setRange(event.target.value as RangeKey)}>
+          <select
+            aria-label="History range"
+            value={range}
+            onChange={(event) => setRange(event.target.value as RangeKey)}
+          >
             {ranges.map((item) => (
               <option key={item.key} value={item.key}>
                 {demo ? item.label + " · demo" : item.label}
@@ -287,7 +289,11 @@ export function DeviceView({
         <div className="empty">
           <Server />
           <h2>
-            {isDecommissioned ? "Agent revoked" : device.availability === "offline" ? "Agent offline" : "Agent not installed"}
+            {isDecommissioned
+              ? "Agent revoked"
+              : device.availability === "offline"
+                ? "Agent offline"
+                : "Agent not installed"}
           </h2>
           <p>
             {isDecommissioned
@@ -311,8 +317,16 @@ export function DeviceView({
               </p>
             </div>
           </div>
-          {operationError && <p className="form-error" role="alert">{operationError}</p>}
-          {operationMessage && <p className="form-success" role="status">{operationMessage}</p>}
+          {operationError && (
+            <p className="form-error" role="alert">
+              {operationError}
+            </p>
+          )}
+          {operationMessage && (
+            <p className="form-success" role="status">
+              {operationMessage}
+            </p>
+          )}
           {isDecommissioned ? (
             <Button variant="outline" disabled={operationBusy} onClick={reenableDevice}>
               Re-enable after policy review
@@ -333,8 +347,14 @@ export function DeviceView({
                 <input type="checkbox" checked={uninstall} onChange={(event) => setUninstall(event.target.checked)} />
                 <span>Request optional agent uninstall</span>
               </label>
-              <small>Uninstall is a separate best-effort operation; Scout only reports removal after target confirmation.</small>
-              <Button variant="destructive" disabled={operationBusy || reason.trim().length < 3} onClick={decommissionDevice}>
+              <small>
+                Uninstall is a separate best-effort operation; Scout only reports removal after target confirmation.
+              </small>
+              <Button
+                variant="destructive"
+                disabled={operationBusy || reason.trim().length < 3}
+                onClick={decommissionDevice}
+              >
                 {operationBusy ? "Decommissioning…" : "Revoke and exclude device"}
               </Button>
             </div>
@@ -380,9 +400,13 @@ function MetricChart({
         </strong>
       </div>
       {loading && !data.length ? (
-        <div className="chart-empty" role="status">Loading samples…</div>
+        <div className="chart-empty" role="status">
+          Loading samples…
+        </div>
       ) : !data.length ? (
-        <div className="chart-empty" role="status">No {title.toLowerCase()} samples in this range.</div>
+        <div className="chart-empty" role="status">
+          No {title.toLowerCase()} samples in this range.
+        </div>
       ) : (
         <>
           <ChartContainer
@@ -399,7 +423,9 @@ function MetricChart({
                 ticks={[data[0]?.time ?? 0, data[data.length - 1]?.time ?? 1]}
                 tickLine={false}
                 axisLine={false}
-                tickFormatter={(value) => new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                tickFormatter={(value) =>
+                  new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                }
               />
               <YAxis
                 domain={[0, 100]}

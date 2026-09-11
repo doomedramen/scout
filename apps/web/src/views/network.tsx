@@ -87,7 +87,10 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
         availability: item.status.toLowerCase(),
       }))
     : nodes;
-  const nodeLabels = useMemo(() => new Map(visibleNodes.map((node) => [node.id, node.label ?? node.id])), [visibleNodes]);
+  const nodeLabels = useMemo(
+    () => new Map(visibleNodes.map((node) => [node.id, node.label ?? node.id])),
+    [visibleNodes],
+  );
 
   const demoRelationships: Relationship[] = demo
     ? [
@@ -110,14 +113,22 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
   return (
     <section className="network-panel">
       <div className="map-header">
-        <Badge variant="outline"><ShieldCheck size={13} />Evidence-backed</Badge>
+        <Badge variant="outline">
+          <ShieldCheck size={13} />
+          Evidence-backed
+        </Badge>
         <span>
           {demo
             ? "Illustrative observations · not physical cabling"
             : "Relationships expire unless refreshed; inspect source, confidence, and age."}
         </span>
         {!demo && (
-          <Button variant="ghost" size="icon" aria-label="Refresh topology" onClick={() => setRetry((value) => value + 1)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Refresh topology"
+            onClick={() => setRetry((value) => value + 1)}
+          >
             <RefreshCw size={16} />
           </Button>
         )}
@@ -127,7 +138,9 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
           <NetworkIcon size={32} />
           <h2>Topology unavailable</h2>
           <p>{error}</p>
-          <Button variant="outline" onClick={() => setRetry((value) => value + 1)}>Retry</Button>
+          <Button variant="outline" onClick={() => setRetry((value) => value + 1)}>
+            Retry
+          </Button>
         </div>
       ) : (
         <>
@@ -144,7 +157,12 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
                   <Server size={20} aria-hidden="true" />
                   <strong>{node.label ?? node.id}</strong>
                   <small>{node.addresses?.join(", ") || "Address unavailable"}</small>
-                  <span className={"dot " + (node.availability === "online" || node.availability === "healthy" ? "healthy" : "muted")} aria-hidden="true" />
+                  <span
+                    className={
+                      "dot " + (node.availability === "online" || node.availability === "healthy" ? "healthy" : "muted")
+                    }
+                    aria-hidden="true"
+                  />
                   <span className="sr-only">{node.availability ?? "unknown"}</span>
                 </button>
               );
@@ -154,7 +172,10 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
             <div className="section-heading">
               <div>
                 <h3 id="relationship-list-heading">Relationship evidence</h3>
-                <p>Logical membership does not prove physical cabling. Confidence is shown separately from relationship type.</p>
+                <p>
+                  Logical membership does not prove physical cabling. Confidence is shown separately from relationship
+                  type.
+                </p>
               </div>
               <Badge variant="outline">{shownRelationships.length}</Badge>
             </div>
@@ -189,7 +210,9 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
                           <small>{new Date(relationship.observedAt).toLocaleString()}</small>
                           <small>expires {new Date(relationship.expiresAt).toLocaleString()}</small>
                         </td>
-                        <td>{relationship.evidenceIds.length ? relationship.evidenceIds.join(", ") : "Not attached"}</td>
+                        <td>
+                          {relationship.evidenceIds.length ? relationship.evidenceIds.join(", ") : "Not attached"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

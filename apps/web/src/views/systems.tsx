@@ -67,7 +67,12 @@ function demoToLive(item: DemoDevice, index: number): Device {
       "cpu.utilization": { value: item.cpu, unit: "percent", availability: "current", observedAt },
       "memory.used_percent": { value: item.memory, unit: "percent", availability: "current", observedAt },
       "filesystem.used_percent": { value: item.disk, unit: "percent", availability: "current", observedAt },
-      "network.receive_rate": { value: item.network * 1024, unit: "bytes_per_second", availability: "current", observedAt },
+      "network.receive_rate": {
+        value: item.network * 1024,
+        unit: "bytes_per_second",
+        availability: "current",
+        observedAt,
+      },
       "network.transmit_rate": { value: 0, unit: "bytes_per_second", availability: "current", observedAt },
     },
     collectorStates: [],
@@ -154,14 +159,28 @@ export function SystemsView({
     <section className="systems-panel">
       <div className="panel-toolbar">
         <div className="summary" aria-label="System totals">
-          <span><i className="dot healthy" aria-hidden="true" />{counts.online} online</span>
-          <span><i className="dot muted" aria-hidden="true" />{counts.offline} offline</span>
-          <span><i className="dot amber" aria-hidden="true" />{counts.access} needs access</span>
+          <span>
+            <i className="dot healthy" aria-hidden="true" />
+            {counts.online} online
+          </span>
+          <span>
+            <i className="dot muted" aria-hidden="true" />
+            {counts.offline} offline
+          </span>
+          <span>
+            <i className="dot amber" aria-hidden="true" />
+            {counts.access} needs access
+          </span>
         </div>
         <div className="system-filters">
           <div className="search-field">
             <Search size={15} aria-hidden="true" />
-            <Input aria-label="Filter systems" placeholder="Filter systems…" value={query} onChange={(event) => onQuery(event.target.value)} />
+            <Input
+              aria-label="Filter systems"
+              placeholder="Filter systems…"
+              value={query}
+              onChange={(event) => onQuery(event.target.value)}
+            />
           </div>
           {!demo && (
             <>
@@ -178,7 +197,11 @@ export function SystemsView({
               </label>
               <label>
                 <span className="sr-only">Monitoring filter</span>
-                <select aria-label="Monitoring filter" value={monitoringState} onChange={(event) => setMonitoringState(event.target.value)}>
+                <select
+                  aria-label="Monitoring filter"
+                  value={monitoringState}
+                  onChange={(event) => setMonitoringState(event.target.value)}
+                >
                   <option value="">All monitoring</option>
                   <option value="monitored">Monitored</option>
                   <option value="unmonitored">Unmonitored</option>
@@ -200,7 +223,9 @@ export function SystemsView({
           <Radio size={30} />
           <h2>Systems unavailable</h2>
           <p>{error}</p>
-          <Button variant="outline" onClick={() => setRetry((value) => value + 1)}>Retry</Button>
+          <Button variant="outline" onClick={() => setRetry((value) => value + 1)}>
+            Retry
+          </Button>
         </div>
       ) : (
         <>
@@ -208,23 +233,47 @@ export function SystemsView({
             <table>
               <thead>
                 <tr>
-                  <th><Server aria-hidden="true" />System</th>
-                  <th><Cpu aria-hidden="true" />CPU</th>
-                  <th><MemoryStick aria-hidden="true" />Memory</th>
-                  <th><HardDrive aria-hidden="true" />Disk</th>
-                  <th><Network aria-hidden="true" />Network</th>
-                  <th><Radio aria-hidden="true" />State</th>
-                  <th><span className="sr-only">Details</span></th>
+                  <th>
+                    <Server aria-hidden="true" />
+                    System
+                  </th>
+                  <th>
+                    <Cpu aria-hidden="true" />
+                    CPU
+                  </th>
+                  <th>
+                    <MemoryStick aria-hidden="true" />
+                    Memory
+                  </th>
+                  <th>
+                    <HardDrive aria-hidden="true" />
+                    Disk
+                  </th>
+                  <th>
+                    <Network aria-hidden="true" />
+                    Network
+                  </th>
+                  <th>
+                    <Radio aria-hidden="true" />
+                    State
+                  </th>
+                  <th>
+                    <span className="sr-only">Details</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((device) => <SystemRow key={device.id} device={device} onSelect={onSelect} />)}
+                {filtered.map((device) => (
+                  <SystemRow key={device.id} device={device} onSelect={onSelect} />
+                ))}
               </tbody>
             </table>
           </div>
           {!filtered.length && (
             <div className="empty">
-              <div className="empty-icon"><Radio size={30} /></div>
+              <div className="empty-icon">
+                <Radio size={30} />
+              </div>
               <h2>{hasFilters ? "No matching systems" : "Your network starts here"}</h2>
               <p>
                 {hasFilters
@@ -249,7 +298,9 @@ export function SystemsView({
             </div>
           )}
           <div className="table-footer">
-            <span>{filtered.length} systems{demo ? " · illustrative data" : ""}</span>
+            <span>
+              {filtered.length} systems{demo ? " · illustrative data" : ""}
+            </span>
             <span>One agent per device</span>
           </div>
         </>
@@ -280,12 +331,17 @@ function SystemRow({ device, onSelect }: { device: Device; onSelect: (device: De
       <td>{memory === null ? <span className="no-value">—</span> : <Meter value={memory} />}</td>
       <td>{disk === null ? <span className="no-value">—</span> : <Meter value={disk} />}</td>
       <td className="network-value">
-        <span className={network === null ? "no-value" : ""} aria-label={network === null ? "Network unavailable" : formatRate(network)}>
+        <span
+          className={network === null ? "no-value" : ""}
+          aria-label={network === null ? "Network unavailable" : formatRate(network)}
+        >
           {formatRate(network)}
         </span>
       </td>
       <td>
-        <Badge variant="outline" className={state === "Needs access" ? "access-label" : "version"}>{state}</Badge>
+        <Badge variant="outline" className={state === "Needs access" ? "access-label" : "version"}>
+          {state}
+        </Badge>
         {device.agentVersion && <small className="version-detail">v{device.agentVersion}</small>}
       </td>
       <td>

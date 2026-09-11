@@ -2,6 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": ["invitation", "csrPem", "agentVersion", "platform", "architecture"],
-  "properties": { "invitation": { "type": "string", "writeOnly": true }, "csrPem": { "type": "string", "maxLength": 65536, "writeOnly": true }, "agentVersion": { "type": "string", "maxLength": 64 }, "platform": { "const": "linux" }, "architecture": { "enum": ["amd64", "arm64"] } },
+  "properties": {
+    "invitation": { "type": "string", "writeOnly": true },
+    "csrPem": { "type": "string", "maxLength": 65536, "writeOnly": true },
+    "agentVersion": { "type": "string", "maxLength": 64 },
+    "platform": { "const": "linux" },
+    "architecture": { "enum": ["amd64", "arm64"] }
+  },
   "additionalProperties": false
 }

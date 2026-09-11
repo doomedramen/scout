@@ -5,7 +5,19 @@
   "properties": {
     "manifest": {
       "type": "object",
-      "required": ["schemaVersion", "version", "generation", "platform", "architecture", "digest", "bytes", "protocolMin", "protocolMax", "keyId", "signature"],
+      "required": [
+        "schemaVersion",
+        "version",
+        "generation",
+        "platform",
+        "architecture",
+        "digest",
+        "bytes",
+        "protocolMin",
+        "protocolMax",
+        "keyId",
+        "signature"
+      ],
       "properties": {
         "schemaVersion": { "type": "integer", "const": 1 },
         "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$" },

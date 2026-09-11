@@ -30,42 +30,43 @@ async function ownerSession() {
   return { cookies, csrfToken: body.csrfToken };
 }
 
-test(
-  "owner access is write-only, CSRF protected, and separate from worker access",
-  { skip: !baseURL },
-  async () => {
-    const session = await ownerSession();
-    const worker = await fetch(`${baseURL}/api/v1/worker/v1/claim`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}",
-    });
-    assert.equal(worker.status, 401);
+test("owner access is write-only, CSRF protected, and separate from worker access", { skip: !baseURL }, async () => {
+  const session = await ownerSession();
+  const worker = await fetch(`${baseURL}/api/v1/worker/v1/claim`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(worker.status, 401);
 
-    const credentials = await fetch(`${baseURL}/api/v1/credentials`, {
-      headers: { cookie: session.cookies },
-    });
-    assert.equal(credentials.status, 200);
-    const credentialBody = await credentials.text();
-    assert.doesNotMatch(credentialBody, /ciphertext|wrappedDataKey|nonce|private-secret/i);
+  const credentials = await fetch(`${baseURL}/api/v1/credentials`, {
+    headers: { cookie: session.cookies },
+  });
+  assert.equal(credentials.status, 200);
+  const credentialBody = await credentials.text();
+  assert.doesNotMatch(credentialBody, /ciphertext|wrappedDataKey|nonce|private-secret/i);
 
-    const withoutCSRF = await fetch(`${baseURL}/api/v1/sites`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: session.cookies },
-      body: JSON.stringify({ name: `csrf-rejection-${Date.now()}` }),
-    });
-    assert.equal(withoutCSRF.status, 403);
+  const withoutCSRF = await fetch(`${baseURL}/api/v1/sites`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: session.cookies },
+    body: JSON.stringify({ name: `csrf-rejection-${Date.now()}` }),
+  });
+  assert.equal(withoutCSRF.status, 403);
 
-    const sensitiveWithoutMFA = await fetch(`${baseURL}/api/v1/credentials`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: session.cookies,
-        "x-csrf-token": session.csrfToken,
-      },
-      body: JSON.stringify({ kind: "ssh", secret: "never-returned", allowedUse: ["enrollment"], targets: ["192.0.2.10:22"] }),
-    });
-    assert.equal(sensitiveWithoutMFA.status, 403);
-    assert.doesNotMatch(await sensitiveWithoutMFA.text(), /never-returned/);
-  },
-);
+  const sensitiveWithoutMFA = await fetch(`${baseURL}/api/v1/credentials`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: session.cookies,
+      "x-csrf-token": session.csrfToken,
+    },
+    body: JSON.stringify({
+      kind: "ssh",
+      secret: "never-returned",
+      allowedUse: ["enrollment"],
+      targets: ["192.0.2.10:22"],
+    }),
+  });
+  assert.equal(sensitiveWithoutMFA.status, 403);
+  assert.doesNotMatch(await sensitiveWithoutMFA.text(), /never-returned/);
+});

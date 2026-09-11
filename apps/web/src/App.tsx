@@ -1,5 +1,16 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Activity, CircleHelp, Download, KeyRound, LayoutList, Network, Radio, ScanSearch, ServerCog, Terminal } from "lucide-react";
+import {
+  Activity,
+  CircleHelp,
+  Download,
+  KeyRound,
+  LayoutList,
+  Network,
+  Radio,
+  ScanSearch,
+  ServerCog,
+  Terminal,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type Device, type Status } from "@/lib/api";
@@ -35,9 +46,7 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   Updates: { title: "Agent updates", description: "Keep agents current, including on isolated networks." },
 };
 
-const LazyDeviceView = lazy(() =>
-  import("@/views/device").then(({ DeviceView }) => ({ default: DeviceView })),
-);
+const LazyDeviceView = lazy(() => import("@/views/device").then(({ DeviceView }) => ({ default: DeviceView })));
 
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "signedOut" | "signedIn">("loading");
@@ -51,14 +60,16 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    api.owner()
+    api
+      .owner()
       .then(() => {
         if (!cancelled) setAuth("signedIn");
       })
       .catch(() => {
         if (!cancelled) setAuth("signedOut");
       });
-    api.status()
+    api
+      .status()
       .then((value) => {
         if (!cancelled) setStatus(value);
       })
@@ -110,10 +121,18 @@ export default function App() {
         <span className="workspace-name">Personal network</span>
         <div className="topbar-actions">
           <Badge variant="outline">{status?.mode ?? "Self-hosted"}</Badge>
-          <Button variant="ghost" size="icon" aria-label="Setup information" aria-expanded={help} onClick={() => setHelp(!help)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Setup information"
+            aria-expanded={help}
+            onClick={() => setHelp(!help)}
+          >
             <CircleHelp size={18} />
           </Button>
-          <div className="avatar" title="Single-owner workspace">O</div>
+          <div className="avatar" title="Single-owner workspace">
+            O
+          </div>
         </div>
       </header>
       <div className="toolbar">
@@ -148,20 +167,37 @@ export default function App() {
         {demo && (
           <div className="notice demo-notice">
             <Activity size={15} />
-            <span>Demo workspace. Devices, metrics, and network relationships are illustrative and never enter operational storage.</span>
+            <span>
+              Demo workspace. Devices, metrics, and network relationships are illustrative and never enter operational
+              storage.
+            </span>
             <Badge variant="outline">Sample data</Badge>
           </div>
         )}
         {help && (
           <section className="setup-panel">
-            <div><Terminal size={21} /><h2>First Linux agent</h2></div>
-            <p>Use protected owner setup, then create a one-time invitation. The agent sends real observations over its authenticated outbound connection.</p>
+            <div>
+              <Terminal size={21} />
+              <h2>First Linux agent</h2>
+            </div>
+            <p>
+              Use protected owner setup, then create a one-time invitation. The agent sends real observations over its
+              authenticated outbound connection.
+            </p>
             <code>scout-agent --daemon --invitation-file /run/scout/invitation</code>
-            <Button variant="outline" size="sm" onClick={() => setHelp(false)}>Close</Button>
+            <Button variant="outline" size="sm" onClick={() => setHelp(false)}>
+              Close
+            </Button>
           </section>
         )}
         {selected && (page === "Systems" || page === "Network") ? (
-          <Suspense fallback={<div className="empty" role="status">Loading host detail…</div>}>
+          <Suspense
+            fallback={
+              <div className="empty" role="status">
+                Loading host detail…
+              </div>
+            }
+          >
             <LazyDeviceView selected={selected} demo={demo} onBack={() => setSelected(null)} onChanged={setSelected} />
           </Suspense>
         ) : (
@@ -171,9 +207,22 @@ export default function App() {
                 <h1>{detail.title}</h1>
                 <p>{detail.description}</p>
               </div>
-              {page === "Systems" && <Button variant="outline" onClick={() => setHelp(true)}><Terminal size={15} />Agent setup</Button>}
+              {page === "Systems" && (
+                <Button variant="outline" onClick={() => setHelp(true)}>
+                  <Terminal size={15} />
+                  Agent setup
+                </Button>
+              )}
             </div>
-            {page === "Systems" && <SystemsView demo={demo} query={query} onQuery={setQuery} onSelect={setSelected} onSetup={() => setHelp(true)} />}
+            {page === "Systems" && (
+              <SystemsView
+                demo={demo}
+                query={query}
+                onQuery={setQuery}
+                onSelect={setSelected}
+                onSetup={() => setHelp(true)}
+              />
+            )}
             {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}
@@ -187,9 +236,15 @@ export default function App() {
         <span>Self-hosted · single owner</span>
         <div aria-live="polite">
           {statusError ? (
-            <><span className="dot amber" />API unavailable</>
+            <>
+              <span className="dot amber" />
+              API unavailable
+            </>
           ) : (
-            <><span className={"dot " + (status?.database === "connected" ? "healthy" : "muted")} />{status ? "API " + status.database : "Connecting to API…"}</>
+            <>
+              <span className={"dot " + (status?.database === "connected" ? "healthy" : "muted")} />
+              {status ? "API " + status.database : "Connecting to API…"}
+            </>
           )}
         </div>
       </footer>
