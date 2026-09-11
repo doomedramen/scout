@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/alert-rule-input.json",
+  "type": "object",
+  "required": ["name", "targetKind", "kind", "severity", "enabled", "condition"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "targetKind": { "$ref": "monitoring-common.json#/$defs/targetKind" },
+    "targetId": { "$ref": "monitoring-common.json#/$defs/targetId" },
+    "kind": { "$ref": "monitoring-common.json#/$defs/ruleKind" },
+    "severity": { "$ref": "monitoring-common.json#/$defs/severity" },
+    "enabled": { "type": "boolean" },
+    "condition": { "$ref": "monitoring-common.json#/$defs/alertCondition" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "targetKind": { "const": "fleet" } }, "required": ["targetKind"] },
+      "then": { "not": { "required": ["targetId"] } },
+      "else": { "required": ["targetId"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "numeric" } }, "required": ["kind"] },
+      "then": { "properties": { "condition": { "$ref": "monitoring-common.json#/$defs/numericCondition" } } },
+      "else": { "properties": { "condition": { "$ref": "monitoring-common.json#/$defs/stateCondition" } } }
+    }
+  ],
+  "additionalProperties": false
+}

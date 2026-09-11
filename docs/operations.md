@@ -11,12 +11,12 @@ Requirements are Node.js 22.14 or newer (24.14.0 was used for the current
 verification), npm 11, Go 1.26 or newer, and Docker with either the Compose
 plugin or the standalone docker-compose command.
 
-~~~sh
+```sh
 npm ci
 npm run setup
 npm run db:up
 npm run dev
-~~~
+```
 
 The setup command creates a private, ignored .env only when it does not exist.
 The development server uses 127.0.0.1:8080 and the Vite UI uses the printed
@@ -26,7 +26,7 @@ not mistake that mode for a durable deployment.
 
 The safe verification entry points are:
 
-~~~sh
+```sh
 npm run lint
 npm test
 scripts/test-first-agent.sh
@@ -36,7 +36,7 @@ scripts/test-enrollment.sh
 scripts/test-collectors.sh
 scripts/test-decommission.sh
 scripts/test-load.sh
-~~~
+```
 
 The live-lab environment variables in the enrollment, collector,
 decommission, and load scripts print prerequisites after fixture tests. They
@@ -47,15 +47,18 @@ confirmation variables are present.
 For a local UI/API evaluation using the published image, copy
 `compose.quickstart.yaml` to a new directory and run:
 
-~~~sh
+```sh
 curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quickstart.yaml -o compose.yaml
 docker compose up -d
-~~~
+```
 
 This quickstart is bound to localhost, uses development mode without TLS or
 agent mTLS, and uses the documented local-only setup token. It is not a
-production deployment. Set `SCOUT_IMAGE` to a pinned GHCR or Docker Hub tag
-when reproducing a specific release.
+production deployment. The container listens on 8080 internally by default;
+set `SCOUT_PORT=18080` to change only the host port, or set
+`SCOUT_CONTAINER_PORT` to change the listener and mapped container port. Set
+`SCOUT_BIND_ADDRESS` to change the host bind address. Set `SCOUT_IMAGE` to a
+pinned GHCR or Docker Hub tag when reproducing a specific release.
 
 ## Production-shaped Compose
 
@@ -77,9 +80,9 @@ socket.
 After provisioning the secret, TLS, and database inputs, an owner can start
 the profile with:
 
-~~~sh
+```sh
 docker compose --profile production up --pull always -d
-~~~
+```
 
 Use the equivalent docker-compose command if the standalone binary is
 installed. The current verification host has Docker 29.8.0 but no Compose
@@ -137,25 +140,25 @@ Backups contain PostgreSQL data and metadata, including encrypted secret
 envelopes, but never the wrapping key. Keep the key in a separate protected
 recovery location.
 
-~~~sh
+```sh
 SCOUT_DATABASE_URL=... \
 SCOUT_SECRET_KEY_FILE=/protected/scout/wrapping-key \
 SCOUT_BACKUP_FILE=/protected/backups/scout.dump \
 scripts/backup.sh
-~~~
+```
 
 Restore only to a separate verified database destination. The script checks
 the backup metadata fingerprint, refuses the active SCOUT_DATABASE_URL, and
 sets restored authority to recovery mode with enrollment and updates paused.
 
-~~~sh
+```sh
 SCOUT_DATABASE_URL=... \
 SCOUT_BACKUP_FILE=/protected/backups/scout.dump \
 SCOUT_RESTORE_DATABASE_URL=... \
 SCOUT_SECRET_KEY_FILE=/protected/scout/wrapping-key \
 SCOUT_RESTORE_CONFIRM=YES \
 scripts/restore.sh
-~~~
+```
 
 After restore, inspect owner sessions, agent expiry and revocation, scopes,
 credentials, trust records, release trust, and pending jobs. Use the

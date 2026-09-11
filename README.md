@@ -74,13 +74,13 @@ services:
         condition: service_healthy
     environment:
       SCOUT_PRODUCTION: "false"
-      SCOUT_LISTEN: "0.0.0.0:8080"
+      SCOUT_LISTEN: "0.0.0.0:${SCOUT_CONTAINER_PORT:-8080}"
       SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
       SCOUT_WEB_DIR: /usr/local/share/scout/web
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:${SCOUT_CONTAINER_PORT:-8080}"
     volumes:
       - scout-server-data:/var/lib/scout
 
@@ -89,10 +89,20 @@ volumes:
   scout-server-data:
 ```
 
-Open `http://localhost:8080`, use setup token
-`local-only-change-me`, and choose an owner password. Stop it with
-`docker compose down`; named volumes are retained. The default image is
-published at [GitHub Container Registry](https://github.com/doomedramen/scout/pkgs/container/scout).
+Open `http://localhost:8080` (or `http://localhost:$SCOUT_PORT` when you set a
+custom port), use setup token `local-only-change-me`, and choose an owner
+password. Stop it with `docker compose down`; named volumes are retained. The
+container listens on port 8080 internally by default, so a host port conflict
+only requires setting one variable:
+
+```sh
+SCOUT_PORT=18080 docker compose up -d
+```
+
+If you also need to change the internal listener, set `SCOUT_CONTAINER_PORT`;
+the Compose listener and target mapping follow it automatically. The default
+image is published at
+[GitHub Container Registry](https://github.com/doomedramen/scout/pkgs/container/scout).
 If the package is private, run `docker login ghcr.io` first. Use the
 production-shaped [Compose file](compose.yaml) and [operations guide](docs/operations.md)
 for TLS, agent mTLS, separately provisioned keys, and owner-authorized

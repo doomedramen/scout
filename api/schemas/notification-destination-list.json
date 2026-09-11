@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/notification-destination-list.json",
+  "type": "object",
+  "required": ["items", "nextCursor"],
+  "properties": {
+    "items": { "type": "array", "maxItems": 500, "items": { "$ref": "notification-destination.json" } },
+    "nextCursor": { "type": ["string", "null"], "maxLength": 512 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/monitoring-notifications-resume.json",
+  "type": "object",
+  "required": ["expectedRevision"],
+  "properties": {
+    "expectedRevision": { "$ref": "monitoring-common.json#/$defs/revision" }
+  },
+  "additionalProperties": false
+}

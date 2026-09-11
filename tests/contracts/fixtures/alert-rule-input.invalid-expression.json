@@ -1,0 +1,12 @@
+{
+  "name": "Unsafe expression",
+  "targetKind": "fleet",
+  "kind": "numeric",
+  "severity": "critical",
+  "enabled": true,
+  "condition": {
+    "expression": "shell('uname -a')",
+    "triggerSeconds": 0,
+    "clearSeconds": 0
+  }
+}

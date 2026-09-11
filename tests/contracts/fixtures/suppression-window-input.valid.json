@@ -1,0 +1,10 @@
+{
+  "name": "Nightly maintenance",
+  "targetKind": "fleet",
+  "enabled": true,
+  "mode": "recurring",
+  "timezone": "Europe/London",
+  "weekdays": [1, 2, 3, 4, 5],
+  "startLocal": "22:00",
+  "endLocal": "06:00"
+}

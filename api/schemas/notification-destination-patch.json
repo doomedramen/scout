@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/notification-destination-patch.json",
+  "type": "object",
+  "required": ["expectedRevision"],
+  "properties": {
+    "expectedRevision": { "$ref": "monitoring-common.json#/$defs/revision" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "baseUrl": { "type": "string", "format": "uri", "minLength": 1, "maxLength": 2048 },
+    "topic": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "writeOnly": true
+    },
+    "token": { "type": ["string", "null"], "maxLength": 4096, "writeOnly": true },
+    "enabled": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$comment": "Omitting topic or token retains the protected value; token:null removes authentication."
+}

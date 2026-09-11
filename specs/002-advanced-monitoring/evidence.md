@@ -29,3 +29,36 @@ IDs, commit, date, exact command/environment (secrets redacted), expected and
 actual outcomes, output/artifact links, and remaining limits.
 
 For future results append: task and requirement IDs, commit, date, exact command/environment (secrets redacted), expected outcome, actual outcome, output/artifact link, and remaining limits. Record prerequisite 001 evidence during T001; do not copy its checkbox state as proof.
+
+## T002 — contracts, bounds, and compatibility targets
+
+- Requirements: FR-003, FR-008, FR-009, FR-014, FR-022, FR-032, FR-034.
+- Date: 2026-09-11 (Europe/London); implementation checkpoint pending commit.
+- Contract outputs: `api/openapi.yaml` now covers the additive rule, incident,
+  notification, suppression, monitoring-status, and retention-preview routes;
+  `api/schemas/` contains strict bounded input/output schemas; and
+  `tests/contracts/fixtures/` contains positive rule, destination, quiet-window,
+  and history examples plus a rejected executable-expression example.
+- Security/bounds evidence: destination `topic` and `token` are write-only with
+  limits of 128 and 4096 bytes; destination responses are redacted; recent MFA
+  is declared for protected destination/window/settings actions; history is
+  bounded to 16 series and 600 points; numeric/state durations are bounded to
+  86400 seconds; arbitrary expressions and service/GPU control routes are
+  rejected by the contract test.
+- Dependency evidence: `go.mod` pins
+  `github.com/coreos/go-systemd/v22 v22.7.0`; `go.sum` matches the module and
+  go.mod checksums; `research.md` records smartmontools/OpenZFS/hwmon/NVIDIA/
+  AMD/Intel compatibility targets as unvalidated fixture/lab targets.
+- Exact verification commands (no credentials or external device access):
+  `jq -e empty api/schemas/*.json tests/contracts/fixtures/*.json`;
+  `go test ./tests/contracts -count=1`; `go test ./... -count=1`;
+  `go vet ./...`; `npm run format:check`; `git diff --check`; and
+  `go mod verify`.
+- Expected and actual outcome: all commands passed. OpenAPI schema references
+  and JSON schema references were checked for existing files. The contract
+  test passed both positive fixtures and the negative executable-expression /
+  redaction assertions.
+- Remaining limits: these are executable contract and fixture checks only. No
+  ntfy publication, D-Bus/systemd host, smartctl device, ZFS pool, sensor/GPU
+  hardware, or live API acceptance is claimed here; those belong to later
+  implementation and release-gate tasks.

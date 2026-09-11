@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/notification-delivery.json",
+  "type": "object",
+  "required": ["id", "destinationId", "status", "attempts", "expiresAt"],
+  "properties": {
+    "id": { "$ref": "monitoring-common.json#/$defs/uuid" },
+    "destinationId": { "$ref": "monitoring-common.json#/$defs/uuid" },
+    "incidentId": { "type": ["string", "null"], "format": "uuid" },
+    "transitionId": { "type": ["string", "null"], "format": "uuid" },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "sending", "retry", "accepted", "failed", "cancelled", "suppressed", "expired"]
+    },
+    "attempts": { "type": "integer", "minimum": 0, "maximum": 6 },
+    "nextAttemptAt": { "type": ["string", "null"], "format": "date-time" },
+    "acceptedAt": { "type": ["string", "null"], "format": "date-time" },
+    "expiresAt": { "$ref": "monitoring-common.json#/$defs/timestamp" },
+    "safeError": { "type": ["string", "null"], "maxLength": 512 },
+    "destinationRevision": { "$ref": "monitoring-common.json#/$defs/revision" }
+  },
+  "additionalProperties": false
+}

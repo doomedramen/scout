@@ -1,0 +1,23 @@
+{
+  "series": [
+    {
+      "seriesId": "3f9c1a1b-6f4f-4bc2-8cf5-0bc70a2b5b11",
+      "entityId": "root",
+      "metric": "filesystem.used_percent",
+      "unit": "percent",
+      "resolutionSeconds": 300,
+      "points": [
+        {
+          "observedAt": "2026-09-11T12:00:00Z",
+          "value": 91,
+          "min": 90,
+          "max": 91,
+          "availability": "current",
+          "count": 60,
+          "coverage": 1,
+          "partial": false
+        }
+      ]
+    }
+  ]
+}

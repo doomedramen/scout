@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/monitoring-status.json",
+  "type": "object",
+  "required": [
+    "evaluationLagSeconds",
+    "rollupLagSeconds",
+    "queues",
+    "counters",
+    "storagePressure",
+    "lastSuccessfulJobs"
+  ],
+  "properties": {
+    "evaluationLagSeconds": { "type": "number", "minimum": 0 },
+    "rollupLagSeconds": { "type": "number", "minimum": 0 },
+    "queues": {
+      "type": "object",
+      "required": ["evaluation", "notifications", "rollup"],
+      "properties": {
+        "evaluation": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "notifications": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "rollup": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      },
+      "additionalProperties": false
+    },
+    "counters": {
+      "type": "object",
+      "required": ["dropped", "truncated", "backpressure", "deliveryFailures", "activeAdmissionFailures"],
+      "properties": {
+        "dropped": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "integer", "minimum": 0 },
+        "backpressure": { "type": "integer", "minimum": 0 },
+        "deliveryFailures": { "type": "integer", "minimum": 0 },
+        "activeAdmissionFailures": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "storagePressure": {
+      "type": "object",
+      "required": ["usedBytes", "budgetBytes", "percent", "state"],
+      "properties": {
+        "usedBytes": { "type": "integer", "minimum": 0 },
+        "budgetBytes": { "type": "integer", "minimum": 1 },
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "state": { "type": "string", "enum": ["normal", "warning", "critical"] }
+      },
+      "additionalProperties": false
+    },
+    "lastSuccessfulJobs": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "null"], "format": "date-time" },
+      "maxProperties": 32
+    }
+  },
+  "additionalProperties": false
+}

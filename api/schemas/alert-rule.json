@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/alert-rule.json",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "targetKind",
+    "kind",
+    "severity",
+    "enabled",
+    "condition",
+    "revision",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "id": { "$ref": "monitoring-common.json#/$defs/uuid" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "targetKind": { "$ref": "monitoring-common.json#/$defs/targetKind" },
+    "targetId": { "$ref": "monitoring-common.json#/$defs/targetId" },
+    "kind": { "$ref": "monitoring-common.json#/$defs/ruleKind" },
+    "severity": { "$ref": "monitoring-common.json#/$defs/severity" },
+    "enabled": { "type": "boolean" },
+    "condition": { "$ref": "monitoring-common.json#/$defs/alertCondition" },
+    "revision": { "$ref": "monitoring-common.json#/$defs/revision" },
+    "createdAt": { "$ref": "monitoring-common.json#/$defs/timestamp" },
+    "updatedAt": { "$ref": "monitoring-common.json#/$defs/timestamp" },
+    "retiredAt": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "targetKind": { "const": "fleet" } }, "required": ["targetKind"] },
+      "then": { "not": { "required": ["targetId"] } },
+      "else": { "required": ["targetId"] }
+    }
+  ],
+  "additionalProperties": false
+}

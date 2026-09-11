@@ -14,6 +14,9 @@ tags:
   - name: agents
   - name: releases
   - name: operations
+  - name: monitoring
+  - name: incidents
+  - name: notifications
 paths:
   /setup:
     post:
@@ -24,11 +27,12 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: './schemas/setup.json' }
+            schema: { $ref: "./schemas/setup.json" }
       responses:
-        '201': { description: Owner created, content: { application/json: { schema: { $ref: './schemas/owner.json' } } } }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        "201":
+          { description: Owner created, content: { application/json: { schema: { $ref: "./schemas/owner.json" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /sessions:
     post:
       tags: [authentication]
@@ -37,68 +41,81 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: './schemas/session.json' }
+            schema: { $ref: "./schemas/session.json" }
       responses:
-        '200': { description: Session created, content: { application/json: { schema: { $ref: './schemas/session.json' } } } }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        "200":
+          {
+            description: Session created,
+            content: { application/json: { schema: { $ref: "./schemas/session.json" } } },
+          }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /sessions/current:
     delete:
       tags: [authentication]
       responses:
-        '204': { description: Session revoked }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        "204": { description: Session revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /sessions/reauth:
     post:
       tags: [authentication]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: './schemas/reauth.json' } } }
+        content: { application/json: { schema: { $ref: "./schemas/reauth.json" } } }
       responses:
-        '204': { description: Recent verification updated }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        "204": { description: Recent verification updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /owner:
     get:
       tags: [authentication]
       responses:
-        '200': { description: Safe owner metadata, content: { application/json: { schema: { $ref: './schemas/owner.json' } } } }
+        "200":
+          {
+            description: Safe owner metadata,
+            content: { application/json: { schema: { $ref: "./schemas/owner.json" } } },
+          }
   /owner/mfa/setup:
     post:
       tags: [authentication]
       responses:
-        '200': { description: One-time enrollment material }
+        "200": { description: One-time enrollment material }
   /owner/mfa/confirm:
     post:
       tags: [authentication]
       responses:
-        '200': { description: Recovery codes returned once }
+        "200": { description: Recovery codes returned once }
   /owner/recovery-codes:
     post:
       tags: [authentication]
       responses:
-        '200': { description: Recovery codes returned once }
+        "200": { description: Recovery codes returned once }
   /devices:
     get:
       tags: [inventory]
       parameters:
-        - { $ref: '#/components/parameters/Cursor' }
-        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
         - { name: query, in: query, schema: { type: string, maxLength: 128 } }
         - { name: health, in: query, schema: { type: string } }
         - { name: monitoringState, in: query, schema: { type: string } }
         - { name: siteId, in: query, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Device summaries, content: { application/json: { schema: { $ref: './schemas/device-list.json' } } } }
+        "200":
+          {
+            description: Device summaries,
+            content: { application/json: { schema: { $ref: "./schemas/device-list.json" } } },
+          }
   /devices/{deviceId}:
     parameters:
-      - { $ref: '#/components/parameters/DeviceId' }
+      - { $ref: "#/components/parameters/DeviceId" }
     get:
       tags: [inventory]
       responses:
-        '200': { description: Device detail, content: { application/json: { schema: { $ref: './schemas/device.json' } } } }
-        '404': { $ref: '#/components/responses/NotFound' }
+        "200":
+          { description: Device detail, content: { application/json: { schema: { $ref: "./schemas/device.json" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /devices/{deviceId}/metrics:
     parameters:
-      - { $ref: '#/components/parameters/DeviceId' }
+      - { $ref: "#/components/parameters/DeviceId" }
     get:
       tags: [inventory]
       parameters:
@@ -107,129 +124,518 @@ paths:
         - { name: metric, in: query, schema: { type: string, maxLength: 128 } }
         - { name: entityId, in: query, schema: { type: string, maxLength: 128 } }
         - { name: maxPoints, in: query, schema: { type: integer, minimum: 1, maximum: 600, default: 600 } }
+        - name: seriesId
+          in: query
+          description: Repeat this parameter to request up to 16 explicit series.
+          style: form
+          explode: true
+          schema: { type: array, maxItems: 16, items: { type: string, format: uuid } }
       responses:
-        '200': { description: Historical metric series, content: { application/json: { schema: { $ref: './schemas/metrics.json' } } } }
+        "200":
+          {
+            description: Historical metric series,
+            content: { application/json: { schema: { $ref: "./schemas/metrics.json" } } },
+          }
   /topology:
     get:
       tags: [inventory]
       parameters:
-        - { $ref: '#/components/parameters/Cursor' }
-        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
         - { name: siteId, in: query, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Evidence-backed topology }
+        "200": { description: Evidence-backed topology }
   /observations/{observationId}:
     get:
       tags: [inventory]
       parameters:
         - { name: observationId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200': { description: Redacted observation metadata }
+        "200": { description: Redacted observation metadata }
   /sites:
-    get: { tags: [access], responses: { '200': { description: Sites } } }
+    get: { tags: [access], responses: { "200": { description: Sites } } }
     post:
       tags: [access]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/site.json' } } } }
-      responses: { '201': { description: Site created } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/site.json" } } } }
+      responses: { "201": { description: Site created } }
   /scopes:
-    get: { tags: [access], responses: { '200': { description: Scopes } } }
+    get: { tags: [access], responses: { "200": { description: Scopes } } }
     post:
       tags: [access]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/scope.json' } } } }
-      responses: { '201': { description: Scope created } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/scope.json" } } } }
+      responses: { "201": { description: Scope created } }
   /scopes/{scopeId}:
     patch:
       tags: [access]
       parameters: [{ name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/scope-patch.json' } } } }
-      responses: { '200': { description: Scope updated }, '409': { $ref: '#/components/responses/Conflict' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/scope-patch.json" } } } }
+      responses: { "200": { description: Scope updated }, "409": { $ref: "#/components/responses/Conflict" } }
   /credentials:
-    get: { tags: [access], responses: { '200': { description: Credential metadata only } } }
+    get: { tags: [access], responses: { "200": { description: Credential metadata only } } }
     post:
       tags: [access]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/credential.json' } } } }
-      responses: { '201': { description: Credential reference created } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/credential.json" } } } }
+      responses: { "201": { description: Credential reference created } }
   /credentials/{credentialId}:
     delete:
       tags: [access]
       parameters: [{ name: credentialId, in: path, required: true, schema: { type: string, format: uuid } }]
-      responses: { '204': { description: Credential revoked } }
+      responses: { "204": { description: Credential revoked } }
   /trust:
-    get: { tags: [access], responses: { '200': { description: Trust records } } }
+    get: { tags: [access], responses: { "200": { description: Trust records } } }
     post:
       tags: [access]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/trust.json' } } } }
-      responses: { '201': { description: Trust record created } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/trust.json" } } } }
+      responses: { "201": { description: Trust record created } }
   /access-requests:
-    get: { tags: [access], responses: { '200': { description: Actionable unmet prerequisites } } }
+    get: { tags: [access], responses: { "200": { description: Actionable unmet prerequisites } } }
   /jobs:
-    get: { tags: [access], responses: { '200': { description: Redacted job progress } } }
+    get: { tags: [access], responses: { "200": { description: Redacted job progress } } }
   /bootstrap-invitations:
     post:
       tags: [agents]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/bootstrap-invitation.json' } } } }
-      responses: { '201': { description: Single-use invitation returned once } }
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: "./schemas/bootstrap-invitation.json" } } } }
+      responses: { "201": { description: Single-use invitation returned once } }
   /devices/{deviceId}/bootstrap:
     post:
       tags: [agents]
-      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/revision.json' } } } }
-      responses: { '200': { description: Device-bound invitation returned once } }
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses: { "200": { description: Device-bound invitation returned once } }
   /devices/{deviceId}/decommission:
     post:
       tags: [operations]
-      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/decommission.json' } } } }
-      responses: { '202': { description: Revocation accepted } }
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: "./schemas/decommission.json" } } } }
+      responses: { "202": { description: Revocation accepted } }
   /devices/{deviceId}/reenable:
     post:
       tags: [operations]
-      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/revision.json' } } } }
-      responses: { '200': { description: Device re-enabled } }
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses: { "200": { description: Device re-enabled } }
   /control/pause:
     post:
       tags: [operations]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/pause.json' } } } }
-      responses: { '200': { description: Requested/effective pause state } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/pause.json" } } } }
+      responses: { "200": { description: Requested/effective pause state } }
   /control/state:
-    get: { tags: [operations], responses: { '200': { description: Control state } } }
+    get: { tags: [operations], responses: { "200": { description: Control state } } }
   /agent/v1/enroll:
     post:
       tags: [agents]
       security: []
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/enroll.json' } } } }
-      responses: { '200': { description: Issued device identity and certificate } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/enroll.json" } } } }
+      responses: { "200": { description: Issued device identity and certificate } }
   /agent/v1/renew:
     post:
       tags: [agents]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/renew.json' } } } }
-      responses: { '200': { description: Renewed certificate } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/renew.json" } } } }
+      responses: { "200": { description: Renewed certificate } }
   /agent/v1/batches:
     post:
       tags: [agents]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/batch.json' } } } }
-      responses: { '200': { description: Batch acknowledgement }, '409': { $ref: '#/components/responses/Conflict' }, '413': { $ref: '#/components/responses/TooLarge' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/batch.json" } } } }
+      responses:
+        {
+          "200": { description: Batch acknowledgement },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "413": { $ref: "#/components/responses/TooLarge" },
+        }
   /agent/v1/heartbeat:
     post:
       tags: [agents]
-      requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/heartbeat.json' } } } }
-      responses: { '200': { description: Current server policy revision } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/heartbeat.json" } } } }
+      responses: { "200": { description: Current server policy revision } }
   /agent/v1/desired-state:
-    get: { tags: [agents], responses: { '200': { description: Bounded desired state } } }
+    get: { tags: [agents], responses: { "200": { description: Bounded desired state } } }
   /worker/v1/claim:
-    post: { tags: [agents], responses: { '200': { description: Target-scoped job claim } } }
+    post: { tags: [agents], responses: { "200": { description: Target-scoped job claim } } }
   /releases/import:
-    post: { tags: [releases], requestBody: { required: true, content: { application/json: { schema: { $ref: './schemas/release-bundle.json' } } } }, responses: { '201': { description: Verified release } } }
+    post:
+      {
+        tags: [releases],
+        requestBody:
+          { required: true, content: { application/json: { schema: { $ref: "./schemas/release-bundle.json" } } } },
+        responses: { "201": { description: Verified release } },
+      }
   /releases:
-    get: { tags: [releases], responses: { '200': { description: Immutable release metadata } } }
+    get: { tags: [releases], responses: { "200": { description: Immutable release metadata } } }
   /rollouts:
-    get: { tags: [releases], responses: { '200': { description: Rollouts } } }
-    post: { tags: [releases], responses: { '202': { description: Desired assignments created } } }
+    get: { tags: [releases], responses: { "200": { description: Rollouts } } }
+    post: { tags: [releases], responses: { "202": { description: Desired assignments created } } }
   /audit:
-    get: { tags: [operations], responses: { '200': { description: Redacted audit events } } }
+    get: { tags: [operations], responses: { "200": { description: Redacted audit events } } }
   /recovery/reconcile:
-    post: { tags: [operations], responses: { '200': { description: Recovery mode cleared } } }
+    post: { tags: [operations], responses: { "200": { description: Recovery mode cleared } } }
+  /alert-rules:
+    get:
+      tags: [incidents]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: enabled, in: query, schema: { type: boolean } }
+        - { name: targetKind, in: query, schema: { type: string, enum: [fleet, site, device] } }
+        - { name: targetId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          {
+            description: Alert rules,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule-list.json" } } },
+          }
+    post:
+      tags: [incidents]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: "./schemas/alert-rule-input.json" } } } }
+      responses:
+        "201":
+          {
+            description: Alert rule created,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule.json" } } },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /alert-rules/{ruleId}:
+    parameters: [{ $ref: "#/components/parameters/AlertRuleId" }]
+    get:
+      tags: [incidents]
+      responses:
+        "200":
+          { description: Alert rule, content: { application/json: { schema: { $ref: "./schemas/alert-rule.json" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [incidents]
+      requestBody:
+        { required: true, content: { application/json: { schema: { $ref: "./schemas/alert-rule-patch.json" } } } }
+      responses:
+        "200":
+          {
+            description: Alert rule revised,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [incidents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses:
+        "204": { description: Alert rule retired }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /alert-rules/{ruleId}/overrides:
+    parameters: [{ $ref: "#/components/parameters/AlertRuleId" }]
+    get:
+      tags: [incidents]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          {
+            description: Rule overrides,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule-override-list.json" } } },
+          }
+    post:
+      tags: [incidents]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/alert-rule-override-input.json" } } },
+        }
+      responses:
+        "201":
+          {
+            description: Rule override created,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule-override.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /alert-rules/{ruleId}/overrides/{overrideId}:
+    parameters:
+      - { $ref: "#/components/parameters/AlertRuleId" }
+      - { $ref: "#/components/parameters/OverrideId" }
+    patch:
+      tags: [incidents]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/alert-rule-override-patch.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Rule override revised,
+            content: { application/json: { schema: { $ref: "./schemas/alert-rule-override.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [incidents]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses:
+        "204": { description: Rule override retired }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /incidents:
+    get:
+      tags: [incidents]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: status, in: query, schema: { type: string, enum: [active, resolved, closed] } }
+        - { name: acknowledged, in: query, schema: { type: boolean } }
+        - { name: severity, in: query, schema: { type: string, enum: [warning, critical] } }
+        - { name: deviceId, in: query, schema: { type: string, format: uuid } }
+        - { name: siteId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          {
+            description: Incident summaries,
+            content: { application/json: { schema: { $ref: "./schemas/incident-list.json" } } },
+          }
+  /incidents/{incidentId}:
+    parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+    get:
+      tags: [incidents]
+      responses:
+        "200":
+          {
+            description: Incident episode,
+            content: { application/json: { schema: { $ref: "./schemas/incident.json" } } },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /incidents/{incidentId}/transitions:
+    parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+    get:
+      tags: [incidents]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          {
+            description: Incident transitions,
+            content: { application/json: { schema: { $ref: "./schemas/incident-transition-list.json" } } },
+          }
+  /incidents/{incidentId}/acknowledgment:
+    parameters: [{ $ref: "#/components/parameters/IncidentId" }]
+    post:
+      tags: [incidents]
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/incident-acknowledgment.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Acknowledged incident,
+            content: { application/json: { schema: { $ref: "./schemas/incident.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /notification-destinations:
+    get:
+      tags: [notifications]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          {
+            description: Redacted ntfy destinations,
+            content: { application/json: { schema: { $ref: "./schemas/notification-destination-list.json" } } },
+          }
+    post:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/notification-destination-input.json" } } },
+        }
+      responses:
+        "201":
+          {
+            description: Redacted destination,
+            content: { application/json: { schema: { $ref: "./schemas/notification-destination.json" } } },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /notification-destinations/{destinationId}:
+    parameters: [{ $ref: "#/components/parameters/DestinationId" }]
+    patch:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/notification-destination-patch.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Redacted destination,
+            content: { application/json: { schema: { $ref: "./schemas/notification-destination.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses:
+        "204": { description: Destination retired }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /notification-destinations/{destinationId}/test:
+    parameters: [{ $ref: "#/components/parameters/DestinationId" }]
+    post:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses:
+        "202":
+          {
+            description: Test delivery queued,
+            content: { application/json: { schema: { $ref: "./schemas/notification-test-response.json" } } },
+          }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /notification-deliveries:
+    get:
+      tags: [notifications]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: destinationId, in: query, schema: { type: string, format: uuid } }
+        - { name: incidentId, in: query, schema: { type: string, format: uuid } }
+        - {
+            name: status,
+            in: query,
+            schema: { type: string, enum: [queued, sending, retry, accepted, failed, cancelled, suppressed, expired] },
+          }
+      responses:
+        "200":
+          {
+            description: Notification delivery history,
+            content: { application/json: { schema: { $ref: "./schemas/notification-delivery-list.json" } } },
+          }
+  /suppression-windows:
+    get:
+      tags: [notifications]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          {
+            description: Suppression windows,
+            content: { application/json: { schema: { $ref: "./schemas/suppression-window-list.json" } } },
+          }
+    post:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/suppression-window-input.json" } } },
+        }
+      responses:
+        "201":
+          {
+            description: Suppression window created,
+            content: { application/json: { schema: { $ref: "./schemas/suppression-window.json" } } },
+          }
+  /suppression-windows/{windowId}:
+    parameters: [{ $ref: "#/components/parameters/SuppressionWindowId" }]
+    patch:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/suppression-window-patch.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Suppression window revised,
+            content: { application/json: { schema: { $ref: "./schemas/suppression-window.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [notifications]
+      x-requires-recent-mfa: true
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/revision.json" } } } }
+      responses:
+        "204": { description: Suppression window retired }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /monitoring/settings:
+    get:
+      tags: [monitoring]
+      responses:
+        "200":
+          {
+            description: Monitoring settings,
+            content: { application/json: { schema: { $ref: "./schemas/monitoring-settings.json" } } },
+          }
+    patch:
+      tags: [monitoring]
+      x-requires-recent-mfa: true
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/monitoring-settings-patch.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Monitoring settings revised,
+            content: { application/json: { schema: { $ref: "./schemas/monitoring-settings.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /monitoring/retention-preview:
+    post:
+      tags: [monitoring]
+      x-requires-recent-mfa: true
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/retention-preview-input.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Retention reduction preview,
+            content: { application/json: { schema: { $ref: "./schemas/retention-preview.json" } } },
+          }
+  /monitoring/notifications/resume:
+    post:
+      tags: [monitoring]
+      x-requires-recent-mfa: true
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        {
+          required: true,
+          content: { application/json: { schema: { $ref: "./schemas/monitoring-notifications-resume.json" } } },
+        }
+      responses:
+        "200":
+          {
+            description: Notifications resumed after reconciliation,
+            content: { application/json: { schema: { $ref: "./schemas/monitoring-settings.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /monitoring/status:
+    get:
+      tags: [monitoring]
+      responses:
+        "200":
+          {
+            description: Bounded monitoring health status,
+            content: { application/json: { schema: { $ref: "./schemas/monitoring-status.json" } } },
+          }
 components:
   securitySchemes:
     scoutSession:
@@ -240,9 +646,35 @@ components:
     Cursor: { name: cursor, in: query, schema: { type: string, maxLength: 512 } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
     DeviceId: { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
+    AlertRuleId: { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
+    OverrideId: { name: overrideId, in: path, required: true, schema: { type: string, format: uuid } }
+    IncidentId: { name: incidentId, in: path, required: true, schema: { type: string, format: uuid } }
+    DestinationId: { name: destinationId, in: path, required: true, schema: { type: string, format: uuid } }
+    SuppressionWindowId: { name: windowId, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey:
+      { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 } }
   responses:
-    BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
-    Unauthorized: { description: Missing or invalid identity, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
-    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
-    Conflict: { description: State or revision conflict, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
-    TooLarge: { description: Request exceeds bounded size, content: { application/json: { schema: { $ref: './schemas/error.json' } } } }
+    BadRequest:
+      { description: Invalid request, content: { application/json: { schema: { $ref: "./schemas/error.json" } } } }
+    Unauthorized:
+      {
+        description: Missing or invalid identity,
+        content: { application/json: { schema: { $ref: "./schemas/error.json" } } },
+      }
+    NotFound:
+      { description: Resource not found, content: { application/json: { schema: { $ref: "./schemas/error.json" } } } }
+    Conflict:
+      {
+        description: State or revision conflict,
+        content: { application/json: { schema: { $ref: "./schemas/error.json" } } },
+      }
+    Forbidden:
+      {
+        description: Authenticated owner lacks recent MFA or permission,
+        content: { application/json: { schema: { $ref: "./schemas/error.json" } } },
+      }
+    TooLarge:
+      {
+        description: Request exceeds bounded size,
+        content: { application/json: { schema: { $ref: "./schemas/error.json" } } },
+      }

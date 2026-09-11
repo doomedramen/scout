@@ -42,6 +42,23 @@ Decision: read Linux hwmon with per-field capabilities. [hwmon ABI](https://docs
 
 Decision: NVIDIA uses fixed [nvidia-smi](https://docs.nvidia.com/deploy/nvidia-smi/index.html) queries; AMD/Intel use exposed DRM/hwmon fields. [AMDGPU thermal/sysfs documentation](https://docs.kernel.org/gpu/amdgpu/thermal.html) explains available vendor data. [NVML device queries](https://docs.nvidia.com/deploy/nvml-api/api/group__nvmlDeviceQueries.html) illustrate that fields can be unsupported or permission-limited. Alternative deferred: mandatory NVML/cgo, ROCm, or privileged perf-based Intel polling. This narrower collection interface still targets all three vendor families with honest per-field support.
 
+## T002 dependency and compatibility targets
+
+The systemd adapter is pinned to `github.com/coreos/go-systemd/v22 v22.7.0`
+(source tag `v22.7.0`, commit `4dc4ee60b8394d431f19a3c599040ef758884a27`). The
+module and go.mod checksums are recorded in the repository `go.sum`; no cgo or
+runtime download is required. The client is used only for read-only D-Bus unit
+inventory and does not expand Scout's command or privilege surface.
+
+The fixture and controlled-lab targets are: smartmontools 7.4 JSON and exit
+bits for SATA/ATA, SAS/SCSI, and NVMe; OpenZFS 2.2.x fixed numeric/tabular
+queries on Linux; Linux hwmon/sysfs ABI on the Ubuntu 24.04/Debian 12 kernel
+families; NVIDIA 550.x `nvidia-smi`; AMD amdgpu sysfs; and Intel i915/xe DRM,
+hwmon, and energy-counter paths. These are compatibility targets, not live
+support claims. T034 and T038 must record exact utility, kernel, driver,
+architecture, permission, and timeout evidence before any family is advertised
+as validated. Missing hardware remains an explicit release limitation.
+
 ## Technical defaults and remaining evidence
 
 Timing, retry, retention and cardinality choices in plan.md are explicit engineering defaults, not owner-supplied measurements. Dependencies are pinned during T002 against the repository toolchain and recorded with compatibility evidence. Research uncertainty about actual hardware is resolved by a required support matrix and release gates, not an unspecified implementation choice. Missing lab access must remain visible in evidence.md.

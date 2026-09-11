@@ -5,23 +5,31 @@
   "properties": {
     "series": {
       "type": "array",
+      "maxItems": 16,
       "items": {
         "type": "object",
         "required": ["metric", "unit", "points"],
         "properties": {
+          "seriesId": { "type": "string", "format": "uuid" },
+          "entityId": { "type": ["string", "null"], "maxLength": 128 },
           "metric": { "type": "string" },
           "unit": { "type": "string" },
+          "resolutionSeconds": { "type": "integer", "minimum": 1 },
           "points": {
             "type": "array",
+            "maxItems": 600,
             "items": {
               "type": "object",
-              "required": ["observedAt", "availability"],
+              "required": ["observedAt", "availability", "count", "coverage", "partial"],
               "properties": {
                 "observedAt": { "type": "string", "format": "date-time" },
                 "value": { "type": ["number", "null"] },
                 "min": { "type": ["number", "null"] },
                 "max": { "type": ["number", "null"] },
-                "availability": { "enum": ["current", "stale", "missing", "unsupported", "unavailable"] }
+                "availability": { "enum": ["current", "stale", "missing", "unsupported", "unavailable"] },
+                "count": { "type": "integer", "minimum": 0 },
+                "coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+                "partial": { "type": "boolean" }
               },
               "additionalProperties": false
             }
