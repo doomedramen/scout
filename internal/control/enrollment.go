@@ -26,6 +26,7 @@ func (a *App) registerEnrollmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/devices/{deviceId}/update-policy", a.getDeviceUpdatePolicy)
 	mux.HandleFunc("PATCH /api/v1/devices/{deviceId}/update-policy", a.updateDeviceUpdatePolicy)
 	mux.HandleFunc("GET /api/v1/services", a.listServiceEntities)
+	mux.HandleFunc("GET /api/v1/collectors", a.listCollectorDescriptors)
 	mux.HandleFunc("GET /api/v1/devices/{deviceId}/collectors", a.listCollectorConfigs)
 	mux.HandleFunc("GET /api/v1/devices/{deviceId}/collectors/{collectorId}", a.getCollectorConfig)
 	mux.HandleFunc("PATCH /api/v1/devices/{deviceId}/collectors/{collectorId}", a.updateCollectorConfig)

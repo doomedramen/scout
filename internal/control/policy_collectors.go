@@ -5,8 +5,16 @@ import (
 	"strings"
 	"time"
 
+	"scout.local/scout/internal/collector"
 	"scout.local/scout/internal/store"
 )
+
+func (a *App) listCollectorDescriptors(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireOwner(w, r, false); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": collector.DefaultDescriptors(), "nextCursor": nil})
+}
 
 func (a *App) getDeviceUpdatePolicy(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireOwner(w, r, false); !ok {

@@ -398,6 +398,9 @@ func (s *Store) ReportJob(ctx context.Context, id, worker string, epoch int64, n
 		if item.LeaseOwner != worker || item.Epoch != epoch {
 			return ErrConflict
 		}
+		if item.LeaseExpiry == nil || !s.now().Before(*item.LeaseExpiry) {
+			return ErrConflict
+		}
 		if !validJobState(nextState) {
 			return ErrInvalid
 		}

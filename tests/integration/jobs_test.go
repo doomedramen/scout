@@ -75,4 +75,32 @@ func TestMemoryQueueStopsRetryingAfterBound(t *testing.T) {
 	}
 }
 
+func TestMemoryQueueRejectsReportsAfterLeaseExpiry(t *testing.T) {
+	ctx := context.Background()
+	repository := store.NewMemory()
+	site, err := repository.CreateSite(ctx, store.Site{Name: "lease-expiry"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := repository.CreateDevice(ctx, store.Device{DisplayName: "device-1", SiteID: site.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := repository.CreateJob(ctx, store.Job{Kind: "enrollment", DeviceID: device.ID, State: "queued"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := repository.ClaimJob(ctx, "worker-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != job.ID {
+		t.Fatalf("claimed unexpected job: got %s want %s", claimed.ID, job.ID)
+	}
+	repository.SetClock(func() time.Time { return claimed.LeaseExpiry.Add(time.Second) })
+	if err := repository.ReportJob(ctx, job.ID, "worker-1", claimed.Epoch, "failed", map[string]string{"code": "late"}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expired lease was accepted: %v", err)
+	}
+}
+
 func ptr(value time.Time) *time.Time { return &value }

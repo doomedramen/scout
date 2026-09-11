@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *Store) PutRelationship(ctx context.Context, relationship Relationship) error {
@@ -17,9 +18,44 @@ func (s *Store) PutRelationship(ctx context.Context, relationship Relationship) 
 		if relationship.ObservedAt.IsZero() {
 			relationship.ObservedAt = s.now().UTC()
 		}
+		if relationship.ExpiresAt.IsZero() {
+			relationship.ExpiresAt = relationship.ObservedAt.Add(15 * time.Minute)
+		}
 		state.Relationships[relationship.ID] = relationship
 		return nil
 	})
+}
+
+func (s *Store) UpsertRelationship(ctx context.Context, relationship Relationship) (Relationship, error) {
+	if relationship.FromEntity == "" || relationship.ToEntity == "" || relationship.Type == "" || relationship.Confidence < 0 || relationship.Confidence > 1 {
+		return Relationship{}, ErrInvalid
+	}
+	var result Relationship
+	err := s.mutate(ctx, func(state *State) error {
+		if relationship.ObservedAt.IsZero() {
+			relationship.ObservedAt = s.now().UTC()
+		}
+		if relationship.ExpiresAt.IsZero() {
+			relationship.ExpiresAt = relationship.ObservedAt.Add(15 * time.Minute)
+		}
+		for id, existing := range state.Relationships {
+			if existing.FromEntity == relationship.FromEntity && existing.ToEntity == relationship.ToEntity && existing.Type == relationship.Type && existing.Source == relationship.Source {
+				relationship.ID = id
+				if relationship.ProjectionRevision == 0 || relationship.ProjectionRevision < existing.ProjectionRevision {
+					relationship.ProjectionRevision = existing.ProjectionRevision
+				}
+				break
+			}
+		}
+		if relationship.ID == "" {
+			relationship.ID = NewID()
+		}
+		relationship.EvidenceIDs = append([]string(nil), relationship.EvidenceIDs...)
+		state.Relationships[relationship.ID] = relationship
+		result = relationship
+		return nil
+	})
+	return result, err
 }
 
 func (s *Store) ListRelationships(ctx context.Context, siteID string) ([]Relationship, error) {
@@ -42,6 +78,29 @@ func (s *Store) ListRelationships(ctx context.Context, siteID string) ([]Relatio
 		return nil
 	})
 	return result, err
+}
+
+func (s *Store) AllRelationships(ctx context.Context) ([]Relationship, error) {
+	result := []Relationship{}
+	err := s.read(ctx, func(state *State) error {
+		for _, item := range state.Relationships {
+			item.EvidenceIDs = append([]string(nil), item.EvidenceIDs...)
+			result = append(result, item)
+		}
+		sort.Slice(result, func(i, j int) bool { return result[i].ObservedAt.After(result[j].ObservedAt) })
+		return nil
+	})
+	return result, err
+}
+
+func (s *Store) RemoveRelationship(ctx context.Context, id string) error {
+	return s.mutate(ctx, func(state *State) error {
+		if _, ok := state.Relationships[id]; !ok {
+			return ErrNotFound
+		}
+		delete(state.Relationships, id)
+		return nil
+	})
 }
 
 func (s *Store) PutCollector(ctx context.Context, deviceID string, descriptor CollectorDescriptorState) error {
