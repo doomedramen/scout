@@ -72,7 +72,7 @@ func (a *App) agentInstaller(w http.ResponseWriter, r *http.Request) {
 		}
 		artifact = bytes.ReplaceAll(artifact, []byte(agentServerURLPlaceholder), []byte(origin))
 	}
-	serveBootstrapArtifact(w, r, artifact, "install-agent.sh", "text/plain; charset=utf-8", "X-Scout-Agent-Installer-SHA256")
+	serveBootstrapArtifact(w, r, artifact, "install-agent.sh", "text/plain; charset=utf-8", "X-Scout-Agent-Installer-SHA256", "no-store")
 }
 
 func (a *App) serveBootstrapFile(w http.ResponseWriter, r *http.Request, path, filename, contentType, checksumHeader string) {
@@ -80,7 +80,7 @@ func (a *App) serveBootstrapFile(w http.ResponseWriter, r *http.Request, path, f
 	if !ok {
 		return
 	}
-	serveBootstrapArtifact(w, r, artifact, filename, contentType, checksumHeader)
+	serveBootstrapArtifact(w, r, artifact, filename, contentType, checksumHeader, "public, max-age=300")
 }
 
 func readBootstrapFile(w http.ResponseWriter, r *http.Request, path string) ([]byte, bool) {
@@ -100,13 +100,13 @@ func readBootstrapFile(w http.ResponseWriter, r *http.Request, path string) ([]b
 	return artifact, true
 }
 
-func serveBootstrapArtifact(w http.ResponseWriter, r *http.Request, artifact []byte, filename, contentType, checksumHeader string) {
+func serveBootstrapArtifact(w http.ResponseWriter, r *http.Request, artifact []byte, filename, contentType, checksumHeader, cacheControl string) {
 	digest := sha256.Sum256(artifact)
 	digestHex := hex.EncodeToString(digest[:])
 	w.Header().Set(checksumHeader, digestHex)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	serveArtifactWithOptions(w, r, artifact, "sha256:"+digestHex, contentType, "public, max-age=300")
+	serveArtifactWithOptions(w, r, artifact, "sha256:"+digestHex, contentType, cacheControl)
 }
 
 func bootstrapRequestOrigin(r *http.Request) (string, bool) {

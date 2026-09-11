@@ -320,6 +320,9 @@ func TestAgentInstallerEmbedsRequestOrigin(t *testing.T) {
 	if bytes.Contains(body, []byte(agentServerURLPlaceholder)) || !bytes.Contains(body, []byte(server.URL)) {
 		t.Fatalf("installer did not embed request origin: %q", body)
 	}
+	if got, want := response.Header.Get("Cache-Control"), "no-store"; got != want {
+		t.Fatalf("installer cache control = %q, want %q", got, want)
+	}
 	digest := sha256.Sum256(body)
 	if got, want := response.Header.Get("X-Scout-Agent-Installer-SHA256"), hex.EncodeToString(digest[:]); got != want {
 		t.Fatalf("installer checksum = %q, want %q", got, want)
