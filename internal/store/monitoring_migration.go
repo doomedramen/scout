@@ -690,7 +690,13 @@ func importLegacySample(ctx context.Context, tx *sql.Tx, item MetricSample, inde
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO metric_samples(id, device_id, agent_id, collector_id, entity_id, metric, labels, value, availability, unit, observed_at, received_at, series_id, storage_generation)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-		ON CONFLICT (id, received_at) DO NOTHING`,
+		ON CONFLICT (id, received_at) DO UPDATE SET
+		  device_id = EXCLUDED.device_id, agent_id = EXCLUDED.agent_id,
+		  collector_id = EXCLUDED.collector_id, entity_id = EXCLUDED.entity_id,
+		  metric = EXCLUDED.metric, labels = EXCLUDED.labels, value = EXCLUDED.value,
+		  availability = EXCLUDED.availability, unit = EXCLUDED.unit,
+		  observed_at = EXCLUDED.observed_at, series_id = EXCLUDED.series_id,
+		  storage_generation = EXCLUDED.storage_generation`,
 		sampleID, item.DeviceID, item.AgentID, collectorID, entityID, item.Metric, labelsJSON, nullableMetricValue(item.Value), string(availability), unit, observedAt.UTC(), receivedAt.UTC(), seriesID, generation); err != nil {
 		return fmt.Errorf("import legacy sample %s: %w", sampleID, err)
 	}
@@ -768,7 +774,12 @@ func importLegacyObservation(ctx context.Context, tx *sql.Tx, item Observation, 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO observations(id, reporter_id, collector_id, subject_id, kind, payload, observed_at, received_at, expires_at, confidence, storage_generation)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (id) DO NOTHING`, id, reporterID, collectorID, subjectID, kind, payloadJSON, observedAt.UTC(), receivedAt.UTC(), expiresAt.UTC(), item.Confidence, generation)
+		ON CONFLICT (id) DO UPDATE SET reporter_id = EXCLUDED.reporter_id,
+		  collector_id = EXCLUDED.collector_id, subject_id = EXCLUDED.subject_id,
+		  kind = EXCLUDED.kind, payload = EXCLUDED.payload,
+		  observed_at = EXCLUDED.observed_at, received_at = EXCLUDED.received_at,
+		  expires_at = EXCLUDED.expires_at, confidence = EXCLUDED.confidence,
+		  storage_generation = EXCLUDED.storage_generation`, id, reporterID, collectorID, subjectID, kind, payloadJSON, observedAt.UTC(), receivedAt.UTC(), expiresAt.UTC(), item.Confidence, generation)
 	if err != nil {
 		return fmt.Errorf("import legacy observation %s: %w", id, err)
 	}

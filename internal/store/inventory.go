@@ -258,6 +258,19 @@ func (s *Store) GetDevice(ctx context.Context, id string) (Device, error) {
 		result = copyDevice(item)
 		return nil
 	})
+	if err == nil && s.db != nil {
+		phase, phaseErr := s.monitoringPhase(ctx)
+		if phaseErr != nil {
+			return Device{}, phaseErr
+		}
+		if phase == MonitoringStorageAuthoritative {
+			items := []Device{result}
+			if phaseErr := s.populateCurrentMetricsSQL(ctx, items); phaseErr != nil {
+				return Device{}, phaseErr
+			}
+			result = items[0]
+		}
+	}
 	return result, err
 }
 
@@ -292,6 +305,17 @@ func (s *Store) ListDevices(ctx context.Context, filter DeviceFilter) ([]Device,
 		sortDevices(result)
 		return nil
 	})
+	if err == nil && s.db != nil {
+		phase, phaseErr := s.monitoringPhase(ctx)
+		if phaseErr != nil {
+			return nil, phaseErr
+		}
+		if phase == MonitoringStorageAuthoritative {
+			if phaseErr := s.populateCurrentMetricsSQL(ctx, result); phaseErr != nil {
+				return nil, phaseErr
+			}
+		}
+	}
 	return result, err
 }
 

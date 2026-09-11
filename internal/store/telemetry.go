@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 )
@@ -21,6 +22,22 @@ type TelemetryStatus struct {
 }
 
 func (s *Store) IngestBatch(ctx context.Context, agentID, bootID, batchID, payloadHash string, samples []MetricSample, observations []Observation, dropped int) (BatchResult, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return BatchResult{}, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.ingestBatchSQL(ctx, agentID, bootID, batchID, payloadHash, samples, observations, dropped)
+		}
+		if phase == MonitoringStorageImporting {
+			return BatchResult{}, fmt.Errorf("telemetry ingestion is paused during migration: %w", ErrConflict)
+		}
+	}
+	return s.ingestBatchMemory(ctx, agentID, bootID, batchID, payloadHash, samples, observations, dropped)
+}
+
+func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID, payloadHash string, samples []MetricSample, observations []Observation, dropped int) (BatchResult, error) {
 	var result BatchResult
 	err := s.mutate(ctx, func(state *State) error {
 		if state.Workspace.TelemetryBackpressure {
@@ -164,12 +181,26 @@ type MetricPoint struct {
 }
 
 type MetricSeries struct {
-	Metric string        `json:"metric"`
-	Unit   string        `json:"unit"`
-	Points []MetricPoint `json:"points"`
+	SeriesID string        `json:"seriesId,omitempty"`
+	EntityID string        `json:"entityId,omitempty"`
+	Metric   string        `json:"metric"`
+	Unit     string        `json:"unit"`
+	Points   []MetricPoint `json:"points"`
 }
 
 func (s *Store) QueryMetrics(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.queryMetricsSQL(ctx, query)
+		}
+		if phase == MonitoringStorageImporting {
+			return nil, fmt.Errorf("metric history is paused during migration: %w", ErrConflict)
+		}
+	}
 	if query.MaxPoints <= 0 {
 		query.MaxPoints = 600
 	}
@@ -255,6 +286,18 @@ func (s *Store) QueryMetrics(ctx context.Context, query MetricQuery) ([]MetricSe
 }
 
 func (s *Store) PruneSamples(ctx context.Context, before time.Time) (int, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.pruneSamplesSQL(ctx, before)
+		}
+		if phase == MonitoringStorageImporting {
+			return 0, fmt.Errorf("sample pruning is paused during migration: %w", ErrConflict)
+		}
+	}
 	removed := 0
 	err := s.mutate(ctx, func(state *State) error {
 		kept := state.Samples[:0]
@@ -275,6 +318,18 @@ func (s *Store) EnforceSampleLimit(ctx context.Context, maxSamples int) (int, er
 	if maxSamples < 1 {
 		return 0, ErrInvalid
 	}
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.enforceSampleLimitSQL(ctx, maxSamples)
+		}
+		if phase == MonitoringStorageImporting {
+			return 0, fmt.Errorf("sample limiting is paused during migration: %w", ErrConflict)
+		}
+	}
 	removed := 0
 	err := s.mutate(ctx, func(state *State) error {
 		if len(state.Samples) <= maxSamples {
@@ -290,6 +345,18 @@ func (s *Store) EnforceSampleLimit(ctx context.Context, maxSamples int) (int, er
 }
 
 func (s *Store) CleanupTelemetry(ctx context.Context, now time.Time) (int, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.cleanupTelemetrySQL(ctx, now)
+		}
+		if phase == MonitoringStorageImporting {
+			return 0, fmt.Errorf("telemetry cleanup is paused during migration: %w", ErrConflict)
+		}
+	}
 	removed := 0
 	err := s.mutate(ctx, func(state *State) error {
 		keptSamples := state.Samples[:0]
@@ -319,6 +386,18 @@ func (s *Store) CleanupTelemetry(ctx context.Context, now time.Time) (int, error
 }
 
 func (s *Store) SetTelemetryBackpressure(ctx context.Context, enabled bool) error {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.setTelemetryBackpressureSQL(ctx, enabled)
+		}
+		if phase == MonitoringStorageImporting {
+			return fmt.Errorf("telemetry backpressure is paused during migration: %w", ErrConflict)
+		}
+	}
 	return s.mutate(ctx, func(state *State) error {
 		state.Workspace.TelemetryBackpressure = enabled
 		return nil
@@ -326,6 +405,18 @@ func (s *Store) SetTelemetryBackpressure(ctx context.Context, enabled bool) erro
 }
 
 func (s *Store) TelemetryStatus(ctx context.Context) (TelemetryStatus, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return TelemetryStatus{}, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.telemetryStatusSQL(ctx)
+		}
+		if phase == MonitoringStorageImporting {
+			return TelemetryStatus{}, fmt.Errorf("telemetry status is paused during migration: %w", ErrConflict)
+		}
+	}
 	var result TelemetryStatus
 	err := s.read(ctx, func(state *State) error {
 		result = TelemetryStatus{Samples: len(state.Samples), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}
@@ -343,6 +434,18 @@ func cloneTime(value *time.Time) *time.Time {
 }
 
 func (s *Store) StoreObservation(ctx context.Context, observation Observation) error {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.storeObservationSQL(ctx, observation)
+		}
+		if phase == MonitoringStorageImporting {
+			return fmt.Errorf("observation storage is paused during migration: %w", ErrConflict)
+		}
+	}
 	return s.mutate(ctx, func(state *State) error {
 		if observation.ID == "" {
 			observation.ID = NewID()
@@ -355,6 +458,18 @@ func (s *Store) StoreObservation(ctx context.Context, observation Observation) e
 	})
 }
 func (s *Store) ListObservations(ctx context.Context) ([]Observation, error) {
+	if s.db != nil {
+		phase, err := s.monitoringPhase(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if phase == MonitoringStorageAuthoritative {
+			return s.listObservationsSQL(ctx)
+		}
+		if phase == MonitoringStorageImporting {
+			return nil, fmt.Errorf("observation history is paused during migration: %w", ErrConflict)
+		}
+	}
 	result := []Observation{}
 	err := s.read(ctx, func(state *State) error {
 		for _, item := range state.Observations {

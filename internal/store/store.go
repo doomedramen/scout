@@ -199,7 +199,15 @@ func (s *Store) persistLocked(ctx context.Context) error {
 		return nil
 	}
 	s.ensureMaps()
-	raw, err := json.Marshal(s.state)
+	persistedState := s.state
+	stripTelemetry, err := s.stripMigratedTelemetryOnLegacyWrite(ctx)
+	if err != nil {
+		return fmt.Errorf("check telemetry storage authority: %w", err)
+	}
+	if stripTelemetry {
+		stripMigratedTelemetry(&persistedState)
+	}
+	raw, err := json.Marshal(persistedState)
 	if err != nil {
 		return fmt.Errorf("encode workspace state: %w", err)
 	}
