@@ -262,6 +262,12 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 		if item.Unit == "" {
 			item.Unit = "unknown"
 		}
+		if item.IntervalSeconds == 0 {
+			item.IntervalSeconds = defaultMetricIntervalSeconds
+		}
+		if item.IntervalSeconds < 1 || item.IntervalSeconds > maxMetricIntervalSeconds {
+			return BatchResult{}, fmt.Errorf("telemetry sample %d has invalid interval: %w", index, ErrInvalid)
+		}
 		if item.Availability == "" {
 			item.Availability = FreshnessUnavailable
 		}
@@ -295,9 +301,9 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 			return BatchResult{}, fmt.Errorf("telemetry sample ordinal %d was already accepted: %w", index, ErrConflict)
 		}
 		result, err := tx.ExecContext(ctx, `
-			INSERT INTO metric_samples(id, device_id, agent_id, collector_id, entity_id, metric, labels, value, availability, unit, observed_at, received_at, series_id, boot_id, batch_id, batch_ordinal, storage_generation)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-			ON CONFLICT (id, received_at) DO NOTHING`, item.ID, item.DeviceID, item.AgentID, item.CollectorID, item.EntityID, item.Metric, labelsJSON, nullableMetricValue(item.Value), string(item.Availability), item.Unit, item.ObservedAt.UTC(), item.ReceivedAt.UTC(), seriesID, bootID, batchID, index, storage.StorageGeneration)
+			INSERT INTO metric_samples(id, device_id, agent_id, collector_id, entity_id, metric, labels, value, availability, unit, observed_at, received_at, series_id, boot_id, batch_id, batch_ordinal, interval_seconds, storage_generation)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			ON CONFLICT (id, received_at) DO NOTHING`, item.ID, item.DeviceID, item.AgentID, item.CollectorID, item.EntityID, item.Metric, labelsJSON, nullableMetricValue(item.Value), string(item.Availability), item.Unit, item.ObservedAt.UTC(), item.ReceivedAt.UTC(), seriesID, bootID, batchID, index, item.IntervalSeconds, storage.StorageGeneration)
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("store telemetry sample %d: %w", index, err)
 		}
@@ -519,13 +525,21 @@ func upsertAgentSQL(ctx context.Context, tx *sql.Tx, item AgentIdentity) error {
 }
 
 func upsertMetricSeriesSQL(ctx context.Context, tx *sql.Tx, seriesID string, item MetricSample, labelsJSON []byte, generation int64) error {
+	intervalSeconds := item.IntervalSeconds
+	if intervalSeconds == 0 {
+		intervalSeconds = defaultMetricIntervalSeconds
+	}
+	if intervalSeconds < 1 || intervalSeconds > maxMetricIntervalSeconds {
+		return fmt.Errorf("metric series %s has invalid interval: %w", seriesID, ErrInvalid)
+	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO metric_series(id, device_id, collector_id, entity_id, metric, unit, labels, first_seen, last_seen, storage_generation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)
+		INSERT INTO metric_series(id, device_id, collector_id, entity_id, metric, unit, labels, interval_seconds, first_seen, last_seen, storage_generation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
 		ON CONFLICT (device_id, collector_id, entity_id, metric, unit, labels) DO UPDATE SET
 		  first_seen = LEAST(metric_series.first_seen, EXCLUDED.first_seen),
 		  last_seen = GREATEST(metric_series.last_seen, EXCLUDED.last_seen),
-		  storage_generation = GREATEST(metric_series.storage_generation, EXCLUDED.storage_generation)`, seriesID, item.DeviceID, item.CollectorID, item.EntityID, item.Metric, item.Unit, labelsJSON, item.ObservedAt.UTC(), generation)
+		  interval_seconds = EXCLUDED.interval_seconds,
+		  storage_generation = GREATEST(metric_series.storage_generation, EXCLUDED.storage_generation)`, seriesID, item.DeviceID, item.CollectorID, item.EntityID, item.Metric, item.Unit, labelsJSON, intervalSeconds, item.ObservedAt.UTC(), generation)
 	if err != nil {
 		return fmt.Errorf("upsert metric series %s: %w", seriesID, err)
 	}
@@ -556,7 +570,7 @@ func markRollupWorkSQL(ctx context.Context, tx *sql.Tx, seriesID string, observe
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (series_id, resolution_seconds, bucket_start) DO UPDATE SET
 			  dirty_generation = rollup_work.dirty_generation + 1,
-			  lease_until = NULL, last_error = NULL`, seriesID, resolution, bucketStart, generation); err != nil {
+			  lease_owner = '', lease_until = NULL, last_error = NULL`, seriesID, resolution, bucketStart, generation); err != nil {
 			return fmt.Errorf("mark %d-second rollup work for %s: %w", resolution, seriesID, err)
 		}
 	}

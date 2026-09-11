@@ -671,6 +671,13 @@ func importLegacySample(ctx context.Context, tx *sql.Tx, item MetricSample, inde
 	if receivedAt.IsZero() {
 		receivedAt = snapshotAt
 	}
+	intervalSeconds := item.IntervalSeconds
+	if intervalSeconds == 0 {
+		intervalSeconds = defaultMetricIntervalSeconds
+	}
+	if intervalSeconds < 1 || intervalSeconds > maxMetricIntervalSeconds {
+		return fmt.Errorf("legacy sample %d has invalid interval: %w", index, ErrInvalid)
+	}
 	labels := item.Labels
 	if labels == nil {
 		labels = map[string]string{}
@@ -688,8 +695,8 @@ func importLegacySample(ctx context.Context, tx *sql.Tx, item MetricSample, inde
 		sampleID = deterministicLegacySampleID(item, index)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO metric_samples(id, device_id, agent_id, collector_id, entity_id, metric, labels, value, availability, unit, observed_at, received_at, series_id, storage_generation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO metric_samples(id, device_id, agent_id, collector_id, entity_id, metric, labels, value, availability, unit, observed_at, received_at, series_id, interval_seconds, storage_generation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (id, received_at) DO UPDATE SET
 		  device_id = EXCLUDED.device_id, agent_id = EXCLUDED.agent_id,
 		  collector_id = EXCLUDED.collector_id, entity_id = EXCLUDED.entity_id,
@@ -697,7 +704,7 @@ func importLegacySample(ctx context.Context, tx *sql.Tx, item MetricSample, inde
 		  availability = EXCLUDED.availability, unit = EXCLUDED.unit,
 		  observed_at = EXCLUDED.observed_at, series_id = EXCLUDED.series_id,
 		  storage_generation = EXCLUDED.storage_generation`,
-		sampleID, item.DeviceID, item.AgentID, collectorID, entityID, item.Metric, labelsJSON, nullableMetricValue(item.Value), string(availability), unit, observedAt.UTC(), receivedAt.UTC(), seriesID, generation); err != nil {
+		sampleID, item.DeviceID, item.AgentID, collectorID, entityID, item.Metric, labelsJSON, nullableMetricValue(item.Value), string(availability), unit, observedAt.UTC(), receivedAt.UTC(), seriesID, intervalSeconds, generation); err != nil {
 		return fmt.Errorf("import legacy sample %s: %w", sampleID, err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -717,13 +724,14 @@ func importLegacySample(ctx context.Context, tx *sql.Tx, item MetricSample, inde
 
 func importLegacySeries(ctx context.Context, tx *sql.Tx, seriesID, deviceID, collectorID, entityID, metric, unit string, labelsJSON []byte, observedAt time.Time, generation int64) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO metric_series(id, device_id, collector_id, entity_id, metric, unit, labels, first_seen, last_seen, storage_generation)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9)
+		INSERT INTO metric_series(id, device_id, collector_id, entity_id, metric, unit, labels, interval_seconds, first_seen, last_seen, storage_generation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)
 		ON CONFLICT (device_id, collector_id, entity_id, metric, unit, labels) DO UPDATE SET
 		  first_seen = LEAST(metric_series.first_seen, EXCLUDED.first_seen),
 		  last_seen = GREATEST(metric_series.last_seen, EXCLUDED.last_seen),
+		  interval_seconds = EXCLUDED.interval_seconds,
 		  storage_generation = GREATEST(metric_series.storage_generation, EXCLUDED.storage_generation)`,
-		seriesID, deviceID, collectorID, entityID, metric, unit, labelsJSON, observedAt.UTC(), generation)
+		seriesID, deviceID, collectorID, entityID, metric, unit, labelsJSON, defaultMetricIntervalSeconds, observedAt.UTC(), generation)
 	if err != nil {
 		return fmt.Errorf("import metric series %s: %w", seriesID, err)
 	}

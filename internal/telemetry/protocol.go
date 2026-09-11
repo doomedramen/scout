@@ -26,13 +26,14 @@ type CollectorRef struct {
 	SchemaVersion int    `json:"schemaVersion"`
 }
 type Sample struct {
-	EntityID     string            `json:"entityId"`
-	Metric       string            `json:"metric"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Value        *float64          `json:"value"`
-	Availability string            `json:"availability"`
-	Unit         string            `json:"unit"`
-	ObservedAt   time.Time         `json:"observedAt"`
+	EntityID        string            `json:"entityId"`
+	Metric          string            `json:"metric"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Value           *float64          `json:"value"`
+	Availability    string            `json:"availability"`
+	Unit            string            `json:"unit"`
+	IntervalSeconds int               `json:"intervalSeconds,omitempty"`
+	ObservedAt      time.Time         `json:"observedAt"`
 }
 type RelationshipObservation struct {
 	Kind       string         `json:"kind"`
@@ -60,7 +61,7 @@ func FromCollector(snapshot collector.HostSnapshot, bootID, batchID string) Batc
 	}
 	batch := Batch{ProtocolVersion: ProtocolVersion, BootID: bootID, BatchID: batchID, ObservedAt: snapshot.ObservedAt, Collector: CollectorRef{ID: "host", SchemaVersion: schemaVersion}, Samples: []Sample{}, Observations: []RelationshipObservation{}}
 	for _, metric := range snapshot.Metrics {
-		batch.Samples = append(batch.Samples, Sample{EntityID: metric.EntityID, Metric: metric.Metric, Value: metric.Value, Availability: metric.Availability, Unit: metric.Unit, ObservedAt: metric.ObservedAt, Labels: metric.Labels})
+		batch.Samples = append(batch.Samples, Sample{EntityID: metric.EntityID, Metric: metric.Metric, Value: metric.Value, Availability: metric.Availability, Unit: metric.Unit, IntervalSeconds: snapshot.IntervalSeconds, ObservedAt: metric.ObservedAt, Labels: metric.Labels})
 	}
 	for _, iface := range snapshot.Interfaces {
 		batch.Observations = append(batch.Observations, RelationshipObservation{Kind: "interface_membership", SubjectID: iface.Name, Payload: map[string]any{"addresses": iface.Addresses}, ObservedAt: snapshot.ObservedAt, ExpiresAt: snapshot.ObservedAt.Add(15 * time.Minute), Confidence: 1})
@@ -95,6 +96,9 @@ func ValidateBatch(batch Batch, now time.Time) error {
 			return store.ErrInvalid
 		}
 		if sample.Value != nil && strings.HasSuffix(sample.Metric, "percent") && (*sample.Value < 0 || *sample.Value > 100) {
+			return store.ErrInvalid
+		}
+		if sample.IntervalSeconds < 0 || sample.IntervalSeconds > 24*60*60 {
 			return store.ErrInvalid
 		}
 		switch sample.Availability {
@@ -136,7 +140,7 @@ func CanonicalHash(batch Batch) (string, []byte, error) {
 func ToStore(batch Batch, agentID string, receivedAt time.Time) ([]store.MetricSample, []store.Observation) {
 	samples := make([]store.MetricSample, 0, len(batch.Samples))
 	for _, sample := range batch.Samples {
-		samples = append(samples, store.MetricSample{AgentID: agentID, CollectorID: batch.Collector.ID, EntityID: sample.EntityID, Metric: sample.Metric, Labels: sample.Labels, Value: sample.Value, Availability: store.Freshness(sample.Availability), Unit: sample.Unit, ObservedAt: sample.ObservedAt, ReceivedAt: receivedAt})
+		samples = append(samples, store.MetricSample{AgentID: agentID, CollectorID: batch.Collector.ID, EntityID: sample.EntityID, Metric: sample.Metric, Labels: sample.Labels, Value: sample.Value, Availability: store.Freshness(sample.Availability), Unit: sample.Unit, IntervalSeconds: sample.IntervalSeconds, ObservedAt: sample.ObservedAt, ReceivedAt: receivedAt})
 	}
 	observations := make([]store.Observation, 0, len(batch.Observations))
 	for _, item := range batch.Observations {

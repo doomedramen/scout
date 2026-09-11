@@ -25,14 +25,15 @@ type Metric struct {
 }
 
 type HostSnapshot struct {
-	ObservedAt    time.Time
-	SchemaVersion int
-	Hostname      string
-	OS            string
-	Architecture  string
-	CPUs          int
-	Interfaces    []Interface
-	Metrics       []Metric
+	ObservedAt      time.Time
+	SchemaVersion   int
+	IntervalSeconds int
+	Hostname        string
+	OS              string
+	Architecture    string
+	CPUs            int
+	Interfaces      []Interface
+	Metrics         []Metric
 }
 
 type counter struct {

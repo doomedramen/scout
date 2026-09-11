@@ -130,6 +130,10 @@ func (r *Runtime) ReportOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	snapshot.IntervalSeconds = int(r.Config.Interval / time.Second)
+	if snapshot.IntervalSeconds < 1 {
+		snapshot.IntervalSeconds = 1
+	}
 	batch := telemetry.FromCollector(snapshot, r.bootID, store.NewID())
 	batch.DroppedCount = r.spool.Dropped()
 	data, err := json.Marshal(batch)

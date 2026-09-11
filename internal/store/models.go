@@ -95,18 +95,19 @@ type IdentifierEvidence struct {
 }
 
 type MetricSample struct {
-	ID           string            `json:"id"`
-	DeviceID     string            `json:"deviceId"`
-	AgentID      string            `json:"agentId"`
-	CollectorID  string            `json:"collectorId"`
-	EntityID     string            `json:"entityId"`
-	Metric       string            `json:"metric"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	Value        *float64          `json:"value"`
-	Availability Freshness         `json:"availability"`
-	Unit         string            `json:"unit"`
-	ObservedAt   time.Time         `json:"observedAt"`
-	ReceivedAt   time.Time         `json:"receivedAt"`
+	ID              string            `json:"id"`
+	DeviceID        string            `json:"deviceId"`
+	AgentID         string            `json:"agentId"`
+	CollectorID     string            `json:"collectorId"`
+	EntityID        string            `json:"entityId"`
+	Metric          string            `json:"metric"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Value           *float64          `json:"value"`
+	Availability    Freshness         `json:"availability"`
+	Unit            string            `json:"unit"`
+	IntervalSeconds int               `json:"intervalSeconds,omitempty"`
+	ObservedAt      time.Time         `json:"observedAt"`
+	ReceivedAt      time.Time         `json:"receivedAt"`
 }
 
 type Observation struct {

@@ -51,6 +51,7 @@ func migrations() []migration {
 		{version: 6, sql: notificationDestinationsMigrationSQL},
 		{version: 7, sql: notificationDeliveriesMigrationSQL},
 		{version: 8, sql: suppressionMigrationSQL},
+		{version: 9, sql: telemetryIntervalMigrationSQL},
 	}
 }
 
@@ -442,4 +443,10 @@ CREATE TABLE IF NOT EXISTS suppression_episodes (
   PRIMARY KEY (destination_id, entity_id, epoch)
 );
 CREATE INDEX IF NOT EXISTS suppression_episodes_open_idx ON suppression_episodes(destination_id, entity_id, ended_at);
+`
+
+const telemetryIntervalMigrationSQL = `
+ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS interval_seconds integer NOT NULL DEFAULT 0 CHECK (interval_seconds >= 0 AND interval_seconds <= 86400);
+ALTER TABLE rollup_work ADD COLUMN IF NOT EXISTS lease_owner text NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS metric_samples_series_observed_idx ON metric_samples(series_id, observed_at, received_at, id);
 `
