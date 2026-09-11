@@ -439,3 +439,35 @@ For future results append: task and requirement IDs, commit, date, exact command
 - Remaining limits: T016 adds restore/revocation races and recovery
   no-replay policy; T017 adds the notification settings UI and dedicated
   browser coverage.
+
+## T016 — recovery pause, fresh evaluation, and notification resume
+
+- Requirements: FR-009, FR-010, FR-013, FR-024; SC-003, SC-008.
+- Date: 2026-09-11 (Europe/London); implementation commit: `614d832`.
+- Restore and recovery now set an explicit notification pause fence, revoke
+  sessions where required, cancel queued/retry outbox rows, invalidate expired
+  delivery leases, reset evaluator timing/evidence while preserving active
+  incident identity, and release alert-work leases for fresh evaluation.
+  PostgreSQL uses workspace row locking and the same transaction for the
+  recovery state, evaluation/work reset, and outbox cancellation. The
+  notification worker checks the fence immediately before network I/O, so an
+  already in-flight request may finish but no new request starts after the
+  pause is acknowledged. The MFA-protected resume route (development mode
+  keeps the existing no-MFA test path) requires the current workspace
+  revision, rebuilds bounded summaries from active incidents only, cancels
+  anything queued during reconciliation, and atomically queues only those
+  fresh summaries.
+- Exact verification commands and outcomes: `go test ./... -count=1`,
+  `go test ./... -race -count=1`, `scripts/test-integration.sh` against
+  disposable PostgreSQL 17, `go vet ./...`, `npm run lint`, and
+  `npm run format:check` all passed. Positive tests cover the development
+  resume endpoint, active-only bounded summaries, recovery evaluation reset,
+  fresh alert-work scheduling, in-flight completion, and fresh-summary
+  delivery. Negative tests cover stale resume revisions, queued work during
+  recovery, paused worker claims, expired leases, disabled destinations, and
+  resolved incidents omitted from summaries. No production database,
+  notification endpoint, credential, real device, or deployment was used.
+- Remaining limits: T017 adds the notification settings UI and dedicated
+  Playwright coverage for overlapping windows, overnight/DST release,
+  resolved suppression, and disabled destinations. Full backup parity across
+  every 002 table remains T039.
