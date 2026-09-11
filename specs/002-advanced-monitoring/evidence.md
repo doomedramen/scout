@@ -471,3 +471,35 @@ For future results append: task and requirement IDs, commit, date, exact command
   Playwright coverage for overlapping windows, overnight/DST release,
   resolved suppression, and disabled destinations. Full backup parity across
   every 002 table remains T039.
+
+## T017 — notification settings UI and browser coverage
+
+- Requirements: FR-008, FR-010, FR-011, FR-012, FR-019; SC-003, SC-004,
+  SC-010.
+- Date: 2026-09-11 (Europe/London); implementation commit: `c86ea60`.
+- Added an authenticated Notifications workspace with redacted ntfy
+  destination metadata, write-only token entry, explicit enable/pause state,
+  private-HTTP opt-in, saved-revision test/pause/remove actions, delivery
+  status history, and recovery notification-fence/resume state. Added
+  recurring fleet/site/device quiet windows, one-time maintenance windows,
+  weekday selection, IANA timezone and overnight guidance, overlapping-window
+  union guidance, and keyboard-native responsive controls. The existing
+  Systems and device views also now tolerate discovered candidates whose
+  address evidence is not available yet.
+- Exact verification commands and outcomes: `go test
+  ./internal/control -count=1`; `go test ./... -race -count=1`; `scripts/test-integration.sh`
+  against disposable PostgreSQL 17; `go vet ./...`; `npm run check`; `npm run
+  lint`; `npm run format:check`; `npm run build`; `npm test`; `npm run
+  test:e2e:browser`; and `git diff --check` all passed. Browser coverage lives
+  at `tests/e2e/playwright/notifications.spec.ts` under the configured
+  Playwright test directory and uses one worker against a fresh local server.
+  It publishes through the real authenticated ntfy client to a disposable
+  localhost receiver, verifies Bearer delivery and secret redaction, proves a
+  paused destination makes no request and the direct test boundary returns
+  409, configures overlapping/overnight/DST/one-time windows, and verifies the
+  suppressed delivery filter has no stale records. T015’s deterministic
+  fixtures separately verify resolved incidents never produce a suppression
+  release summary.
+- No real ntfy endpoint, notification credential, production database, real
+  device, or production deployment was used. The browser test proves ntfy
+  server acceptance only; it does not claim subscriber receipt.

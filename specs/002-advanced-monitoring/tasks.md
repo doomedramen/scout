@@ -30,7 +30,7 @@ Independent gate: Publish to a controlled receiver, suppress all severities and 
 - [X] T014 [US2] Implement transactional delivery intents, epoch leases, retries, expiry, queue caps and acceptance status in internal/alerts/delivery.go and internal/store/notification_deliveries.go (FR-010, FR-013, FR-033; SC-003, SC-011).
 - [X] T015 [US2] Implement recurring/one-time window CRUD, union matching, DST semantics, host-offline suppression and release summaries in internal/alerts/suppression.go and internal/control/suppression.go (FR-006, FR-011, FR-012; SC-004).
 - [X] T016 [US2] Integrate restore pause, outbox cancellation, fresh re-evaluation and MFA resume in internal/control/recovery.go and internal/alerts/recovery.go; test revocation races in tests/integration/notifications_test.go (FR-009, FR-010, FR-013, FR-024; SC-003, SC-008).
-- [ ] T017 [US2] Add ntfy destination/test/status and quiet-hour settings in apps/web/src/views/notifications.tsx; cover overlapping windows, overnight and DST release, resolved suppression, and disabled destinations in tests/e2e/notifications.spec.ts (FR-008, FR-010, FR-011, FR-012, FR-019; SC-003, SC-004, SC-010).
+- [X] T017 [US2] Add ntfy destination/test/status and quiet-hour settings in apps/web/src/views/notifications.tsx; cover overlapping windows, overnight and DST release, resolved suppression, and disabled destinations in tests/e2e/notifications.spec.ts (FR-008, FR-010, FR-011, FR-012, FR-019; SC-003, SC-004, SC-010).
 ## systemd health (P1)
 
 Independent gate: Inspect failed and selected must-run units on a controlled host.
