@@ -162,3 +162,23 @@ For future results append: task and requirement IDs, commit, date, exact command
   notifications, collectors, rollups, and UI behavior. The 100-host capacity
   and live storage-sizing target remains T040; no production deployment or
   full acceptance claim is made here.
+
+## T006 — deterministic incident evaluator fixtures
+
+- Requirements: FR-001, FR-002, FR-003, FR-004, FR-005, FR-007; SC-001, SC-002.
+- Date: 2026-09-11 (Europe/London); commit: `9da782c`.
+- Added a clock-injected evaluator core and fixtures for strict numeric trigger
+  and clear comparisons, five-minute/two-minute hysteresis, state rules with
+  minimum consecutive fresh samples, idempotent acknowledgment that does not
+  establish recovery, evidence gaps that reset timing without fabricating
+  recovery, duplicate and out-of-order observation rejection, and rule
+  revision closure with a `rule_changed` reason. The evaluator emits bounded
+  transition records and preserves active incidents while evidence is unknown.
+- Exact verification commands and outcomes: `go test ./internal/alerts
+  -race -count=1`; `go test ./... -count=1`; `go vet ./...`; `npm run
+  format:check`; and `git diff --check` all passed. No external receiver,
+  production credential, or real device was used.
+- Remaining limits: this is the deterministic evaluator foundation. T007–T011
+  still add persisted rule lineage/override resolution, durable evaluation and
+  incident transitions, control/API/UI surfaces, restart integration, and the
+  live US1 acceptance journey.
