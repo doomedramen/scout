@@ -633,6 +633,13 @@ tbody tr:last-child td {
   margin: 0;
   text-align: right;
 }
+.device-identity {
+  margin-bottom: 20px;
+}
+.device-identity dd {
+  max-width: min(70%, 520px);
+  overflow-wrap: anywhere;
+}
 .setup-panel {
   background: #232832;
   border: 1px solid #414b5d;

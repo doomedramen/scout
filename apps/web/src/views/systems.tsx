@@ -43,6 +43,16 @@ function formatRate(value: number | null): string {
   return (value / (1024 * 1024)).toFixed(1) + " MiB/s";
 }
 
+function shortDeviceID(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id;
+}
+
+function deviceIdentity(device: Device): string {
+  const macs = (device.identifiers ?? []).filter((item) => item.kind.toLowerCase() === "mac").map((item) => item.value);
+  const address = device.addresses?.[0] ?? device.hostname ?? "IP unavailable";
+  return `${address} · ID ${shortDeviceID(device.id)}${macs.length ? ` · MAC ${macs.join(", ")}` : ""}`;
+}
+
 function stateLabel(device: Device): string {
   if (device.lifecycle === "decommissioned" || device.availability === "revoked") return "Revoked";
   if (!device.agentVersion) return "Needs access";
@@ -323,7 +333,7 @@ function SystemRow({ device, onSelect }: { device: Device; onSelect: (device: De
           <i className={"dot " + stateClass} aria-hidden="true" />
           <span>
             <strong>{device.displayName}</strong>
-            <small>{(device.addresses ?? [])[0] ?? device.hostname ?? "Address unavailable"}</small>
+            <small title={device.id}>{deviceIdentity(device)}</small>
           </span>
         </button>
       </td>

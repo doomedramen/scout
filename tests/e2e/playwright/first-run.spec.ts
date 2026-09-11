@@ -44,6 +44,23 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await expect(nativeRecipe).toContainText("bash -c");
   await expect(nativeRecipe).not.toContainText("sudo /");
 
+  for (let restart = 0; restart < 3; restart += 1) {
+    await page.getByRole("button", { name: "Close agent setup" }).click();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
+    await page.getByRole("button", { name: "Agent setup" }).first().click();
+    await expect(page.getByRole("heading", { name: "Install the first Linux agent" })).toBeVisible();
+    const pendingDevice = page.getByLabel("Existing pending device");
+    await expect(pendingDevice).toBeVisible();
+    await expect(pendingDevice).not.toHaveValue("");
+    await page.getByRole("button", { name: "Create invitation for existing device" }).click();
+    await expect(page.getByText("Invitation created. It is single-use and expires in five minutes.")).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Close agent setup" }).click();
+  await page.reload();
+  await expect(page.getByText("1 systems", { exact: true })).toBeVisible();
+
   await page.getByRole("button", { name: "Incidents", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Incidents and alert rules" })).toBeVisible();
   await expect(page.getByText("No incidents match these filters.")).toBeVisible();

@@ -80,8 +80,10 @@ export type Device = {
   platform: string;
   architecture: string;
   hostname?: string;
-  lifecycle: string;
   addresses: string[];
+  identifiers?: IdentifierEvidence[];
+  agentId?: string;
+  lifecycle: string;
   agentVersion?: string;
   lastHeartbeat?: string;
   availability: "connecting" | "online" | "offline" | "revoked";
@@ -90,6 +92,16 @@ export type Device = {
   collectorStates: CollectorState[];
   excluded?: boolean;
   revision: number;
+};
+
+export type IdentifierEvidence = {
+  kind: string;
+  namespace: string;
+  value: string;
+  source: string;
+  confidence: number;
+  firstSeen: string;
+  lastSeen: string;
 };
 
 export type ListResponse<T> = {
@@ -649,6 +661,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ displayName, siteId }),
     }),
+  deviceInvitation: (deviceId: string) =>
+    request<Invitation>(`/devices/${encodeURIComponent(deviceId)}/bootstrap`, { method: "POST" }),
   topology: (siteId = "") => request<Topology>(`/topology${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ""}`),
   notificationDestinations: () => request<ListResponse<NotificationDestination>>("/notification-destinations"),
   createNotificationDestination: (value: {

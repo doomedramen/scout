@@ -3,7 +3,7 @@ import { Check, Clipboard, KeyRound, ShieldCheck, Terminal, X } from "lucide-rea
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APIError, api, type Invitation, type Site } from "@/lib/api";
+import { APIError, api, type Device, type Invitation, type Site } from "@/lib/api";
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
@@ -26,7 +26,9 @@ async function copyText(value: string): Promise<void> {
 
 export function AgentSetupView({ onClose }: { onClose: () => void }) {
   const [sites, setSites] = useState<Site[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [siteId, setSiteId] = useState("");
+  const [existingDeviceID, setExistingDeviceID] = useState("");
   const [displayName, setDisplayName] = useState("Scout server host");
   const [serverURL, setServerURL] = useState(() => window.location.origin);
   const [invitation, setInvitation] = useState<Invitation | null>(null);
@@ -36,14 +38,35 @@ export function AgentSetupView({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState("");
 
   useEffect(() => {
-    api
-      .sites()
-      .then((result) => {
-        setSites(result.items);
-        if (result.items[0]) setSiteId(result.items[0].id);
+    Promise.all([api.sites(), api.devices()])
+      .then(([siteResult, deviceResult]) => {
+        setSites(siteResult.items);
+        setDevices(deviceResult.items);
+        if (siteResult.items[0]) setSiteId(siteResult.items[0].id);
       })
       .catch((caught) => setError(caught instanceof APIError ? caught.message : "Could not load sites"));
   }, []);
+
+  const pendingDevices = useMemo(
+    () =>
+      devices
+        .filter(
+          (device) =>
+            device.siteId === siteId &&
+            !device.agentId &&
+            !device.agentVersion &&
+            !device.excluded &&
+            device.lifecycle !== "decommissioned" &&
+            device.availability !== "revoked",
+        )
+        .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id)),
+    [devices, siteId],
+  );
+
+  useEffect(() => {
+    if (existingDeviceID && pendingDevices.some((device) => device.id === existingDeviceID)) return;
+    setExistingDeviceID(pendingDevices.length === 1 ? pendingDevices[0].id : "");
+  }, [existingDeviceID, pendingDevices]);
 
   const nativeRecipe = useMemo(() => {
     const server = serverURL.trim().replace(/\/+$/, "") || window.location.origin;
@@ -93,7 +116,9 @@ export function AgentSetupView({ onClose }: { onClose: () => void }) {
     setError("");
     setMessage("");
     try {
-      setInvitation(await api.invitation(displayName.trim(), siteId));
+      setInvitation(
+        await (existingDeviceID ? api.deviceInvitation(existingDeviceID) : api.invitation(displayName.trim(), siteId)),
+      );
       setMessage("Invitation created. It is single-use and expires in five minutes.");
     } catch (caught) {
       setError(caught instanceof APIError ? caught.message : "Could not create invitation");
@@ -160,9 +185,29 @@ export function AgentSetupView({ onClose }: { onClose: () => void }) {
               ))}
             </select>
           </label>
-          <Button type="submit" disabled={busy || !siteId}>
+          {pendingDevices.length > 0 && (
+            <label>
+              Existing pending device
+              <select
+                aria-label="Existing pending device"
+                value={existingDeviceID}
+                onChange={(event) => setExistingDeviceID(event.target.value)}
+              >
+                <option value="">Create a new device record</option>
+                {pendingDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.displayName} · {device.addresses?.[0] ?? "address unavailable"} · {device.id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
+              <small>
+                Reuse this record when retrying after an app restart; it will not create a duplicate system.
+              </small>
+            </label>
+          )}
+          <Button type="submit" disabled={busy || !siteId || (pendingDevices.length === 1 && !existingDeviceID)}>
             <KeyRound size={15} />
-            Create one-time invitation
+            {existingDeviceID ? "Create invitation for existing device" : "Create one-time invitation"}
           </Button>
         </form>
       ) : (

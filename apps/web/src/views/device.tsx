@@ -62,6 +62,13 @@ function currentValue(device: Device, metric: string): number | null {
   return typeof item.value === "number" ? item.value : null;
 }
 
+function identifierValues(device: Device, kind: string): string[] {
+  return (device.identifiers ?? [])
+    .filter((item) => item.kind.toLowerCase() === kind)
+    .map((item) => item.value)
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
 function demoSeries(base: number, seed: number): ChartPoint[] {
   return Array.from({ length: 61 }, (_, index) => ({
     time: index - 60,
@@ -378,6 +385,36 @@ export function DeviceView({
           <span>Agent {device.availability}; retained measurements are historical and are not current.</span>
         </div>
       )}
+      <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
+        <div className="chart-heading">
+          <div>
+            <h3 id="device-identity-heading">Device identity</h3>
+            <p>The stable Scout record identifies this host; network addresses are supporting evidence only.</p>
+          </div>
+        </div>
+        <dl>
+          <div>
+            <dt>Device ID</dt>
+            <dd title={device.id}>{device.id}</dd>
+          </div>
+          <div>
+            <dt>Hostname</dt>
+            <dd>{device.hostname || "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Known addresses</dt>
+            <dd>{device.addresses?.length ? device.addresses.join(", ") : "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Known MAC addresses</dt>
+            <dd>{identifierValues(device, "mac").join(", ") || "Not reported"}</dd>
+          </div>
+          <div>
+            <dt>Agent identity</dt>
+            <dd title={device.agentId}>{device.agentId || "Not enrolled"}</dd>
+          </div>
+        </dl>
+      </section>
       {hasAgent && !isDecommissioned ? (
         <div className="charts">
           <MetricChart
