@@ -28,8 +28,8 @@ var (
 )
 
 const (
-	DefaultRetentionHours = 24 * 30
-	DefaultMaxSamples     = 1_000_000
+	DefaultRetentionHours       = 24 * 30
+	DefaultTelemetryBudgetBytes = int64(500) * 1024 * 1024 * 1024
 )
 
 // NewID returns a UUID-shaped random identifier without adding a second UUID
@@ -72,7 +72,7 @@ func newState() State {
 		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{}, Candidates: map[string]Candidate{}, Workers: map[string]WorkerIdentity{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, Releases: map[string]Release{},
-		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, MaxSamples: DefaultMaxSamples},
+		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
 	}
 }
 
@@ -159,8 +159,8 @@ func ensureStateMaps(state *State) {
 	if state.Workspace.RetentionHours == 0 {
 		state.Workspace.RetentionHours = DefaultRetentionHours
 	}
-	if state.Workspace.MaxSamples == 0 {
-		state.Workspace.MaxSamples = DefaultMaxSamples
+	if state.Workspace.TelemetryBudgetBytes == 0 {
+		state.Workspace.TelemetryBudgetBytes = DefaultTelemetryBudgetBytes
 	}
 }
 

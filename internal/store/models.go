@@ -368,6 +368,7 @@ type WorkspaceState struct {
 	UpdatesPaused         bool       `json:"updatesPaused"`
 	RetentionHours        int        `json:"retentionHours"`
 	MaxSamples            int        `json:"maxSamples"`
+	TelemetryBudgetBytes  int64      `json:"telemetryBudgetBytes"`
 	DroppedSamples        int64      `json:"droppedSamples"`
 	TelemetryBackpressure bool       `json:"telemetryBackpressure"`
 	LastRetentionAt       *time.Time `json:"lastRetentionAt,omitempty"`

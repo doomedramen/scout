@@ -11,6 +11,22 @@ import (
 	"time"
 )
 
+const telemetryStorageSizeSQL = `
+SELECT COALESCE(pg_total_relation_size('public.metric_samples'::regclass), 0)
+     + COALESCE((
+           SELECT SUM(pg_total_relation_size(child.oid))
+           FROM pg_inherits
+           JOIN pg_class AS child ON child.oid = pg_inherits.inhrelid
+           WHERE pg_inherits.inhparent = 'public.metric_samples'::regclass
+         ), 0)
+    + COALESCE(pg_total_relation_size('public.metric_series'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.current_series'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.telemetry_receipts'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.telemetry_sample_ordinals'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.observations'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.rollup_work'::regclass), 0)
+     + COALESCE(pg_total_relation_size('public.metric_aggregates'::regclass), 0)`
+
 // monitoringPhase returns the SQL authority boundary. Before migration v2 is
 // installed, SQL stores retain the 001 snapshot behavior so an upgrade can
 // apply migrations before serving requests.
@@ -46,6 +62,44 @@ func stripMigratedTelemetry(state *State) {
 	state.Samples = []MetricSample{}
 	state.BatchReceipts = map[string]string{}
 	state.Observations = map[string]Observation{}
+}
+
+func telemetryStorageBytes(ctx context.Context, reader monitoringSQLReader) (int64, error) {
+	var bytes int64
+	if err := reader.QueryRowContext(ctx, telemetryStorageSizeSQL).Scan(&bytes); err != nil {
+		return 0, fmt.Errorf("measure SQL telemetry storage: %w", err)
+	}
+	return bytes, nil
+}
+
+func telemetryAdmissionEstimate(ctx context.Context, reader monitoringSQLReader, generation, usedBytes int64, sampleCount, observationCount int) (int64, error) {
+	var existingSamples int64
+	if err := reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM metric_samples WHERE storage_generation = $1`, generation).Scan(&existingSamples); err != nil {
+		return 0, fmt.Errorf("count SQL telemetry samples for budget estimate: %w", err)
+	}
+	perSample := int64(1024)
+	if existingSamples > 0 && usedBytes/existingSamples > perSample {
+		perSample = usedBytes / existingSamples
+	}
+	perObservation := perSample * 2
+	return 4096 + int64(sampleCount)*perSample + int64(observationCount)*perObservation, nil
+}
+
+func telemetryBudgetHasRoom(usedBytes, budgetBytes, estimate int64) bool {
+	if budgetBytes <= 0 {
+		return true
+	}
+	if usedBytes >= budgetBytes || estimate < 0 || usedBytes > budgetBytes-estimate {
+		return false
+	}
+	return true
+}
+
+func telemetryBudgetBelowReleaseThreshold(usedBytes, budgetBytes int64) bool {
+	if budgetBytes <= 0 {
+		return true
+	}
+	return usedBytes < budgetBytes-(budgetBytes/10)
 }
 
 func readWorkspaceStateTx(ctx context.Context, tx *sql.Tx) (State, error) {
@@ -151,7 +205,7 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 
 	if state.Workspace.MaxSamples > 0 {
 		var sampleCount int64
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM metric_samples`).Scan(&sampleCount); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM metric_samples WHERE storage_generation = $1`, storage.StorageGeneration).Scan(&sampleCount); err != nil {
 			return BatchResult{}, fmt.Errorf("count telemetry samples for backpressure: %w", err)
 		}
 		if sampleCount+int64(len(samples)) > int64(state.Workspace.MaxSamples) {
@@ -166,6 +220,26 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 			s.invalidateLegacyCache()
 			return BatchResult{}, ErrBackpressure
 		}
+	}
+	usedBytes, err := telemetryStorageBytes(ctx, tx)
+	if err != nil {
+		return BatchResult{}, err
+	}
+	estimate, err := telemetryAdmissionEstimate(ctx, tx, storage.StorageGeneration, usedBytes, len(samples), len(observations))
+	if err != nil {
+		return BatchResult{}, err
+	}
+	if !telemetryBudgetHasRoom(usedBytes, state.Workspace.TelemetryBudgetBytes, estimate) {
+		state.Workspace.TelemetryBackpressure = true
+		stripMigratedTelemetry(&state)
+		if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
+			return BatchResult{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return BatchResult{}, fmt.Errorf("commit telemetry disk backpressure: %w", err)
+		}
+		s.invalidateLegacyCache()
+		return BatchResult{}, ErrBackpressure
 	}
 
 	now := time.Now().UTC()
@@ -654,7 +728,11 @@ func (s *Store) telemetryStatusSQL(ctx context.Context) (TelemetryStatus, error)
 		  ON storage.singleton = true AND samples.storage_generation = storage.storage_generation`).Scan(&count); err != nil {
 		return TelemetryStatus{}, fmt.Errorf("count SQL telemetry samples: %w", err)
 	}
-	return TelemetryStatus{Samples: int(count), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}, nil
+	usedBytes, err := telemetryStorageBytes(ctx, s.db)
+	if err != nil {
+		return TelemetryStatus{}, err
+	}
+	return TelemetryStatus{Samples: int(count), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, UsedBytes: usedBytes, BudgetBytes: state.Workspace.TelemetryBudgetBytes, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}, nil
 }
 
 func (s *Store) pruneSamplesSQL(ctx context.Context, before time.Time) (int, error) {
@@ -893,10 +971,16 @@ func (s *Store) cleanupTelemetrySQL(ctx context.Context, now time.Time) (int, er
 		}
 	}
 	var sampleCount int64
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM metric_samples`).Scan(&sampleCount); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM metric_samples WHERE storage_generation = $1`, storage.StorageGeneration).Scan(&sampleCount); err != nil {
 		return 0, fmt.Errorf("count SQL samples after cleanup: %w", err)
 	}
-	if state.Workspace.TelemetryBackpressure && state.Workspace.MaxSamples > 0 && sampleCount < int64(state.Workspace.MaxSamples*9/10) {
+	usedBytes, err := telemetryStorageBytes(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	underSampleThreshold := state.Workspace.MaxSamples <= 0 || sampleCount < int64(state.Workspace.MaxSamples*9/10)
+	underByteThreshold := telemetryBudgetBelowReleaseThreshold(usedBytes, state.Workspace.TelemetryBudgetBytes)
+	if state.Workspace.TelemetryBackpressure && underSampleThreshold && underByteThreshold {
 		state.Workspace.TelemetryBackpressure = false
 	}
 	stripMigratedTelemetry(&state)

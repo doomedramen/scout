@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -16,6 +17,8 @@ type TelemetryStatus struct {
 	Samples         int        `json:"samples"`
 	DroppedSamples  int64      `json:"droppedSamples"`
 	MaxSamples      int        `json:"maxSamples"`
+	UsedBytes       int64      `json:"usedBytes"`
+	BudgetBytes     int64      `json:"budgetBytes"`
 	Backpressure    bool       `json:"backpressure"`
 	RetentionHours  int        `json:"retentionHours"`
 	LastRetentionAt *time.Time `json:"lastRetentionAt,omitempty"`
@@ -69,6 +72,13 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 		if state.Workspace.MaxSamples > 0 && len(state.Samples)+len(samples) > state.Workspace.MaxSamples {
 			state.Workspace.TelemetryBackpressure = true
 			return ErrBackpressure
+		}
+		if state.Workspace.TelemetryBudgetBytes > 0 {
+			used := memoryTelemetryBytes(*state)
+			if !telemetryBudgetHasRoom(used, state.Workspace.TelemetryBudgetBytes, memoryTelemetryEstimate(len(samples), len(observations))) {
+				state.Workspace.TelemetryBackpressure = true
+				return ErrBackpressure
+			}
 		}
 		state.BatchReceipts[key] = payloadHash
 		for _, sample := range samples {
@@ -377,7 +387,9 @@ func (s *Store) CleanupTelemetry(ctx context.Context, now time.Time) (int, error
 				delete(state.Observations, id)
 			}
 		}
-		if state.Workspace.TelemetryBackpressure && state.Workspace.MaxSamples > 0 && len(state.Samples) < state.Workspace.MaxSamples*9/10 {
+		underSampleThreshold := state.Workspace.MaxSamples <= 0 || len(state.Samples) < state.Workspace.MaxSamples*9/10
+		underByteThreshold := telemetryBudgetBelowReleaseThreshold(memoryTelemetryBytes(*state), state.Workspace.TelemetryBudgetBytes)
+		if state.Workspace.TelemetryBackpressure && underSampleThreshold && underByteThreshold {
 			state.Workspace.TelemetryBackpressure = false
 		}
 		return nil
@@ -419,10 +431,26 @@ func (s *Store) TelemetryStatus(ctx context.Context) (TelemetryStatus, error) {
 	}
 	var result TelemetryStatus
 	err := s.read(ctx, func(state *State) error {
-		result = TelemetryStatus{Samples: len(state.Samples), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}
+		result = TelemetryStatus{Samples: len(state.Samples), DroppedSamples: state.Workspace.DroppedSamples, MaxSamples: state.Workspace.MaxSamples, UsedBytes: memoryTelemetryBytes(*state), BudgetBytes: state.Workspace.TelemetryBudgetBytes, Backpressure: state.Workspace.TelemetryBackpressure, RetentionHours: state.Workspace.RetentionHours, LastRetentionAt: cloneTime(state.Workspace.LastRetentionAt)}
 		return nil
 	})
 	return result, err
+}
+
+func memoryTelemetryBytes(state State) int64 {
+	encoded, err := json.Marshal(struct {
+		Samples       []MetricSample         `json:"samples"`
+		BatchReceipts map[string]string      `json:"batchReceipts"`
+		Observations  map[string]Observation `json:"observations"`
+	}{state.Samples, state.BatchReceipts, state.Observations})
+	if err != nil {
+		return 0
+	}
+	return int64(len(encoded))
+}
+
+func memoryTelemetryEstimate(sampleCount, observationCount int) int64 {
+	return int64(sampleCount)*512 + int64(observationCount)*1024 + 512
 }
 
 func cloneTime(value *time.Time) *time.Time {

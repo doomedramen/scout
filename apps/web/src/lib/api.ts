@@ -26,6 +26,8 @@ export type Status = {
     samples: number;
     droppedSamples: number;
     maxSamples: number;
+    usedBytes: number;
+    budgetBytes: number;
     backpressure: boolean;
     retentionHours: number;
   };

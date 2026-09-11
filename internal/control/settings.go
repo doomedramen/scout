@@ -29,8 +29,9 @@ func (a *App) updateTelemetrySettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		RetentionHours *int `json:"retentionHours"`
-		MaxSamples     *int `json:"maxSamples"`
+		RetentionHours       *int   `json:"retentionHours"`
+		MaxSamples           *int   `json:"maxSamples"`
+		TelemetryBudgetBytes *int64 `json:"telemetryBudgetBytes"`
 	}
 	if err := decodeJSON(r, &request, 16<<10); err != nil {
 		writeMappedError(w, r, store.ErrInvalid)
@@ -47,13 +48,17 @@ func (a *App) updateTelemetrySettings(w http.ResponseWriter, r *http.Request) {
 	if request.MaxSamples != nil {
 		workspace.MaxSamples = *request.MaxSamples
 	}
-	if workspace.RetentionHours < 1 || workspace.RetentionHours > 24*3650 || workspace.MaxSamples < 1000 || workspace.MaxSamples > 100_000_000 {
+	if request.TelemetryBudgetBytes != nil {
+		workspace.TelemetryBudgetBytes = *request.TelemetryBudgetBytes
+	}
+	if workspace.RetentionHours < 1 || workspace.RetentionHours > 24*3650 || workspace.MaxSamples < 0 || workspace.MaxSamples > 100_000_000 || workspace.TelemetryBudgetBytes < 1<<20 || workspace.TelemetryBudgetBytes > 1<<40 {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
 	if _, err := a.Store.SetWorkspace(r.Context(), func(state *store.WorkspaceState) error {
 		state.RetentionHours = workspace.RetentionHours
 		state.MaxSamples = workspace.MaxSamples
+		state.TelemetryBudgetBytes = workspace.TelemetryBudgetBytes
 		return nil
 	}); err != nil {
 		writeMappedError(w, r, err)

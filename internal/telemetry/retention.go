@@ -33,7 +33,7 @@ func (s *Service) EnforceRetention(ctx context.Context, policy RetentionPolicy) 
 	if policy.MaxSamples == 0 {
 		policy.MaxSamples = workspace.MaxSamples
 	}
-	if policy.Hours < 1 || policy.MaxSamples < 1 {
+	if policy.Hours < 1 || policy.MaxSamples < 0 {
 		return RetentionReport{}, store.ErrInvalid
 	}
 	now := s.clock()
@@ -45,9 +45,12 @@ func (s *Service) EnforceRetention(ctx context.Context, policy RetentionPolicy) 
 	if err != nil {
 		return RetentionReport{}, err
 	}
-	limited, err := s.Store.EnforceSampleLimit(ctx, policy.MaxSamples)
-	if err != nil {
-		return RetentionReport{}, err
+	limited := 0
+	if policy.MaxSamples > 0 {
+		limited, err = s.Store.EnforceSampleLimit(ctx, policy.MaxSamples)
+		if err != nil {
+			return RetentionReport{}, err
+		}
 	}
 	when := now
 	if _, err := s.Store.SetWorkspace(ctx, func(state *store.WorkspaceState) error {
