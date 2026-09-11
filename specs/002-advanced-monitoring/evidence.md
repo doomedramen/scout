@@ -380,6 +380,33 @@ For future results append: task and requirement IDs, commit, date, exact command
   verified migration, encrypted envelope persistence/decryption, restart
   reads, test timestamps, compare-and-swap, and retirement filtering.
 - No real ntfy endpoint, notification credential, production database, real
-  device, or production deployment was used. T014 still adds durable delivery
-  intents, retry/lease/expiry semantics, and delivery-status reads; T015–T017
-  add quiet-hour/recovery behavior and the notification UI.
+  device, or production deployment was used. T015–T017 add quiet-hour,
+  recovery, and notification UI behavior.
+
+## T014 — durable notification delivery queue
+
+- Requirements: FR-010, FR-013, FR-033; SC-003, SC-011.
+- Date: 2026-09-11 (Europe/London); implementation commit: `1a9f178`.
+- Added safe trigger/recovery delivery-intent projection, transactional
+  incident/checkpoint/transition/intent commits, a 10,000-pending queue cap
+  with an observable overflow counter, destination revision fencing, one
+  in-flight lease per destination, epoch/owner CAS completion, bounded retry
+  backoff with jitter, expiry, and redacted delivery-history reads. Delivery
+  workers decrypt the saved destination only after a current enabled/revision
+  check, publish through the existing ntfy safety boundary, and persist only
+  accepted remote IDs or fixed safe error categories. Payloads contain no
+  topic, token, lease, or raw upstream error.
+- Exact verification commands and outcomes: `go test ./... -race -count=1`;
+  `scripts/test-integration.sh` against disposable PostgreSQL 17; `go vet
+  ./...`; and `git diff --check` passed. Positive tests cover trigger/recovery
+  projection, encrypted local receiver acceptance, lease exclusivity, retry,
+  acceptance, SQL restart-compatible persistence, and redacted owner history.
+  Negative tests cover disabled/changed destinations, expiry, stale lease
+  completion, queue overflow, malformed payload rollback in memory and SQL,
+  and permanent upstream rejection. No real ntfy endpoint, production
+  credential, real device, or production deployment was used.
+- Remaining limits: T015 adds quiet-hour suppression, T016 adds restore and
+  recovery no-replay policy, and T017 adds the notification settings UI and
+  browser coverage. The worker is library-level at this task boundary; live
+  notification acceptance remains intentionally limited to disposable local
+  receivers.
