@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -26,13 +25,14 @@ type Metric struct {
 }
 
 type HostSnapshot struct {
-	ObservedAt   time.Time
-	Hostname     string
-	OS           string
-	Architecture string
-	CPUs         int
-	Interfaces   []Interface
-	Metrics      []Metric
+	ObservedAt    time.Time
+	SchemaVersion int
+	Hostname      string
+	OS            string
+	Architecture  string
+	CPUs          int
+	Interfaces    []Interface
+	Metrics       []Metric
 }
 
 type counter struct {
@@ -42,17 +42,18 @@ type counter struct {
 }
 
 type HostCollector struct {
-	Root            string
-	mu              sync.Mutex
-	previousCPU     []uint64
-	previousNetwork map[string]counter
+	Root                string
+	mu                  sync.Mutex
+	previousCPU         []uint64
+	previousNetwork     map[string]counter
+	previousDiagnostics diagnosticState
 }
 
 func NewHostCollector(root string) *HostCollector {
 	if root == "" {
 		root = "/"
 	}
-	return &HostCollector{Root: root, previousNetwork: map[string]counter{}}
+	return &HostCollector{Root: root, previousNetwork: map[string]counter{}, previousDiagnostics: diagnosticState{disks: map[string]diskCounter{}}}
 }
 
 func (c *HostCollector) Collect(ctx context.Context) (HostSnapshot, error) {
@@ -63,7 +64,7 @@ func (c *HostCollector) Collect(ctx context.Context) (HostSnapshot, error) {
 	defer c.mu.Unlock()
 	now := time.Now().UTC()
 	hostname, _ := os.Hostname()
-	snapshot := HostSnapshot{ObservedAt: now, Hostname: hostname, OS: runtime.GOOS, Architecture: runtime.GOARCH, CPUs: runtime.NumCPU(), Interfaces: []Interface{}, Metrics: []Metric{}}
+	snapshot := HostSnapshot{ObservedAt: now, SchemaVersion: 1, Hostname: hostname, OS: runtime.GOOS, Architecture: runtime.GOARCH, CPUs: runtime.NumCPU(), Interfaces: []Interface{}, Metrics: []Metric{}}
 	interfaces, err := net.Interfaces()
 	if err == nil {
 		for _, device := range interfaces {
@@ -79,13 +80,19 @@ func (c *HostCollector) Collect(ctx context.Context) (HostSnapshot, error) {
 		}
 	}
 	if runtime.GOOS == "linux" {
-		metrics, cpu, network, readErr := collectLinux(c.Root, now, c.previousCPU, c.previousNetwork)
+		previous := c.previousDiagnostics
+		if len(previous.cpu) == 0 {
+			previous.cpu = c.previousCPU
+		}
+		metrics, cpu, network, diagnostics, readErr := collectLinuxState(c.Root, now, c.previousNetwork, previous)
 		if readErr != nil {
 			return snapshot, readErr
 		}
 		c.previousCPU = cpu
 		c.previousNetwork = network
+		c.previousDiagnostics = diagnostics
 		snapshot.Metrics = metrics
+		snapshot.SchemaVersion = HostSchemaVersion
 	} else {
 		snapshot.Metrics = append(snapshot.Metrics, Metric{EntityID: "host", Metric: "cpu.utilization", Availability: "unsupported", Unit: "percent", ObservedAt: now}, Metric{EntityID: "host", Metric: "memory.used", Availability: "unsupported", Unit: "bytes", ObservedAt: now}, Metric{EntityID: "host", Metric: "filesystem.used", Availability: "unsupported", Unit: "bytes", ObservedAt: now})
 	}
@@ -93,52 +100,17 @@ func (c *HostCollector) Collect(ctx context.Context) (HostSnapshot, error) {
 }
 
 func collectLinux(root string, now time.Time, previousCPU []uint64, previousNetwork map[string]counter) ([]Metric, []uint64, map[string]counter, error) {
+	metrics, cpu, network, _, err := collectLinuxState(root, now, previousNetwork, diagnosticState{cpu: previousCPU})
+	return metrics, cpu, network, err
+}
+
+func collectLinuxState(root string, now time.Time, previousNetwork map[string]counter, previousDiagnostics diagnosticState) ([]Metric, []uint64, map[string]counter, diagnosticState, error) {
 	metrics := []Metric{}
-	cpuLine, err := readFirstLine(filepath.Join(root, "proc", "stat"), "cpu ")
+	diagnosticMetrics, diagnostics, err := collectDiagnostics(root, now, previousDiagnostics)
 	if err != nil {
-		return metrics, nil, previousNetwork, err
+		return metrics, nil, previousNetwork, previousDiagnostics, err
 	}
-	cpuFields := strings.Fields(cpuLine)
-	cpu := make([]uint64, 0, len(cpuFields))
-	for _, field := range cpuFields {
-		value, parseErr := strconv.ParseUint(field, 10, 64)
-		if parseErr != nil {
-			return metrics, nil, previousNetwork, fmt.Errorf("parse cpu counter")
-		}
-		cpu = append(cpu, value)
-	}
-	cpuMetric := Metric{EntityID: "host", Metric: "cpu.utilization", Unit: "percent", Availability: "current", ObservedAt: now}
-	if len(previousCPU) == len(cpu) && len(cpu) > 3 {
-		var totalDelta, idleDelta uint64
-		for i, value := range cpu {
-			if value >= previousCPU[i] {
-				totalDelta += value - previousCPU[i]
-			}
-		}
-		if cpu[3] >= previousCPU[3] {
-			idleDelta = cpu[3] - previousCPU[3]
-		}
-		if totalDelta > 0 {
-			value := 100 * float64(totalDelta-idleDelta) / float64(totalDelta)
-			if value < 0 {
-				value = 0
-			}
-			if value > 100 {
-				value = 100
-			}
-			cpuMetric.Value = &value
-		} else {
-			cpuMetric.Availability = "unavailable"
-		}
-	} else {
-		cpuMetric.Availability = "unavailable"
-	}
-	metrics = append(metrics, cpuMetric)
-	mem, err := readMemory(filepath.Join(root, "proc", "meminfo"), now)
-	if err != nil {
-		return metrics, nil, previousNetwork, err
-	}
-	metrics = append(metrics, mem...)
+	metrics = append(metrics, diagnosticMetrics...)
 	uptime, err := readFirstLine(filepath.Join(root, "proc", "uptime"), "")
 	if err == nil {
 		fields := strings.Fields(uptime)
@@ -160,9 +132,9 @@ func collectLinux(root string, now time.Time, previousCPU []uint64, previousNetw
 	network, err := readNetwork(filepath.Join(root, "proc", "net", "dev"), now, previousNetwork)
 	if err == nil {
 		metrics = append(metrics, network.metrics...)
-		return metrics, cpu, network.counters, nil
+		return metrics, diagnostics.cpu, network.counters, diagnostics, nil
 	}
-	return metrics, cpu, previousNetwork, nil
+	return metrics, diagnostics.cpu, previousNetwork, diagnostics, nil
 }
 
 func readFirstLine(path, prefix string) (string, error) {
@@ -222,7 +194,16 @@ func readMemory(path string, now time.Time) ([]Metric, error) {
 		used = 0
 	}
 	percent := 100 * used / total
-	return []Metric{{EntityID: "host", Metric: "memory.used", Value: &used, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.capacity", Value: &total, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.used_percent", Value: &percent, Availability: "current", Unit: "percent", ObservedAt: now}}, nil
+	swapTotal, hasSwapTotal := values["SwapTotal"]
+	swapFree, hasSwapFree := values["SwapFree"]
+	if !hasSwapTotal || !hasSwapFree {
+		return []Metric{{EntityID: "host", Metric: "memory.used", Value: &used, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.capacity", Value: &total, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.used_percent", Value: &percent, Availability: "current", Unit: "percent", ObservedAt: now}, {EntityID: "host", Metric: "swap.used", Availability: "unavailable", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "swap.capacity", Availability: "unavailable", Unit: "bytes", ObservedAt: now}}, nil
+	}
+	if swapFree > swapTotal {
+		swapFree = swapTotal
+	}
+	swapUsed := swapTotal - swapFree
+	return []Metric{{EntityID: "host", Metric: "memory.used", Value: &used, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.capacity", Value: &total, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "memory.used_percent", Value: &percent, Availability: "current", Unit: "percent", ObservedAt: now}, {EntityID: "host", Metric: "swap.used", Value: &swapUsed, Availability: "current", Unit: "bytes", ObservedAt: now}, {EntityID: "host", Metric: "swap.capacity", Value: &swapTotal, Availability: "current", Unit: "bytes", ObservedAt: now}}, nil
 }
 
 type networkReading struct {

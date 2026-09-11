@@ -54,7 +54,11 @@ type Batch struct {
 }
 
 func FromCollector(snapshot collector.HostSnapshot, bootID, batchID string) Batch {
-	batch := Batch{ProtocolVersion: ProtocolVersion, BootID: bootID, BatchID: batchID, ObservedAt: snapshot.ObservedAt, Collector: CollectorRef{ID: "host", SchemaVersion: 1}, Samples: []Sample{}, Observations: []RelationshipObservation{}}
+	schemaVersion := snapshot.SchemaVersion
+	if schemaVersion < 1 {
+		schemaVersion = 1
+	}
+	batch := Batch{ProtocolVersion: ProtocolVersion, BootID: bootID, BatchID: batchID, ObservedAt: snapshot.ObservedAt, Collector: CollectorRef{ID: "host", SchemaVersion: schemaVersion}, Samples: []Sample{}, Observations: []RelationshipObservation{}}
 	for _, metric := range snapshot.Metrics {
 		batch.Samples = append(batch.Samples, Sample{EntityID: metric.EntityID, Metric: metric.Metric, Value: metric.Value, Availability: metric.Availability, Unit: metric.Unit, ObservedAt: metric.ObservedAt, Labels: metric.Labels})
 	}

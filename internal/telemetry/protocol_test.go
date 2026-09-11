@@ -4,7 +4,26 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"scout.local/scout/internal/collector"
 )
+
+func TestFromCollectorPreservesLegacyAndDiagnosticHostSchemas(t *testing.T) {
+	now := time.Date(2026, 9, 11, 20, 0, 0, 0, time.UTC)
+	legacy := FromCollector(collector.HostSnapshot{ObservedAt: now}, "boot", "legacy")
+	if legacy.Collector.SchemaVersion != 1 {
+		t.Fatalf("legacy host schema = %d, want 1", legacy.Collector.SchemaVersion)
+	}
+	diagnostic := FromCollector(collector.HostSnapshot{ObservedAt: now, SchemaVersion: collector.HostSchemaVersion}, "boot", "diagnostic")
+	if diagnostic.Collector.SchemaVersion != collector.HostSchemaVersion {
+		t.Fatalf("diagnostic host schema = %d, want %d", diagnostic.Collector.SchemaVersion, collector.HostSchemaVersion)
+	}
+	for _, batch := range []Batch{legacy, diagnostic} {
+		if err := ValidateBatch(batch, now); err != nil {
+			t.Fatalf("schema %d rejected: %v", batch.Collector.SchemaVersion, err)
+		}
+	}
+}
 
 func TestBatchValidationRejectsNonFiniteAndOversizeLabels(t *testing.T) {
 	value := math.NaN()
