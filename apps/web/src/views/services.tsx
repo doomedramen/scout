@@ -1,5 +1,15 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Boxes, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Boxes,
+  CheckCircle2,
+  Clock3,
+  ExternalLink,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +19,7 @@ import {
   type CollectorConfig,
   type CollectorDescriptor,
   type Device,
+  type Incident,
   type ServiceEntity,
 } from "@/lib/api";
 
@@ -18,13 +29,68 @@ function configFor(descriptor: CollectorDescriptor, config: CollectorConfig | un
   return values;
 }
 
-export function ServicesView() {
+function expectedPatterns(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((pattern) => pattern.trim())
+    .filter(Boolean);
+}
+
+function formatDate(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? "—" : date.toLocaleString();
+}
+
+function normalizedState(value: string): string {
+  const state = value.trim().toLowerCase();
+  return ["active", "inactive", "failed", "transitional", "unavailable"].includes(state) ? state : "unavailable";
+}
+
+function stateLabel(value: string): string {
+  return normalizedState(value).replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function freshness(item: ServiceEntity): "fresh" | "expiring" | "expired" | "unknown" {
+  const observed = new Date(item.observedAt).valueOf();
+  const expires = new Date(item.expiresAt).valueOf();
+  if (!Number.isFinite(observed) || !Number.isFinite(expires)) return "unknown";
+  if (expires <= Date.now()) return "expired";
+  if (expires - Date.now() <= 30_000) return "expiring";
+  return "fresh";
+}
+
+function freshnessLabel(value: ReturnType<typeof freshness>): string {
+  switch (value) {
+    case "fresh":
+      return "Fresh inventory";
+    case "expiring":
+      return "Expiring soon";
+    case "expired":
+      return "Expired inventory";
+    default:
+      return "Freshness unavailable";
+  }
+}
+
+function deviceName(deviceId: string | undefined, devices: Device[]): string {
+  if (!deviceId) return "Unassociated host";
+  return devices.find((device) => device.id === deviceId)?.displayName ?? `Device ${deviceId.slice(0, 8)}`;
+}
+
+function serviceMatchesExactPattern(patterns: string[], serviceName: string): boolean {
+  return patterns.includes(serviceName);
+}
+
+export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId: string) => void }) {
   const [items, setItems] = useState<ServiceEntity[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [descriptors, setDescriptors] = useState<CollectorDescriptor[]>([]);
   const [configs, setConfigs] = useState<CollectorConfig[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [provider, setProvider] = useState("");
   const [deviceId, setDeviceId] = useState("");
+  const [filterDeviceId, setFilterDeviceId] = useState("");
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [credentialRefs, setCredentialRefs] = useState<Record<string, string>>({});
@@ -44,6 +110,11 @@ export function ServicesView() {
     if (!deviceId && deviceList.items[0]) setDeviceId(deviceList.items[0].id);
   }
 
+  async function refreshIncidents() {
+    const result = await api.incidents("?status=active&limit=500");
+    setIncidents(result.items);
+  }
+
   async function refreshConfigs() {
     if (!deviceId) {
       setConfigs([]);
@@ -55,7 +126,7 @@ export function ServicesView() {
 
   useEffect(() => {
     setError("");
-    Promise.all([refreshEntities(), refreshCatalog()]).catch((caught) => {
+    Promise.all([refreshEntities(), refreshCatalog(), refreshIncidents()]).catch((caught) => {
       setError(caught instanceof APIError ? caught.message : "Could not load service collectors");
     });
   }, [provider]);
@@ -68,6 +139,39 @@ export function ServicesView() {
 
   const configByCollector = useMemo(() => new Map(configs.map((config) => [config.collectorId, config])), [configs]);
 
+  const visibleItems = useMemo(
+    () =>
+      items
+        .filter((item) => !filterDeviceId || item.deviceId === filterDeviceId)
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    [filterDeviceId, items],
+  );
+
+  const systemdItems = useMemo(
+    () =>
+      items
+        .filter((item) => item.provider === "systemd" && item.deviceId === deviceId)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [deviceId, items],
+  );
+
+  const incidentsByEntity = useMemo(() => {
+    const result = new Map<string, Incident[]>();
+    for (const incident of incidents) {
+      const key = `${incident.deviceId}\u0000${incident.entityId}`;
+      result.set(key, [...(result.get(key) ?? []), incident]);
+    }
+    return result;
+  }, [incidents]);
+
+  function incidentsFor(item: ServiceEntity): Incident[] {
+    if (!item.deviceId) return [];
+    return [
+      ...(incidentsByEntity.get(`${item.deviceId}\u0000${item.id}`) ?? []),
+      ...(item.name !== item.id ? (incidentsByEntity.get(`${item.deviceId}\u0000${item.name}`) ?? []) : []),
+    ];
+  }
+
   function draftFor(descriptor: CollectorDescriptor) {
     return drafts[descriptor.id] ?? configFor(descriptor, configByCollector.get(descriptor.id));
   }
@@ -77,6 +181,15 @@ export function ServicesView() {
       ...current,
       [descriptorId]: { ...(current[descriptorId] ?? {}), [key]: value },
     }));
+  }
+
+  function toggleExpectedService(descriptor: CollectorDescriptor, serviceName: string, checked: boolean) {
+    const values = draftFor(descriptor);
+    const patterns = expectedPatterns(values.expectedRunning);
+    const next = checked
+      ? [...new Set([...patterns, serviceName])]
+      : patterns.filter((pattern) => pattern !== serviceName);
+    setDraft(descriptor.id, "expectedRunning", next.join(","));
   }
 
   async function saveCollector(event: FormEvent<HTMLFormElement>, descriptor: CollectorDescriptor) {
@@ -93,7 +206,11 @@ export function ServicesView() {
         credentialRef: credentialRefs[descriptor.id] || current?.credentialRef || undefined,
         expectedRevision: current?.revision || undefined,
       });
-      setMessage(descriptor.provider + " collector configuration saved. Secrets stay in the credential broker.");
+      setMessage(
+        descriptor.id === "systemd"
+          ? "Systemd selection saved. Failed units remain monitored automatically."
+          : descriptor.provider + " collector configuration saved. Secrets stay in the credential broker.",
+      );
       await refreshConfigs();
     } catch (caught) {
       setError(caught instanceof APIError ? caught.message : "Collector configuration could not be saved");
@@ -121,7 +238,7 @@ export function ServicesView() {
           size="icon"
           aria-label="Refresh services"
           onClick={() =>
-            Promise.all([refreshEntities(), refreshCatalog(), refreshConfigs()]).catch(() =>
+            Promise.all([refreshEntities(), refreshCatalog(), refreshConfigs(), refreshIncidents()]).catch(() =>
               setError("Could not refresh services"),
             )
           }
@@ -144,12 +261,34 @@ export function ServicesView() {
           Provider
           <select value={provider} onChange={(event) => setProvider(event.target.value)}>
             <option value="">All providers</option>
+            <option value="systemd">Systemd</option>
             <option value="docker">Docker</option>
             <option value="proxmox">Proxmox</option>
             <option value="fake">Fixture provider</option>
           </select>
         </label>
-        <Badge variant="outline">{items.length} active entities</Badge>
+        <label>
+          Device
+          <select value={filterDeviceId} onChange={(event) => setFilterDeviceId(event.target.value)}>
+            <option value="">All devices</option>
+            {devices.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="service-summary" aria-label="Service inventory summary">
+          <Badge variant="outline">{visibleItems.length} observed</Badge>
+          <Badge
+            variant="outline"
+            className={
+              visibleItems.some((item) => normalizedState(item.status) === "failed") ? "service-state-badge failed" : ""
+            }
+          >
+            {visibleItems.filter((item) => normalizedState(item.status) === "failed").length} failed
+          </Badge>
+        </div>
       </div>
       <div className="data-panel">
         <div className="section-heading">
@@ -213,16 +352,65 @@ export function ServicesView() {
                         />
                         <span>Enable {descriptor.provider} collection</span>
                       </label>
-                      {Object.entries(descriptor.configSchema).map(([key, description]) => (
-                        <label key={key}>
-                          {key}
-                          <span className="label-hint">{description}</span>
-                          <Input
-                            value={values[key] ?? ""}
-                            onChange={(event) => setDraft(descriptor.id, key, event.target.value)}
-                          />
-                        </label>
-                      ))}
+                      {Object.entries(descriptor.configSchema).map(([key, description]) =>
+                        descriptor.id === "systemd" && key === "expectedRunning" ? (
+                          <fieldset className="must-run-selector" key={key}>
+                            <legend>Expected to stay active</legend>
+                            <p>
+                              Select loaded units for the 60-second inactivity warning. Failed units alert regardless of
+                              this selection.
+                            </p>
+                            <label>
+                              Service patterns
+                              <span className="label-hint">{description}</span>
+                              <Input
+                                aria-label="Systemd expected-running patterns"
+                                value={values[key] ?? ""}
+                                onChange={(event) => setDraft(descriptor.id, key, event.target.value)}
+                                placeholder="scout-agent.service, backup-*.service"
+                              />
+                            </label>
+                            {systemdItems.length ? (
+                              <div className="must-run-list">
+                                {systemdItems.map((item) => {
+                                  const patterns = expectedPatterns(values.expectedRunning);
+                                  const checked = serviceMatchesExactPattern(patterns, item.name);
+                                  return (
+                                    <label className="checkbox-label" key={item.id}>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(event) =>
+                                          toggleExpectedService(descriptor, item.name, event.target.checked)
+                                        }
+                                      />
+                                      <span>
+                                        {item.name}
+                                        <small>
+                                          {stateLabel(item.status)} · observed {formatDate(item.observedAt)}
+                                        </small>
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <small className="empty-inline">
+                                No loaded systemd units observed on this device yet.
+                              </small>
+                            )}
+                          </fieldset>
+                        ) : (
+                          <label key={key}>
+                            {key}
+                            <span className="label-hint">{description}</span>
+                            <Input
+                              value={values[key] ?? ""}
+                              onChange={(event) => setDraft(descriptor.id, key, event.target.value)}
+                            />
+                          </label>
+                        ),
+                      )}
                       <label>
                         Credential reference <span className="label-hint">optional; value is never a secret</span>
                         <Input
@@ -248,33 +436,89 @@ export function ServicesView() {
           </>
         )}
       </div>
-      {items.length ? (
-        <div className="service-grid">
-          {items.map((item) => (
-            <article className="service-card" key={item.provider + "-" + item.id}>
-              <div className="service-card-icon">
-                <Boxes size={20} />
-              </div>
-              <div>
-                <h3>{item.name}</h3>
-                <p>
-                  {item.provider} · {item.kind}
-                  {item.clusterId ? " · " + item.clusterId : ""}
-                </p>
-                <small>
-                  {item.status} · observed {new Date(item.observedAt).toLocaleString()}
-                </small>
-              </div>
-              <Badge variant="outline">{item.deviceId ? "Associated" : "Unassociated"}</Badge>
-            </article>
-          ))}
-        </div>
+      {visibleItems.length ? (
+        <section className="service-inventory" aria-labelledby="service-inventory-title">
+          <div className="service-inventory-heading">
+            <div>
+              <Badge variant="outline">
+                <Boxes size={13} />
+                Observed inventory
+              </Badge>
+              <h3 id="service-inventory-title">Service state at a glance</h3>
+              <p>States are source evidence, not controls. Scout never starts, stops, or reloads a service.</p>
+            </div>
+            <small>{visibleItems.length} loaded entities</small>
+          </div>
+          <div className="service-inventory-list">
+            {visibleItems.map((item) => {
+              const state = normalizedState(item.status);
+              const itemFreshness = freshness(item);
+              const related = incidentsFor(item);
+              return (
+                <article
+                  className="service-inventory-row"
+                  key={item.provider + "-" + (item.deviceId ?? "") + "-" + item.id}
+                >
+                  <div className={`service-state ${state}`}>
+                    {state === "active" ? (
+                      <CheckCircle2 size={16} />
+                    ) : state === "failed" ? (
+                      <XCircle size={16} />
+                    ) : (
+                      <Clock3 size={16} />
+                    )}
+                    <span>{stateLabel(state)}</span>
+                  </div>
+                  <div className="service-identity">
+                    <strong>{item.name}</strong>
+                    <small>
+                      {item.provider} · {item.kind}
+                      {item.clusterId ? " · " + item.clusterId : ""}
+                    </small>
+                  </div>
+                  <div className="service-host">
+                    <span>{deviceName(item.deviceId, devices)}</span>
+                    {item.labels?.mustRun === "true" && <small>Expected running</small>}
+                  </div>
+                  <div className={`service-freshness ${itemFreshness}`}>
+                    <strong>{freshnessLabel(itemFreshness)}</strong>
+                    <small>Observed {formatDate(item.observedAt)}</small>
+                    <small>Expires {formatDate(item.expiresAt)}</small>
+                  </div>
+                  <div className="service-incident-cell">
+                    {related.length && onOpenIncident ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onOpenIncident(related[0].id)}
+                        aria-label={`Open incident for ${item.name}`}
+                      >
+                        <AlertTriangle size={14} />
+                        {related.length} {related.length === 1 ? "incident" : "incidents"}
+                        <ExternalLink size={13} />
+                      </Button>
+                    ) : related.length ? (
+                      <Badge variant="outline" className="service-state-badge failed">
+                        <AlertTriangle size={13} />
+                        {related.length} active
+                      </Badge>
+                    ) : (
+                      <span className="service-clear-label">No active incident</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       ) : (
         <div className="empty">
           <Boxes size={30} />
-          <h2>No service entities</h2>
+          <h2>No observed service entities</h2>
           <p>
-            Configure a collector on an enrolled device to see provider entities here. Host metrics remain independent.
+            Enable the systemd collector on an enrolled Linux device to see loaded services here. Host metrics remain
+            independent if service access is denied or unavailable.
           </p>
         </div>
       )}

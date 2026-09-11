@@ -1804,9 +1804,209 @@ tbody tr:last-child td {
   background: #292720;
   font-size: 11px;
 }
+.must-run-selector {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #3b465b;
+  border-radius: 7px;
+  background: #1b2028;
+}
+.must-run-selector legend {
+  padding: 0 5px;
+  color: #e7e9ed;
+  font-size: 12px;
+  font-weight: 600;
+}
+.must-run-selector p {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.must-run-list {
+  display: grid;
+  gap: 1px;
+  max-height: 230px;
+  overflow: auto;
+  border: 1px solid #303843;
+  border-radius: 6px;
+  background: #303843;
+}
+.must-run-list .checkbox-label {
+  align-items: flex-start;
+  min-height: 42px;
+  padding: 9px 10px;
+  background: #20252d;
+  color: #d9dee8;
+  font-size: 11px;
+}
+.must-run-list .checkbox-label:hover {
+  background: #27303d;
+}
+.must-run-list .checkbox-label > span {
+  display: grid;
+  gap: 3px;
+}
+.must-run-list small {
+  color: #929baa;
+  font-size: 10px;
+}
+.service-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+.service-state-badge.failed {
+  border-color: #6a4448;
+  color: #e6a3a3;
+}
+.service-inventory {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #2b3037;
+  border-radius: 9px;
+  background: #191c20;
+}
+.service-inventory-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid #2b3037;
+}
+.service-inventory-heading > div {
+  display: grid;
+  gap: 7px;
+}
+.service-inventory-heading h3 {
+  margin: 0;
+}
+.service-inventory-heading p,
+.service-inventory-heading small {
+  color: #9da5b2;
+  font-size: 11px;
+}
+.service-inventory-heading small {
+  white-space: nowrap;
+}
+.service-inventory-list {
+  display: grid;
+}
+.service-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.65fr) minmax(175px, 1.2fr) minmax(135px, 0.9fr) minmax(170px, 1fr) minmax(
+      145px,
+      auto
+    );
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 13px 20px;
+  border-bottom: 1px solid #292d33;
+}
+.service-inventory-row:last-child {
+  border-bottom: 0;
+}
+.service-inventory-row:hover {
+  background: #1f2329;
+}
+.service-state,
+.service-identity,
+.service-host,
+.service-freshness,
+.service-incident-cell {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.service-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #aab4c7;
+  font-size: 11px;
+  font-weight: 600;
+}
+.service-state svg {
+  color: #9299a5;
+}
+.service-state.active {
+  color: #a8d8bc;
+}
+.service-state.active svg {
+  color: #74ba98;
+}
+.service-state.failed {
+  color: #e6a3a3;
+}
+.service-state.failed svg {
+  color: #db8585;
+}
+.service-state.inactive {
+  color: #e1c98a;
+}
+.service-state.inactive svg {
+  color: #d1b276;
+}
+.service-state.transitional {
+  color: #b8c5e6;
+}
+.service-state.transitional svg {
+  color: #8ba9f6;
+}
+.service-identity strong,
+.service-host span,
+.service-freshness strong {
+  overflow: hidden;
+  color: #e7e9ed;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-identity small,
+.service-host small,
+.service-freshness small {
+  overflow: hidden;
+  color: #929baa;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.service-host small {
+  color: #b9c6e8;
+}
+.service-freshness.expiring strong {
+  color: #e1c98a;
+}
+.service-freshness.expired strong,
+.service-freshness.unknown strong {
+  color: #e6a3a3;
+}
+.service-incident-cell {
+  justify-items: start;
+}
+.service-incident-cell [data-slot="button"] {
+  max-width: 100%;
+}
+.service-clear-label {
+  color: #7f8999;
+  font-size: 10px;
+}
 @media (max-width: 900px) {
   .service-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .service-inventory-row {
+    grid-template-columns: minmax(110px, 0.7fr) minmax(170px, 1.2fr) minmax(135px, 1fr);
+  }
+  .service-freshness,
+  .service-incident-cell {
+    grid-column: span 1;
   }
   nav {
     flex-wrap: wrap;
@@ -1820,6 +2020,29 @@ tbody tr:last-child td {
   }
   .discovery-launch {
     grid-template-columns: 1fr;
+  }
+  .service-inventory-heading {
+    flex-direction: column;
+  }
+  .service-inventory-heading small {
+    white-space: normal;
+  }
+  .service-inventory-row {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    padding: 15px;
+  }
+  .service-state,
+  .service-identity {
+    grid-column: span 1;
+  }
+  .service-host,
+  .service-freshness,
+  .service-incident-cell {
+    grid-column: 1 / -1;
+  }
+  .service-summary {
+    margin-left: 0;
   }
   .scope-row,
   .scope-row > div:last-child,

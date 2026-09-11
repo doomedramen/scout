@@ -64,6 +64,7 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Device | null>(null);
+  const [incidentFocus, setIncidentFocus] = useState("");
   const [help, setHelp] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState(false);
@@ -110,6 +111,12 @@ export default function App() {
     setPage(next);
     setSelected(null);
     setQuery("");
+    if (next !== "Incidents") setIncidentFocus("");
+  }
+
+  function openIncident(incidentId: string) {
+    setIncidentFocus(incidentId);
+    navigate("Incidents");
   }
 
   const detail = pageDetails[page];
@@ -218,13 +225,15 @@ export default function App() {
                 onSetup={() => setHelp(true)}
               />
             )}
-            {page === "Incidents" && <IncidentsView />}
+            {page === "Incidents" && (
+              <IncidentsView focusIncidentId={incidentFocus} onFocusConsumed={() => setIncidentFocus("")} />
+            )}
             {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} />}
             {page === "Notifications" && <NotificationsView />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}
             {page === "Access" && <AccessView />}
-            {page === "Services" && <ServicesView />}
+            {page === "Services" && <ServicesView onOpenIncident={openIncident} />}
             {page === "Updates" && <UpdatesView />}
           </>
         )}

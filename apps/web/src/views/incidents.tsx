@@ -222,7 +222,13 @@ function evidenceText(incident: Incident): string {
   return "This condition is not supported by the current evidence source.";
 }
 
-export function IncidentsView() {
+export function IncidentsView({
+  focusIncidentId = "",
+  onFocusConsumed,
+}: {
+  focusIncidentId?: string;
+  onFocusConsumed?: () => void;
+}) {
   const [mode, setMode] = useState<ViewMode>("incidents");
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -261,14 +267,21 @@ export function IncidentsView() {
       setRules(ruleList.items);
       setSites(siteList.items);
       setDevices(deviceList.items);
+      const focusedIncident = focusIncidentId && incidentList.items.find((incident) => incident.id === focusIncidentId);
       setSelectedIncidentId((current) =>
-        current && incidentList.items.some((incident) => incident.id === current)
-          ? current
-          : (incidentList.items[0]?.id ?? ""),
+        focusedIncident
+          ? focusedIncident.id
+          : current && incidentList.items.some((incident) => incident.id === current)
+            ? current
+            : (incidentList.items[0]?.id ?? ""),
       );
       setSelectedRuleId((current) =>
         current && ruleList.items.some((rule) => rule.id === current) ? current : (ruleList.items[0]?.id ?? ""),
       );
+      if (focusedIncident) {
+        setMode("incidents");
+        onFocusConsumed?.();
+      }
     } catch (caught) {
       setError(caughtMessage(caught, "Could not load incident monitoring"));
     } finally {
@@ -278,7 +291,7 @@ export function IncidentsView() {
 
   useEffect(() => {
     void refresh();
-  }, [statusFilter, severityFilter, ackFilter]);
+  }, [statusFilter, severityFilter, ackFilter, focusIncidentId]);
 
   useEffect(() => {
     let cancelled = false;
