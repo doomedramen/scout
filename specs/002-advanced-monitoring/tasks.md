@@ -43,8 +43,8 @@ Independent gate: Inspect failed and selected must-run units on a controlled hos
 
 Independent gate: Known counters produce accurate per-device values and accessible charts.
 
-- [ ] T022 [US4] Add CPU guest accounting, disk reset/no-operations, swap-zero and device replacement fixtures in internal/collector/diagnostics_test.go (FR-017, FR-018; SC-006).
-- [ ] T023 [US4] Implement host schema v2 diagnostic readers and stable block identity in internal/collector/diagnostics.go and internal/collector/host.go, preserving schema v1 ingestion (FR-017, FR-018, FR-024, FR-032; SC-006).
+- [X] T022 [US4] Add CPU guest accounting, disk reset/no-operations, swap-zero and device replacement fixtures in internal/collector/diagnostics_test.go (FR-017, FR-018; SC-006).
+- [X] T023 [US4] Implement host schema v2 diagnostic readers and stable block identity in internal/collector/diagnostics.go and internal/collector/host.go, preserving schema v1 ingestion (FR-017, FR-018, FR-024, FR-032; SC-006).
 - [ ] T024 [US4] Extend apps/web/src/views/device.tsx and shared chart components with metric units/domains, per-entity selection and explicit partial/gap rendering; add tests/e2e/diagnostics.spec.ts (FR-017, FR-018, FR-019; SC-006, SC-010).
 ## Historical rollups (P2)
 

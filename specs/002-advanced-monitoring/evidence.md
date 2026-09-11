@@ -613,3 +613,52 @@ For future results append: task and requirement IDs, commit, date, exact command
   the subsequent transport wiring that sends service entities from a live
   enrolled agent; this task intentionally does not claim live inventory
   support or SC-009 compatibility evidence.
+
+## T022 — diagnostic counter fixtures
+
+- Requirements: FR-017, FR-018; SC-006.
+- Date: 2026-09-11 (Europe/London); implementation commit: `2de8194`.
+- Added deterministic temporary-root fixtures in
+  `internal/collector/diagnostics_test.go` for `/proc/stat`, `/proc/loadavg`,
+  `/proc/meminfo`, `/proc/diskstats`, and block identity metadata. The cases
+  assert guest time is removed from CPU user time, load averages remain counts,
+  zero-capacity swap remains a current zero, disk sectors use 512-byte units,
+  no-operation latency is unavailable, counter resets create an unavailable
+  gap, and changed device identity does not reuse the previous entity's
+  counters.
+- Exact verification commands and outcomes: `go test
+  ./internal/collector -run TestDiagnostics -count=1`; `go test ./... -count=1`;
+  `go test ./... -race -count=1`; `go vet ./...`; `npm run check`; `npm run
+  lint`; `npm run format:check`; `npm run build`; and `git diff --check` all
+  passed. Positive and negative counter cases passed without host filesystem,
+  device, or systemd access.
+- No production database, real device, production credential, or deployment
+  was used. The fixtures establish semantics but are not live hardware
+  compatibility evidence.
+
+## T023 — host diagnostics schema and stable block identity
+
+- Requirements: FR-017, FR-018, FR-024, FR-032; SC-006.
+- Date: 2026-09-11 (Europe/London); implementation commit: `2de8194`.
+- Implemented host schema version 2 diagnostic collection while retaining the
+  legacy schema-1 transport fallback. Linux collection now reads CPU counters,
+  load averages, swap, diskstats, and bounded block sysfs identity metadata.
+  CPU metrics include guest-adjusted user, system, iowait, steal, and the
+  existing utilization metric. Disk metrics expose rates, utilization, and
+  operation-derived latency with reset, first-sample, zero-operation, and
+  identity-change gaps represented as unavailable rather than fabricated zeroes.
+  Stable WWID/WWN/serial/UUID values are hashed into opaque entity IDs;
+  missing identity is explicitly labeled unstable. `FromCollector` carries
+  schema 2 for diagnostic snapshots and continues to emit schema 1 for legacy
+  snapshots, both accepted by the existing batch validator.
+- Exact verification commands and outcomes: `go test
+  ./internal/collector -run TestDiagnostics -count=1`; `go test ./... -count=1`;
+  `go test ./... -race -count=1`; `go vet ./...`; `npm run check`; `npm run
+  lint`; `npm run format:check`; `npm run build`; and `git diff --check` all
+  passed. The telemetry protocol test confirms schema-1 compatibility and
+  schema-2 acceptance. No diagnostic reader shells out or requests elevated
+  privileges.
+- No live Linux host, production database, real disk, production credential,
+  or deployment was used. T024 still needs per-entity diagnostic chart/gap
+  presentation and browser coverage; T030–T038/T042 remain the live
+  storage/hardware/support evidence gates.
