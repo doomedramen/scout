@@ -131,3 +131,34 @@ For future results append: task and requirement IDs, commit, date, exact command
   rollup computation, tier selection, disk-budget policy, and incident
   evaluation remain later tasks. No production rollout, real device, or
   production credential was used.
+
+## T005 — measured telemetry budgets and failure fixtures
+
+- Requirements: FR-018, FR-023, FR-024, FR-033, FR-035; SC-008, SC-011.
+- Date: 2026-09-11 (Europe/London); commit: `c6beebd`.
+- The implicit one-million-sample default was removed. Workspace telemetry now
+  has a configured 500 GiB default budget, an optional explicit row cap where
+  zero means unlimited, and status fields for measured bytes and configured
+  budget. PostgreSQL accounting sums `pg_total_relation_size` for the
+  normalized telemetry tables, indexes, TOAST data, and all direct
+  `metric_samples` partitions. New batches are admitted against a conservative
+  measured-size estimate; 90% pressure rejects new telemetry with existing
+  retryable backpressure while read/control paths remain available. Cleanup
+  clears pressure only below both row and byte thresholds. The memory fixture
+  follows the same bounded-budget semantics.
+- `tests/integration/monitoring_storage_test.go` uses a disposable PostgreSQL
+  17 database and covers a cancellation inside a paused migration insert with
+  checkpoint/row rollback, resumed import and cutover, invalid-batch rollback,
+  duplicate and conflicting replay, two concurrent SQL writers, positive
+  measured-budget status, and negative disk-budget admission with unchanged
+  rows and measured bytes. Existing SQL telemetry fixtures continue to cover
+  replay and rollback behavior across the full normalized path.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  passed against disposable PostgreSQL 17; `go test ./... -count=1`; `go vet
+  ./...`; `npm run format:check`; `npm run check`; `npm run build`; `go mod
+  verify`; and `git diff --cached --check` all passed. No production database,
+  credentials, or real device was used.
+- Remaining limits: T006 onward still implement incident evaluation,
+  notifications, collectors, rollups, and UI behavior. The 100-host capacity
+  and live storage-sizing target remains T040; no production deployment or
+  full acceptance claim is made here.
