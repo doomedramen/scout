@@ -26,7 +26,7 @@ Independent gate: Open, acknowledge and recover one episode under deterministic 
 Independent gate: Publish to a controlled receiver, suppress all severities and recover without stale replay.
 
 - [X] T012 [US2] Add ntfy test receiver, token redaction, address-validation, TLS, redirect, timeout and response-loss fixtures in internal/notifications/ntfy/client_test.go (FR-008, FR-009, FR-010; SC-003, SC-011).
-- [ ] T013 [US2] Implement encrypted destination storage, metadata-only reads, test endpoint and direct publishing client in internal/store/notification_destinations.go, internal/control/notifications.go and internal/notifications/ntfy/client.go (FR-008, FR-009; SC-003, SC-011).
+- [X] T013 [US2] Implement encrypted destination storage, metadata-only reads, test endpoint and direct publishing client in internal/store/notification_destinations.go, internal/control/notifications.go and internal/notifications/ntfy/client.go (FR-008, FR-009; SC-003, SC-011).
 - [ ] T014 [US2] Implement transactional delivery intents, epoch leases, retries, expiry, queue caps and acceptance status in internal/alerts/delivery.go and internal/store/notification_deliveries.go (FR-010, FR-013, FR-033; SC-003, SC-011).
 - [ ] T015 [US2] Implement recurring/one-time window CRUD, union matching, DST semantics, host-offline suppression and release summaries in internal/alerts/suppression.go and internal/control/suppression.go (FR-006, FR-011, FR-012; SC-004).
 - [ ] T016 [US2] Integrate restore pause, outbox cancellation, fresh re-evaluation and MFA resume in internal/control/recovery.go and internal/alerts/recovery.go; test revocation races in tests/integration/notifications_test.go (FR-009, FR-010, FR-013, FR-024; SC-003, SC-008).

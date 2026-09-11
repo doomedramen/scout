@@ -352,3 +352,34 @@ For future results append: task and requirement IDs, commit, date, exact command
 - Remaining limits: T013 still adds encrypted destination persistence,
   metadata-only control handlers, and delivery integration; this task does
   not claim live ntfy acceptance or subscriber receipt.
+
+## T013 — encrypted ntfy destinations and direct test delivery
+
+- Requirements: FR-008, FR-009; SC-003, SC-011.
+- Date: 2026-09-11 (Europe/London); implementation commit: `9f1970b`.
+- Added additive SQL/memory destination storage with a ten-active-destination
+  bound, revision-checked updates, retirement, and test timestamps. Topic and
+  token are stored together only as an envelope encrypted by the existing
+  Scout wrapping key; normal list/get/control responses strip all encrypted
+  fields and return only masked topic, token presence, and safe configuration
+  metadata. The owner API validates the complete saved destination before
+  create/update, preserves omitted PATCH secrets, supports explicit token
+  removal, records only redacted audit outcomes, rejects retired destinations,
+  and exposes a direct saved-revision test publish. Explicit private/loopback
+  plain HTTP opt-in is persisted and returned as non-secret metadata.
+- Exact verification commands and outcomes: `go test ./internal/control
+  ./internal/store ./internal/notifications/ntfy -race -count=1`; `go test
+  ./... -race -count=1`; `scripts/test-integration.sh` against disposable
+  PostgreSQL 17; `npm run lint`; `npm run build`; `npm test`; `npm run
+  format:check`; `npm run test:e2e:browser`; `go vet ./...`; and `git diff
+  --check` all passed. Control tests used a local disposable HTTP receiver,
+  asserted Bearer authentication and bounded payload routing, verified that
+  metadata reads contain no envelope material or plaintext secrets, exercised
+  token retention/removal, stale revision rejection, unsafe endpoint rejection,
+  retirement, and the active destination cap. The SQL integration fixture
+  verified migration, encrypted envelope persistence/decryption, restart
+  reads, test timestamps, compare-and-swap, and retirement filtering.
+- No real ntfy endpoint, notification credential, production database, real
+  device, or production deployment was used. T014 still adds durable delivery
+  intents, retry/lease/expiry semantics, and delivery-status reads; T015–T017
+  add quiet-hour/recovery behavior and the notification UI.
