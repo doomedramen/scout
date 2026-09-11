@@ -45,6 +45,7 @@ func migrations() []migration {
 	return []migration{
 		{version: 1, sql: initialMigrationSQL},
 		{version: 2, sql: monitoringMigrationSQL},
+		{version: 3, sql: alertRulesMigrationSQL},
 	}
 }
 
@@ -213,4 +214,57 @@ CREATE TABLE IF NOT EXISTS rollup_work (
   PRIMARY KEY (series_id, resolution_seconds, bucket_start)
 );
 CREATE INDEX IF NOT EXISTS rollup_work_ready_idx ON rollup_work(resolution_seconds, bucket_start, lease_until);
+`
+
+const alertRulesMigrationSQL = `
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id text PRIMARY KEY,
+  template_key text UNIQUE,
+  name text NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('numeric', 'state')),
+  metric text NOT NULL DEFAULT '',
+  entity_id text NOT NULL DEFAULT '',
+  operator text NOT NULL DEFAULT '',
+  trigger_value double precision,
+  clear_value double precision,
+  trigger_state text NOT NULL DEFAULT '',
+  clear_state text NOT NULL DEFAULT '',
+  trigger_seconds integer NOT NULL DEFAULT 0 CHECK (trigger_seconds >= 0 AND trigger_seconds <= 86400),
+  clear_seconds integer NOT NULL DEFAULT 0 CHECK (clear_seconds >= 0 AND clear_seconds <= 86400),
+  minimum_consecutive_samples integer NOT NULL DEFAULT 1 CHECK (minimum_consecutive_samples >= 1 AND minimum_consecutive_samples <= 10),
+  severity text NOT NULL CHECK (severity IN ('warning', 'critical')),
+  target_kind text NOT NULL CHECK (target_kind IN ('fleet', 'site', 'device')),
+  target_id text NOT NULL DEFAULT '',
+  enabled boolean NOT NULL DEFAULT true,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  retired_at timestamptz,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alert_rules_target_idx ON alert_rules(target_kind, target_id, enabled, retired_at);
+
+CREATE TABLE IF NOT EXISTS alert_overrides (
+  id text PRIMARY KEY,
+  lineage_id text NOT NULL REFERENCES alert_rules(id),
+  target_kind text NOT NULL CHECK (target_kind IN ('site', 'device')),
+  target_id text NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('numeric', 'state')),
+  metric text NOT NULL DEFAULT '',
+  entity_id text NOT NULL DEFAULT '',
+  operator text NOT NULL DEFAULT '',
+  trigger_value double precision,
+  clear_value double precision,
+  trigger_state text NOT NULL DEFAULT '',
+  clear_state text NOT NULL DEFAULT '',
+  trigger_seconds integer NOT NULL DEFAULT 0 CHECK (trigger_seconds >= 0 AND trigger_seconds <= 86400),
+  clear_seconds integer NOT NULL DEFAULT 0 CHECK (clear_seconds >= 0 AND clear_seconds <= 86400),
+  minimum_consecutive_samples integer NOT NULL DEFAULT 1 CHECK (minimum_consecutive_samples >= 1 AND minimum_consecutive_samples <= 10),
+  severity text NOT NULL CHECK (severity IN ('warning', 'critical')),
+  enabled boolean NOT NULL DEFAULT true,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  UNIQUE (lineage_id, target_kind, target_id)
+);
+CREATE INDEX IF NOT EXISTS alert_overrides_target_idx ON alert_overrides(target_kind, target_id);
 `

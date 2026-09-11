@@ -165,6 +165,54 @@ type CollectorDescriptorState struct {
 	Diagnostic  string         `json:"diagnostic,omitempty"`
 }
 
+type AlertRule struct {
+	ID                        string     `json:"id"`
+	TemplateKey               string     `json:"templateKey,omitempty"`
+	Name                      string     `json:"name"`
+	Kind                      string     `json:"kind"`
+	Metric                    string     `json:"metric,omitempty"`
+	EntityID                  string     `json:"entityId,omitempty"`
+	Operator                  string     `json:"operator,omitempty"`
+	TriggerValue              *float64   `json:"triggerValue,omitempty"`
+	ClearValue                *float64   `json:"clearValue,omitempty"`
+	TriggerState              string     `json:"triggerState,omitempty"`
+	ClearState                string     `json:"clearState,omitempty"`
+	TriggerSeconds            int        `json:"triggerSeconds"`
+	ClearSeconds              int        `json:"clearSeconds"`
+	MinimumConsecutiveSamples int        `json:"minimumConsecutiveSamples"`
+	Severity                  string     `json:"severity"`
+	TargetKind                string     `json:"targetKind"`
+	TargetID                  string     `json:"targetId,omitempty"`
+	Enabled                   bool       `json:"enabled"`
+	Revision                  int64      `json:"revision"`
+	RetiredAt                 *time.Time `json:"retiredAt,omitempty"`
+	CreatedAt                 time.Time  `json:"createdAt"`
+	UpdatedAt                 time.Time  `json:"updatedAt"`
+}
+
+type AlertOverride struct {
+	ID                        string    `json:"id"`
+	LineageID                 string    `json:"lineageId"`
+	TargetKind                string    `json:"targetKind"`
+	TargetID                  string    `json:"targetId"`
+	Kind                      string    `json:"kind"`
+	Metric                    string    `json:"metric,omitempty"`
+	EntityID                  string    `json:"entityId,omitempty"`
+	Operator                  string    `json:"operator,omitempty"`
+	TriggerValue              *float64  `json:"triggerValue,omitempty"`
+	ClearValue                *float64  `json:"clearValue,omitempty"`
+	TriggerState              string    `json:"triggerState,omitempty"`
+	ClearState                string    `json:"clearState,omitempty"`
+	TriggerSeconds            int       `json:"triggerSeconds"`
+	ClearSeconds              int       `json:"clearSeconds"`
+	MinimumConsecutiveSamples int       `json:"minimumConsecutiveSamples"`
+	Severity                  string    `json:"severity"`
+	Enabled                   bool      `json:"enabled"`
+	Revision                  int64     `json:"revision"`
+	CreatedAt                 time.Time `json:"createdAt"`
+	UpdatedAt                 time.Time `json:"updatedAt"`
+}
+
 type BootstrapInvitation struct {
 	TokenHash       string     `json:"tokenHash"`
 	DeviceID        string     `json:"deviceId"`
@@ -399,6 +447,8 @@ type State struct {
 	Observations     map[string]Observation              `json:"observations"`
 	Relationships    map[string]Relationship             `json:"relationships"`
 	Collectors       map[string]CollectorDescriptorState `json:"collectors"`
+	AlertRules       map[string]AlertRule                `json:"alertRules"`
+	AlertOverrides   map[string]AlertOverride            `json:"alertOverrides"`
 	Releases         map[string]Release                  `json:"releases"`
 	Assignments      map[string]Assignment               `json:"assignments"`
 	UpdatePolicies   map[string]DeviceUpdatePolicy       `json:"updatePolicies"`
