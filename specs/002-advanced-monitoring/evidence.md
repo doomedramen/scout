@@ -713,3 +713,36 @@ For future results append: task and requirement IDs, commit, date, exact command
 - No production database, real device, production credential, or deployment
   was used. T026 must implement the leased generation-aware worker against
   these semantics before this story's historical gate can pass.
+
+## T026 — leased generation-aware historical rollups
+
+- Requirements: FR-020, FR-021, FR-023; SC-007, SC-008.
+- Date: 2026-09-11 (Europe/London); implementation commit: `14961d3`.
+- Added authoritative PostgreSQL five-minute rollups from retained raw
+  samples and hourly rollups from their twelve five-minute children. Accepted
+  current samples contribute count/sum/min/max; unavailable samples retain
+  expected cadence without fabricating a value. Coverage is the union of
+  cadence intervals clipped to the bucket and the next observation, and agent
+  cadence is persisted with each sample/series. Every accepted sample marks
+  both tiers dirty in the ingestion transaction. The worker claims up to 1,000
+  rows with owner/epoch/lease fencing, overwrites the stable aggregate key,
+  dirties the hourly parent in the same completion transaction, and records
+  bounded failure diagnostics. Late samples therefore invalidate newer
+  generations and stale workers cannot commit.
+- `BackfillRollupWork` bounds the distinct retained raw five-minute source
+  buckets, enqueues both resolutions with conflict-safe generation increments,
+  and rejects reversed ranges or limits above 1,000. A PostgreSQL migration
+  adds the interval and lease-owner compatibility columns for existing
+  installations. `tests/integration/z_rollups_test.go` exercises lease
+  takeover, pending hourly dependencies, stale completion rejection, late
+  sample recomputation, weighted/hourly sufficient statistics, coverage,
+  bounded backfill, stable aggregate primary keys, and invalid bounds.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  passed against disposable PostgreSQL 17; `go test ./... -race`; `go vet
+  ./...`; `npm run format:check`; `npm run lint`; `npm run check`; `npm run
+  build`; `npm test`; and `git diff --check` all passed. No production
+  database, real device, production credential, or deployment was used.
+- Remaining limits: T027 still owns automatic history tier selection,
+  full-range empty buckets, and API resolution/coverage metadata; T028 owns
+  retention policy and rollup pressure telemetry. The bounded integration
+  fixture is not a 100-host/year capacity claim.
