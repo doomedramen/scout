@@ -48,6 +48,7 @@ func migrations() []migration {
 		{version: 3, sql: alertRulesMigrationSQL},
 		{version: 4, sql: incidentsMigrationSQL},
 		{version: 5, sql: alertConditionFieldsMigrationSQL},
+		{version: 6, sql: notificationDestinationsMigrationSQL},
 	}
 }
 
@@ -351,4 +352,26 @@ ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS service_pattern text NOT NULL D
 ALTER TABLE alert_rules ADD COLUMN IF NOT EXISTS collector_id text NOT NULL DEFAULT '';
 ALTER TABLE alert_overrides ADD COLUMN IF NOT EXISTS service_pattern text NOT NULL DEFAULT '';
 ALTER TABLE alert_overrides ADD COLUMN IF NOT EXISTS collector_id text NOT NULL DEFAULT '';
+`
+
+const notificationDestinationsMigrationSQL = `
+CREATE TABLE IF NOT EXISTS notification_destinations (
+  id text PRIMARY KEY,
+  name text NOT NULL,
+  base_url text NOT NULL,
+  masked_topic text NOT NULL,
+  has_token boolean NOT NULL DEFAULT false,
+  allow_plain_http boolean NOT NULL DEFAULT false,
+  enabled boolean NOT NULL DEFAULT false,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  last_test_at timestamptz,
+  retired_at timestamptz,
+  secret_ciphertext bytea NOT NULL,
+  secret_nonce bytea NOT NULL,
+  secret_wrapped_data_key bytea NOT NULL,
+  secret_key_version integer NOT NULL CHECK (secret_key_version >= 1),
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS notification_destinations_active_idx ON notification_destinations(retired_at, enabled, updated_at);
 `

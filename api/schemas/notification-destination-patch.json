@@ -15,7 +15,8 @@
       "writeOnly": true
     },
     "token": { "type": ["string", "null"], "maxLength": 4096, "writeOnly": true },
-    "enabled": { "type": "boolean" }
+    "enabled": { "type": "boolean" },
+    "allowPlainHttp": { "type": "boolean" }
   },
   "additionalProperties": false,
   "$comment": "Omitting topic or token retains the protected value; token:null removes authentication."

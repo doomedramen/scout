@@ -492,6 +492,15 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
   /notification-destinations/{destinationId}:
     parameters: [{ $ref: "#/components/parameters/DestinationId" }]
+    get:
+      tags: [notifications]
+      responses:
+        "200":
+          {
+            description: Redacted destination,
+            content: { application/json: { schema: { $ref: "./schemas/notification-destination.json" } } },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [notifications]
       x-requires-recent-mfa: true

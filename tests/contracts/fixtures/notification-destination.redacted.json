@@ -4,6 +4,7 @@
   "baseUrl": "https://ntfy.example.test",
   "maskedTopic": "scou********",
   "hasToken": true,
+  "allowPlainHttp": false,
   "enabled": false,
   "revision": 1,
   "lastTestAt": null

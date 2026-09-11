@@ -19,6 +19,7 @@ import (
 	"scout.local/scout/internal/auth"
 	"scout.local/scout/internal/identity"
 	"scout.local/scout/internal/jobs"
+	"scout.local/scout/internal/notifications/ntfy"
 	"scout.local/scout/internal/policy"
 	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
@@ -58,6 +59,7 @@ type App struct {
 	Jobs       jobs.Queue
 	Telemetry  *telemetry.Service
 	Updates    *updates.ReleaseService
+	Ntfy       *ntfy.Client
 	Database   Database
 	Config     Config
 	setupToken string
@@ -116,7 +118,7 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	if err != nil {
 		return nil, err
 	}
-	app := &App{Store: repository, Database: database, Config: config, Secrets: keyRing, Authority: authority, setupToken: setupToken, limiter: newRateLimiter(config.RateLimitPerMinute)}
+	app := &App{Store: repository, Database: database, Config: config, Secrets: keyRing, Authority: authority, Ntfy: ntfy.NewClient(nil), setupToken: setupToken, limiter: newRateLimiter(config.RateLimitPerMinute)}
 	app.Auth = auth.NewService(repository, setupToken, keyRing)
 	app.Identity = &identity.Service{Store: repository, Authority: authority}
 	app.Audit = audit.NewLogger(repository)
@@ -210,6 +212,7 @@ func (a *App) Handler() http.Handler {
 	a.registerInventoryRoutes(mux)
 	a.registerAccessRoutes(mux)
 	a.registerAlertRoutes(mux)
+	a.registerNotificationRoutes(mux)
 	a.registerAgentRoutes(mux)
 	a.registerOperationsRoutes(mux)
 	a.registerEnrollmentRoutes(mux)

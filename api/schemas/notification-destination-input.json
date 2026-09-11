@@ -18,7 +18,8 @@
       "maxLength": 4096,
       "writeOnly": true
     },
-    "enabled": { "type": "boolean", "default": false }
+    "enabled": { "type": "boolean", "default": false },
+    "allowPlainHttp": { "type": "boolean", "default": false }
   },
   "additionalProperties": false,
   "$comment": "The server rejects query strings, fragments, credentials, redirects, public HTTP, and reserved ntfy routing names."

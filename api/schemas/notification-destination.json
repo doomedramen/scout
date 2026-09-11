@@ -2,13 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://scout.local/schemas/notification-destination.json",
   "type": "object",
-  "required": ["id", "name", "baseUrl", "maskedTopic", "hasToken", "enabled", "revision", "lastTestAt"],
+  "required": [
+    "id",
+    "name",
+    "baseUrl",
+    "maskedTopic",
+    "hasToken",
+    "allowPlainHttp",
+    "enabled",
+    "revision",
+    "lastTestAt"
+  ],
   "properties": {
     "id": { "$ref": "monitoring-common.json#/$defs/uuid" },
     "name": { "type": "string", "minLength": 1, "maxLength": 120 },
     "baseUrl": { "type": "string", "format": "uri", "maxLength": 2048 },
     "maskedTopic": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_*.-]+$" },
     "hasToken": { "type": "boolean" },
+    "allowPlainHttp": { "type": "boolean" },
     "enabled": { "type": "boolean" },
     "revision": { "$ref": "monitoring-common.json#/$defs/revision" },
     "lastTestAt": { "type": ["string", "null"], "format": "date-time" }
