@@ -428,6 +428,59 @@ func TestAuthenticatedFirstAgentStoresRealBatchAndHeartbeat(t *testing.T) {
 	if metricsResponse.Code != http.StatusOK || !strings.Contains(metricsResponse.Body, "12.5") {
 		t.Fatalf("metrics: %d %s", metricsResponse.Code, metricsResponse.Body)
 	}
+	var history struct {
+		From   string `json:"from"`
+		To     string `json:"to"`
+		Series []struct {
+			SeriesID string `json:"seriesId"`
+			Metric   string `json:"metric"`
+			Points   []struct {
+				Count    int64   `json:"count"`
+				Coverage float64 `json:"coverage"`
+				Partial  bool    `json:"partial"`
+			} `json:"points"`
+		} `json:"series"`
+	}
+	if err := json.Unmarshal([]byte(metricsResponse.Body), &history); err != nil {
+		t.Fatal(err)
+	}
+	if history.From == "" || history.To == "" || len(history.Series) != 1 || history.Series[0].SeriesID == "" || len(history.Series[0].Points) == 0 {
+		t.Fatalf("history metadata is incomplete: %+v", history)
+	}
+	hasCurrentPoint := false
+	for _, point := range history.Series[0].Points {
+		if point.Coverage < 0 || point.Coverage > 1 {
+			t.Fatalf("history coverage escaped bounds: %+v", point)
+		}
+		if point.Count > 0 {
+			hasCurrentPoint = true
+		}
+	}
+	if !hasCurrentPoint {
+		t.Fatalf("history quality fields did not retain the ingested sample: %+v", history)
+	}
+	explicitURL := server.URL + "/api/v1/devices/" + invitation.DeviceID + "/metrics?seriesId=" + history.Series[0].SeriesID + "&seriesId=00000000-0000-4000-8000-000000000000&maxPoints=2"
+	explicitResponse := getRequest(t, client, explicitURL, cookies, nil)
+	if explicitResponse.Code != http.StatusOK {
+		t.Fatalf("explicit metrics: %d %s", explicitResponse.Code, explicitResponse.Body)
+	}
+	var explicit struct {
+		Series []struct {
+			SeriesID string `json:"seriesId"`
+			Metric   string `json:"metric"`
+			Points   []any  `json:"points"`
+		} `json:"series"`
+	}
+	if err := json.Unmarshal([]byte(explicitResponse.Body), &explicit); err != nil {
+		t.Fatal(err)
+	}
+	if len(explicit.Series) != 2 || explicit.Series[0].SeriesID != history.Series[0].SeriesID || explicit.Series[1].SeriesID != "00000000-0000-4000-8000-000000000000" || explicit.Series[1].Metric != "" || len(explicit.Series[1].Points) != 0 {
+		t.Fatalf("explicit series behavior is incorrect: %+v", explicit)
+	}
+	invalidMetrics := getRequest(t, client, server.URL+"/api/v1/devices/"+invitation.DeviceID+"/metrics?maxPoints=1", cookies, nil)
+	if invalidMetrics.Code != http.StatusBadRequest {
+		t.Fatalf("maxPoints=1 returned %d: %s", invalidMetrics.Code, invalidMetrics.Body)
+	}
 }
 
 type recordedResponse struct {

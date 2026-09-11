@@ -123,7 +123,7 @@ paths:
         - { name: to, in: query, schema: { type: string, format: date-time } }
         - { name: metric, in: query, schema: { type: string, maxLength: 128 } }
         - { name: entityId, in: query, schema: { type: string, maxLength: 128 } }
-        - { name: maxPoints, in: query, schema: { type: integer, minimum: 1, maximum: 600, default: 600 } }
+        - { name: maxPoints, in: query, schema: { type: integer, minimum: 2, maximum: 600, default: 600 } }
         - name: seriesId
           in: query
           description: Repeat this parameter to request up to 16 explicit series.

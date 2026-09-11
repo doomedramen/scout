@@ -1,14 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["series"],
+  "required": ["from", "to", "series"],
   "properties": {
+    "from": { "type": "string", "format": "date-time" },
+    "to": { "type": "string", "format": "date-time" },
     "series": {
       "type": "array",
       "maxItems": 16,
       "items": {
         "type": "object",
-        "required": ["metric", "unit", "points"],
+        "required": ["seriesId", "entityId", "metric", "unit", "resolutionSeconds", "points"],
         "properties": {
           "seriesId": { "type": "string", "format": "uuid" },
           "entityId": { "type": ["string", "null"], "maxLength": 128 },

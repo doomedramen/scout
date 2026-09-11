@@ -48,6 +48,9 @@ export type MetricPoint = {
   observedAt: string;
   min?: number | null;
   max?: number | null;
+  count?: number;
+  coverage?: number;
+  partial?: boolean;
 };
 
 export type MetricSeries = {
@@ -55,6 +58,7 @@ export type MetricSeries = {
   entityId?: string;
   metric: string;
   unit: string;
+  resolutionSeconds?: number;
   points: MetricPoint[];
 };
 
@@ -591,7 +595,7 @@ export const api = {
   devices: (query = "") => request<ListResponse<Device>>(`/devices${query}`),
   device: (id: string) => request<Device>(`/devices/${encodeURIComponent(id)}`),
   metrics: (id: string, query = "") =>
-    request<{ series: MetricSeries[] }>(`/devices/${encodeURIComponent(id)}/metrics${query}`),
+    request<{ from: string; to: string; series: MetricSeries[] }>(`/devices/${encodeURIComponent(id)}/metrics${query}`),
   sites: () => request<ListResponse<Site>>("/sites"),
   createSite: (name: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ name }) }),
   scopes: () => request<ListResponse<Scope>>("/scopes"),

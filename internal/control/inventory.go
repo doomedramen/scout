@@ -57,7 +57,7 @@ func (a *App) getMetrics(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, queryErr)
 		return
 	}
-	query := store.MetricQuery{DeviceID: r.PathValue("deviceId"), Metric: r.URL.Query().Get("metric"), EntityID: r.URL.Query().Get("entityId"), MaxPoints: maxPoints}
+	query := store.MetricQuery{DeviceID: r.PathValue("deviceId"), Metric: r.URL.Query().Get("metric"), EntityID: r.URL.Query().Get("entityId"), SeriesIDs: r.URL.Query()["seriesId"], MaxPoints: maxPoints}
 	var err error
 	if raw := r.URL.Query().Get("from"); raw != "" {
 		query.From, err = time.Parse(time.RFC3339, raw)
@@ -73,8 +73,9 @@ func (a *App) getMetrics(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !query.From.IsZero() && !query.To.IsZero() && query.From.After(query.To) {
-		writeMappedError(w, r, store.ErrInvalid)
+	query, err = store.NormalizeMetricQuery(query, a.Store.Now())
+	if err != nil {
+		writeMappedError(w, r, err)
 		return
 	}
 	series, err := a.Store.QueryMetrics(r.Context(), query)
@@ -82,7 +83,7 @@ func (a *App) getMetrics(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"series": series})
+	writeJSON(w, http.StatusOK, map[string]any{"from": query.From, "to": query.To, "series": series})
 }
 
 func (a *App) topology(w http.ResponseWriter, r *http.Request) {
@@ -137,8 +138,10 @@ func queryInt(r *http.Request, name string, defaultValue int) (int, error) {
 	if name == "limit" && value > 500 {
 		return 500, nil
 	}
-	if name == "maxPoints" && value > 600 {
-		return 0, store.ErrInvalid
+	if name == "maxPoints" {
+		if value < 2 || value > store.MaxMetricHistoryPoints {
+			return 0, store.ErrInvalid
+		}
 	}
 	return value, nil
 }

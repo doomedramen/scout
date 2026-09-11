@@ -194,122 +194,561 @@ type MetricQuery struct {
 	To        time.Time
 	Metric    string
 	EntityID  string
+	SeriesIDs []string
 	MaxPoints int
 }
 
 type MetricPoint struct {
 	ObservedAt   time.Time `json:"observedAt"`
 	Value        *float64  `json:"value"`
-	Min          *float64  `json:"min,omitempty"`
-	Max          *float64  `json:"max,omitempty"`
+	Min          *float64  `json:"min"`
+	Max          *float64  `json:"max"`
 	Availability Freshness `json:"availability"`
+	Count        int64     `json:"count"`
+	Coverage     float64   `json:"coverage"`
+	Partial      bool      `json:"partial"`
 }
 
 type MetricSeries struct {
-	SeriesID string        `json:"seriesId,omitempty"`
-	EntityID string        `json:"entityId,omitempty"`
-	Metric   string        `json:"metric"`
-	Unit     string        `json:"unit"`
-	Points   []MetricPoint `json:"points"`
+	SeriesID          string        `json:"seriesId"`
+	EntityID          string        `json:"entityId"`
+	Metric            string        `json:"metric"`
+	Unit              string        `json:"unit"`
+	ResolutionSeconds int           `json:"resolutionSeconds"`
+	Points            []MetricPoint `json:"points"`
+}
+
+const (
+	MaxMetricHistoryPoints  = 600
+	MaxMetricHistorySeries  = 16
+	metricRawRetention      = 30 * 24 * time.Hour
+	metricFiveMinuteAge     = 90 * 24 * time.Hour
+	metricHourlyAge         = 365 * 24 * time.Hour
+	metricHistoryMaxRange   = 365 * 24 * time.Hour
+	metricHistoryDefaultAge = 30 * 24 * time.Hour
+)
+
+type metricHistoryTier string
+
+const (
+	metricHistoryTierRaw        metricHistoryTier = "raw"
+	metricHistoryTierFiveMinute metricHistoryTier = "five-minute"
+	metricHistoryTierHourly     metricHistoryTier = "hourly"
+)
+
+type metricHistoryDescriptor struct {
+	series         MetricSeries
+	sourceSeconds  int
+	filterMismatch bool
+}
+
+type metricHistoryRaw struct {
+	seriesID        string
+	entityID        string
+	metric          string
+	unit            string
+	value           *float64
+	availability    Freshness
+	observedAt      time.Time
+	receivedAt      time.Time
+	intervalSeconds int
+}
+
+type metricHistoryBucket struct {
+	start        time.Time
+	end          time.Time
+	count        int64
+	sum          float64
+	min          *float64
+	max          *float64
+	covered      time.Duration
+	intervals    []rollupInterval
+	availability Freshness
+	partial      bool
+}
+
+type metricHistoryPlan struct {
+	start time.Time
+	end   time.Time
+	width time.Duration
+	count int
+	from  time.Time
+	to    time.Time
+}
+
+// NormalizeMetricQuery applies the history contract's bounded defaults. It is
+// exported so the HTTP layer can return the exact effective request bounds in
+// its response metadata rather than silently hiding defaulted limits.
+func NormalizeMetricQuery(query MetricQuery, now time.Time) (MetricQuery, error) {
+	query.DeviceID = strings.TrimSpace(query.DeviceID)
+	query.Metric = strings.TrimSpace(query.Metric)
+	query.EntityID = strings.TrimSpace(query.EntityID)
+	if query.DeviceID == "" {
+		return MetricQuery{}, ErrInvalid
+	}
+	if query.MaxPoints == 0 {
+		query.MaxPoints = MaxMetricHistoryPoints
+	}
+	if query.MaxPoints < 2 || query.MaxPoints > MaxMetricHistoryPoints {
+		return MetricQuery{}, ErrInvalid
+	}
+	if len(query.SeriesIDs) > MaxMetricHistorySeries {
+		return MetricQuery{}, ErrInvalid
+	}
+	for index, seriesID := range query.SeriesIDs {
+		seriesID = strings.TrimSpace(seriesID)
+		if seriesID == "" || len(seriesID) > 128 {
+			return MetricQuery{}, ErrInvalid
+		}
+		query.SeriesIDs[index] = seriesID
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	if !query.To.IsZero() {
+		query.To = query.To.UTC()
+	} else {
+		query.To = now
+	}
+	if !query.From.IsZero() {
+		query.From = query.From.UTC()
+	} else {
+		query.From = query.To.Add(-metricHistoryDefaultAge)
+	}
+	if !query.From.Before(query.To) || query.To.Sub(query.From) > metricHistoryMaxRange {
+		return MetricQuery{}, ErrInvalid
+	}
+	return query, nil
+}
+
+func chooseMetricHistoryTier(from, now time.Time) metricHistoryTier {
+	from, now = from.UTC(), now.UTC()
+	age := now.Sub(from)
+	if age <= metricRawRetention {
+		return metricHistoryTierRaw
+	}
+	if age <= metricFiveMinuteAge {
+		return metricHistoryTierFiveMinute
+	}
+	return metricHistoryTierHourly
+}
+
+func metricHistoryTierSeconds(tier metricHistoryTier) int {
+	switch tier {
+	case metricHistoryTierFiveMinute:
+		return RollupResolutionFiveMinute
+	case metricHistoryTierHourly:
+		return RollupResolutionHourly
+	default:
+		return defaultMetricIntervalSeconds
+	}
+}
+
+func makeMetricHistoryPlan(from, to time.Time, sourceSeconds, maxPoints int) metricHistoryPlan {
+	if sourceSeconds < 1 {
+		sourceSeconds = defaultMetricIntervalSeconds
+	}
+	base := time.Duration(sourceSeconds) * time.Second
+	baseBuckets := metricHistoryAlignedBucketCount(from, to, base)
+	multiplier := (baseBuckets + maxPoints - 1) / maxPoints
+	if multiplier < 1 {
+		multiplier = 1
+	}
+	for {
+		width := base * time.Duration(multiplier)
+		start := from.Truncate(width)
+		end := metricHistoryCeil(to, width)
+		count := int(end.Sub(start) / width)
+		if count <= maxPoints {
+			return metricHistoryPlan{start: start.UTC(), end: end.UTC(), width: width, count: count, from: from.UTC(), to: to.UTC()}
+		}
+		multiplier++
+	}
+}
+
+func metricHistoryAlignedBucketCount(from, to time.Time, width time.Duration) int {
+	if width <= 0 {
+		return 1
+	}
+	start := from.Truncate(width)
+	end := metricHistoryCeil(to, width)
+	return maxInt(1, int(end.Sub(start)/width))
+}
+
+func metricHistoryCeil(value time.Time, width time.Duration) time.Time {
+	truncated := value.Truncate(width)
+	if truncated.Equal(value) {
+		return truncated
+	}
+	return truncated.Add(width)
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func metricHistoryOverlap(start, end, from, to time.Time) (time.Time, time.Time, bool) {
+	if start.Before(from) {
+		start = from
+	}
+	if end.After(to) {
+		end = to
+	}
+	return start, end, end.After(start)
+}
+
+func metricHistoryBucketIndex(at time.Time, plan metricHistoryPlan) int {
+	start := at.UTC().Truncate(plan.width)
+	if start.Before(plan.start) || !start.Before(plan.end) {
+		return -1
+	}
+	return int(start.Sub(plan.start) / plan.width)
+}
+
+func newMetricHistoryBuckets(plan metricHistoryPlan) []metricHistoryBucket {
+	buckets := make([]metricHistoryBucket, plan.count)
+	for index := range buckets {
+		start := plan.start.Add(time.Duration(index) * plan.width)
+		end := start.Add(plan.width)
+		buckets[index] = metricHistoryBucket{start: start, end: end, partial: start.Before(plan.from) || end.After(plan.to)}
+	}
+	return buckets
+}
+
+func addMetricHistoryInterval(buckets []metricHistoryBucket, start, end time.Time, plan metricHistoryPlan) {
+	start, end, ok := metricHistoryOverlap(start, end, plan.start, plan.end)
+	if !ok {
+		return
+	}
+	first := metricHistoryBucketIndex(start, plan)
+	if first < 0 {
+		first = 0
+	}
+	last := metricHistoryBucketIndex(end.Add(-time.Nanosecond), plan)
+	if last < 0 {
+		last = len(buckets) - 1
+	}
+	for index := first; index <= last && index < len(buckets); index++ {
+		bucketStart, bucketEnd, overlaps := metricHistoryOverlap(buckets[index].start, buckets[index].end, start, end)
+		if overlaps {
+			buckets[index].intervals = append(buckets[index].intervals, rollupInterval{Start: bucketStart, End: bucketEnd})
+		}
+	}
+}
+
+func addMetricHistoryValue(bucket *metricHistoryBucket, value float64) {
+	bucket.count++
+	bucket.sum += value
+	if bucket.min == nil || value < *bucket.min {
+		copyValue := value
+		bucket.min = &copyValue
+	}
+	if bucket.max == nil || value > *bucket.max {
+		copyValue := value
+		bucket.max = &copyValue
+	}
+}
+
+func metricHistoryIntervalSeconds(value, fallback int) int {
+	if value < 1 || value > maxMetricIntervalSeconds {
+		value = fallback
+	}
+	if value < 1 || value > maxMetricIntervalSeconds {
+		value = defaultMetricIntervalSeconds
+	}
+	return value
+}
+
+func metricHistoryPoint(bucket metricHistoryBucket, query MetricQuery) MetricPoint {
+	covered := bucket.covered
+	if len(bucket.intervals) > 0 {
+		covered = intervalUnion(bucket.intervals)
+	}
+	overlapStart, overlapEnd, overlaps := metricHistoryOverlap(bucket.start, bucket.end, query.From, query.To)
+	coverage := 0.0
+	if overlaps {
+		denominator := overlapEnd.Sub(overlapStart)
+		if covered > denominator {
+			covered = denominator
+		}
+		if covered > 0 {
+			coverage = float64(covered) / float64(denominator)
+		}
+	}
+	if coverage < 0 {
+		coverage = 0
+	}
+	if coverage > 1 {
+		coverage = 1
+	}
+	point := MetricPoint{ObservedAt: bucket.start, Min: bucket.min, Max: bucket.max, Availability: FreshnessUnavailable, Count: bucket.count, Coverage: coverage, Partial: bucket.partial}
+	if bucket.count > 0 {
+		mean := bucket.sum / float64(bucket.count)
+		point.Value = &mean
+		point.Availability = FreshnessCurrent
+	} else if bucket.availability != "" {
+		point.Availability = bucket.availability
+	}
+	if bucket.partial {
+		point.Availability = FreshnessUnavailable
+	}
+	return point
+}
+
+func metricHistoryFromRaw(descriptor metricHistoryDescriptor, samples []metricHistoryRaw, query MetricQuery, tier metricHistoryTier) MetricSeries {
+	baseSeconds := descriptor.sourceSeconds
+	if tier != metricHistoryTierRaw && baseSeconds < metricHistoryTierSeconds(tier) {
+		baseSeconds = metricHistoryTierSeconds(tier)
+	}
+	plan := makeMetricHistoryPlan(query.From, query.To, baseSeconds, query.MaxPoints)
+	buckets := newMetricHistoryBuckets(plan)
+	sort.SliceStable(samples, func(left, right int) bool {
+		if samples[left].observedAt.Equal(samples[right].observedAt) {
+			if samples[left].receivedAt.Equal(samples[right].receivedAt) {
+				return samples[left].seriesID < samples[right].seriesID
+			}
+			return samples[left].receivedAt.Before(samples[right].receivedAt)
+		}
+		return samples[left].observedAt.Before(samples[right].observedAt)
+	})
+	for index, sample := range samples {
+		observedAt := sample.observedAt.UTC()
+		intervalSeconds := metricHistoryIntervalSeconds(sample.intervalSeconds, descriptor.sourceSeconds)
+		coverageEnd := observedAt.Add(time.Duration(intervalSeconds) * time.Second)
+		if index+1 < len(samples) && samples[index+1].observedAt.After(observedAt) && samples[index+1].observedAt.Before(coverageEnd) {
+			coverageEnd = samples[index+1].observedAt
+		}
+		if sample.availability == FreshnessCurrent && sample.value != nil {
+			addMetricHistoryInterval(buckets, observedAt, coverageEnd, plan)
+			if !observedAt.Before(query.From) && observedAt.Before(query.To) {
+				if bucketIndex := metricHistoryBucketIndex(observedAt, plan); bucketIndex >= 0 && bucketIndex < len(buckets) {
+					addMetricHistoryValue(&buckets[bucketIndex], *sample.value)
+				}
+			}
+			continue
+		}
+		if observedAt.Before(query.From) || !observedAt.Before(query.To) {
+			continue
+		}
+		if bucketIndex := metricHistoryBucketIndex(observedAt, plan); bucketIndex >= 0 && bucketIndex < len(buckets) && buckets[bucketIndex].availability == "" {
+			buckets[bucketIndex].availability = sample.availability
+		}
+	}
+	result := descriptor.series
+	result.ResolutionSeconds = int(plan.width / time.Second)
+	result.Points = make([]MetricPoint, 0, len(buckets))
+	for _, bucket := range buckets {
+		result.Points = append(result.Points, metricHistoryPoint(bucket, query))
+	}
+	return result
+}
+
+func metricHistoryFromAggregates(descriptor metricHistoryDescriptor, aggregates []MetricAggregate, query MetricQuery, tier metricHistoryTier) MetricSeries {
+	baseSeconds := metricHistoryTierSeconds(tier)
+	plan := makeMetricHistoryPlan(query.From, query.To, baseSeconds, query.MaxPoints)
+	buckets := newMetricHistoryBuckets(plan)
+	for _, aggregate := range aggregates {
+		start := aggregate.BucketStart.UTC()
+		if !start.Before(query.To) || !start.Add(time.Duration(baseSeconds)*time.Second).After(query.From) {
+			continue
+		}
+		bucketIndex := metricHistoryBucketIndex(start, plan)
+		if bucketIndex < 0 || bucketIndex >= len(buckets) {
+			continue
+		}
+		bucket := &buckets[bucketIndex]
+		if aggregate.Count > 0 && aggregate.Sum != nil {
+			bucket.count += aggregate.Count
+			bucket.sum += *aggregate.Sum
+			if aggregate.Min != nil && (bucket.min == nil || *aggregate.Min < *bucket.min) {
+				copyValue := *aggregate.Min
+				bucket.min = &copyValue
+			}
+			if aggregate.Max != nil && (bucket.max == nil || *aggregate.Max > *bucket.max) {
+				copyValue := *aggregate.Max
+				bucket.max = &copyValue
+			}
+		} else if bucket.availability == "" {
+			bucket.availability = FreshnessUnavailable
+		}
+		coveredSeconds := aggregate.CoveredSeconds
+		if coveredSeconds < 0 {
+			coveredSeconds = 0
+		}
+		bucketSeconds := aggregate.BucketSeconds
+		if bucketSeconds < 1 {
+			bucketSeconds = baseSeconds
+		}
+		if coveredSeconds > bucketSeconds {
+			coveredSeconds = bucketSeconds
+		}
+		bucket.covered += time.Duration(coveredSeconds) * time.Second
+		bucket.partial = bucket.partial || aggregate.Partial
+	}
+	result := descriptor.series
+	result.ResolutionSeconds = int(plan.width / time.Second)
+	result.Points = make([]MetricPoint, 0, len(buckets))
+	for _, bucket := range buckets {
+		result.Points = append(result.Points, metricHistoryPoint(bucket, query))
+	}
+	return result
+}
+
+func metricHistoryEmptySeries(descriptor metricHistoryDescriptor, tier metricHistoryTier) MetricSeries {
+	result := descriptor.series
+	if result.ResolutionSeconds == 0 {
+		result.ResolutionSeconds = metricHistoryTierSeconds(tier)
+	}
+	result.Points = []MetricPoint{}
+	return result
 }
 
 func (s *Store) QueryMetrics(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
+	normalized, err := NormalizeMetricQuery(query, s.Now())
+	if err != nil {
+		return nil, err
+	}
 	if s.db != nil {
 		phase, err := s.monitoringPhase(ctx)
 		if err != nil {
 			return nil, err
 		}
 		if phase == MonitoringStorageAuthoritative {
-			return s.queryMetricsSQL(ctx, query)
+			return s.queryMetricsSQL(ctx, normalized)
 		}
 		if phase == MonitoringStorageImporting {
 			return nil, fmt.Errorf("metric history is paused during migration: %w", ErrConflict)
 		}
 	}
-	if query.MaxPoints <= 0 {
-		query.MaxPoints = 600
-	}
-	if query.MaxPoints > 600 {
-		return nil, ErrInvalid
-	}
-	result := []MetricSeries{}
+	return s.queryMetricsMemory(ctx, normalized)
+}
+
+func (s *Store) queryMetricsMemory(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
+	tier := chooseMetricHistoryTier(query.From, s.Now())
+	var samples []MetricSample
 	err := s.read(ctx, func(state *State) error {
 		if _, ok := state.Devices[query.DeviceID]; !ok {
 			return ErrNotFound
 		}
-		buckets := map[string][]MetricSample{}
-		for _, sample := range state.Samples {
-			if sample.DeviceID != query.DeviceID {
-				continue
-			}
-			if query.Metric != "" && sample.Metric != query.Metric {
-				continue
-			}
-			if query.EntityID != "" && sample.EntityID != query.EntityID {
-				continue
-			}
-			if !query.From.IsZero() && sample.ObservedAt.Before(query.From) {
-				continue
-			}
-			if !query.To.IsZero() && sample.ObservedAt.After(query.To) {
-				continue
-			}
-			key := strings.Join([]string{sample.Metric, sample.EntityID, sample.Unit}, "\x00")
-			buckets[key] = append(buckets[key], sample)
-		}
-		keys := make([]string, 0, len(buckets))
-		for key := range buckets {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			items := buckets[key]
-			sort.Slice(items, func(i, j int) bool { return items[i].ObservedAt.Before(items[j].ObservedAt) })
-			parts := strings.SplitN(key, "\x00", 3)
-			series := MetricSeries{Metric: parts[0], EntityID: parts[1], Unit: parts[2]}
-			if len(items) <= query.MaxPoints {
-				for _, item := range items {
-					series.Points = append(series.Points, MetricPoint{ObservedAt: item.ObservedAt, Value: item.Value, Availability: item.Availability})
-				}
-			} else {
-				step := (len(items) + query.MaxPoints - 1) / query.MaxPoints
-				for start := 0; start < len(items); start += step {
-					end := start + step
-					if end > len(items) {
-						end = len(items)
-					}
-					var minValue, maxValue *float64
-					var last *MetricSample
-					for i := start; i < end; i++ {
-						item := items[i]
-						if item.Availability != FreshnessCurrent || item.Value == nil {
-							continue
-						}
-						if minValue == nil || *item.Value < *minValue {
-							v := *item.Value
-							minValue = &v
-						}
-						if maxValue == nil || *item.Value > *maxValue {
-							v := *item.Value
-							maxValue = &v
-						}
-						last = &item
-					}
-					point := MetricPoint{ObservedAt: items[start].ObservedAt, Min: minValue, Max: maxValue, Availability: FreshnessCurrent}
-					if last != nil {
-						point.Value = last.Value
-					}
-					if minValue == nil {
-						point.Availability = items[start].Availability
-					}
-					series.Points = append(series.Points, point)
-				}
-			}
-			result = append(result, series)
-		}
+		samples = append(samples, state.Samples...)
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+
+	explicit := make(map[string]bool, len(query.SeriesIDs))
+	for _, seriesID := range query.SeriesIDs {
+		explicit[seriesID] = true
+	}
+	descriptors := map[string]metricHistoryDescriptor{}
+	rawBySeries := map[string][]metricHistoryRaw{}
+	for _, sample := range samples {
+		if sample.DeviceID != query.DeviceID {
+			continue
+		}
+		entityID := sample.EntityID
+		if entityID == "" {
+			entityID = "host"
+		}
+		unit := sample.Unit
+		if unit == "" {
+			unit = "unknown"
+		}
+		collectorID := sample.CollectorID
+		if collectorID == "" {
+			collectorID = "legacy"
+		}
+		labels := sample.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		labelsJSON, _ := json.Marshal(labels)
+		seriesID := deterministicSeriesID(query.DeviceID, collectorID, entityID, sample.Metric, unit, labelsJSON)
+		if sample.Metric == "" {
+			continue
+		}
+		if len(query.SeriesIDs) == 0 && (query.Metric != "" && query.Metric != sample.Metric || query.EntityID != "" && query.EntityID != entityID) {
+			continue
+		}
+		if len(query.SeriesIDs) > 0 && !explicit[seriesID] {
+			continue
+		}
+		descriptor, exists := descriptors[seriesID]
+		if !exists {
+			descriptor = metricHistoryDescriptor{series: MetricSeries{SeriesID: seriesID, EntityID: entityID, Metric: sample.Metric, Unit: unit}, sourceSeconds: metricHistoryIntervalSeconds(sample.IntervalSeconds, defaultMetricIntervalSeconds)}
+		} else if sample.IntervalSeconds > 0 && sample.IntervalSeconds < descriptor.sourceSeconds {
+			descriptor.sourceSeconds = sample.IntervalSeconds
+		}
+		if len(query.SeriesIDs) > 0 && (query.Metric != "" && query.Metric != sample.Metric || query.EntityID != "" && query.EntityID != entityID) {
+			descriptor.filterMismatch = true
+			descriptors[seriesID] = descriptor
+			continue
+		}
+		descriptors[seriesID] = descriptor
+		value := cloneMetricValue(sample.Value)
+		rawBySeries[seriesID] = append(rawBySeries[seriesID], metricHistoryRaw{seriesID: seriesID, entityID: entityID, metric: sample.Metric, unit: unit, value: value, availability: sample.Availability, observedAt: sample.ObservedAt.UTC(), receivedAt: sample.ReceivedAt.UTC(), intervalSeconds: sample.IntervalSeconds})
+	}
+	ordered := orderMetricHistoryDescriptors(descriptors, query.SeriesIDs)
+	for _, seriesID := range query.SeriesIDs {
+		if _, exists := descriptors[seriesID]; !exists {
+			ordered = append(ordered, metricHistoryDescriptor{series: MetricSeries{SeriesID: seriesID}, sourceSeconds: metricHistoryTierSeconds(tier)})
+		}
+	}
+	result := make([]MetricSeries, 0, len(ordered))
+	for _, descriptor := range ordered {
+		if descriptor.filterMismatch || descriptor.series.Metric == "" {
+			result = append(result, metricHistoryEmptySeries(descriptor, tier))
+			continue
+		}
+		result = append(result, metricHistoryFromRaw(descriptor, rawBySeries[descriptor.series.SeriesID], query, tier))
+	}
+	return result, nil
+}
+
+func orderMetricHistoryDescriptors(descriptors map[string]metricHistoryDescriptor, seriesIDs []string) []metricHistoryDescriptor {
+	ordered := make([]metricHistoryDescriptor, 0, len(descriptors))
+	if len(seriesIDs) > 0 {
+		for _, seriesID := range seriesIDs {
+			if descriptor, exists := descriptors[seriesID]; exists {
+				ordered = append(ordered, descriptor)
+			}
+		}
+		return ordered
+	}
+	keys := make([]string, 0, len(descriptors))
+	for key := range descriptors {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(left, right int) bool {
+		first, second := descriptors[keys[left]].series, descriptors[keys[right]].series
+		if first.Metric != second.Metric {
+			return first.Metric < second.Metric
+		}
+		if first.EntityID != second.EntityID {
+			return first.EntityID < second.EntityID
+		}
+		return first.SeriesID < second.SeriesID
+	})
+	if len(keys) > MaxMetricHistorySeries {
+		keys = keys[:MaxMetricHistorySeries]
+	}
+	for _, key := range keys {
+		ordered = append(ordered, descriptors[key])
+	}
+	return ordered
+}
+
+func cloneMetricValue(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func (s *Store) PruneSamples(ctx context.Context, before time.Time) (int, error) {

@@ -596,17 +596,18 @@ func markAlertWorkSQLTx(ctx context.Context, tx *sql.Tx, lineageID, entityID str
 }
 
 type sqlMetricRow struct {
-	seriesID     string
-	entityID     string
-	metric       string
-	unit         string
-	value        *float64
-	availability Freshness
-	observedAt   time.Time
-	receivedAt   time.Time
+	seriesID        string
+	entityID        string
+	metric          string
+	unit            string
+	value           *float64
+	availability    Freshness
+	observedAt      time.Time
+	receivedAt      time.Time
+	intervalSeconds int
 }
 
-func (s *Store) queryMetricsSQL(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
+func (s *Store) legacyQueryMetricsSQL(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
 	if query.MaxPoints <= 0 {
 		query.MaxPoints = 600
 	}
@@ -746,6 +747,255 @@ func minInt(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func (s *Store) queryMetricsSQL(ctx context.Context, query MetricQuery) ([]MetricSeries, error) {
+	normalized, err := NormalizeMetricQuery(query, s.Now())
+	if err != nil {
+		return nil, err
+	}
+	query = normalized
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1)
+		    OR EXISTS (SELECT 1 FROM workspace_state WHERE singleton = true AND state_json->'devices' ? $1)`, query.DeviceID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("check metric device: %w", err)
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	tier := chooseMetricHistoryTier(query.From, s.Now())
+	descriptors, err := s.queryMetricHistoryDescriptorsSQL(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	for seriesID, descriptor := range descriptors {
+		if len(query.SeriesIDs) > 0 && ((query.Metric != "" && query.Metric != descriptor.series.Metric) || (query.EntityID != "" && query.EntityID != descriptor.series.EntityID)) {
+			descriptor.filterMismatch = true
+			descriptors[seriesID] = descriptor
+		}
+	}
+
+	var rawBySeries map[string][]metricHistoryRaw
+	var aggregatesBySeries map[string][]MetricAggregate
+	if tier == metricHistoryTierRaw {
+		var discovered map[string]metricHistoryDescriptor
+		var queryErr error
+		rawBySeries, discovered, queryErr = s.queryMetricHistoryRawSQL(ctx, query, descriptors)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		for seriesID, descriptor := range discovered {
+			if _, exists := descriptors[seriesID]; !exists && len(query.SeriesIDs) == 0 {
+				descriptors[seriesID] = descriptor
+			}
+		}
+	} else {
+		aggregatesBySeries, err = s.queryMetricHistoryAggregatesSQL(ctx, query, descriptors, tier)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ordered := orderMetricHistoryDescriptors(descriptors, query.SeriesIDs)
+	for _, seriesID := range query.SeriesIDs {
+		if _, exists := descriptors[seriesID]; !exists {
+			ordered = append(ordered, metricHistoryDescriptor{series: MetricSeries{SeriesID: seriesID}, sourceSeconds: metricHistoryTierSeconds(tier)})
+		}
+	}
+	result := make([]MetricSeries, 0, len(ordered))
+	for _, descriptor := range ordered {
+		if descriptor.filterMismatch || descriptor.series.Metric == "" {
+			result = append(result, metricHistoryEmptySeries(descriptor, tier))
+			continue
+		}
+		if tier == metricHistoryTierRaw {
+			result = append(result, metricHistoryFromRaw(descriptor, rawBySeries[descriptor.series.SeriesID], query, tier))
+		} else {
+			result = append(result, metricHistoryFromAggregates(descriptor, aggregatesBySeries[descriptor.series.SeriesID], query, tier))
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) queryMetricHistoryDescriptorsSQL(ctx context.Context, query MetricQuery) (map[string]metricHistoryDescriptor, error) {
+	conditions := []string{"ms.device_id = $1", "ms.storage_generation = storage.storage_generation"}
+	args := []any{query.DeviceID}
+	if len(query.SeriesIDs) > 0 {
+		placeholders := make([]string, len(query.SeriesIDs))
+		for index, seriesID := range query.SeriesIDs {
+			args = append(args, seriesID)
+			placeholders[index] = fmt.Sprintf("$%d", len(args))
+		}
+		conditions = append(conditions, "ms.id IN ("+strings.Join(placeholders, ", ")+")")
+	} else {
+		if query.Metric != "" {
+			args = append(args, query.Metric)
+			conditions = append(conditions, fmt.Sprintf("ms.metric = $%d", len(args)))
+		}
+		if query.EntityID != "" {
+			args = append(args, query.EntityID)
+			conditions = append(conditions, fmt.Sprintf("ms.entity_id = $%d", len(args)))
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ms.id, ms.entity_id, ms.metric, ms.unit, ms.interval_seconds
+		FROM metric_series AS ms
+		JOIN monitoring_storage_state AS storage ON storage.singleton = true
+		WHERE `+strings.Join(conditions, " AND ")+`
+		ORDER BY ms.metric, ms.entity_id, ms.id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query SQL metric series: %w", err)
+	}
+	defer rows.Close()
+	result := map[string]metricHistoryDescriptor{}
+	for rows.Next() {
+		var seriesID, entityID, metric, unit string
+		var intervalSeconds int
+		if err := rows.Scan(&seriesID, &entityID, &metric, &unit, &intervalSeconds); err != nil {
+			return nil, fmt.Errorf("scan SQL metric series: %w", err)
+		}
+		result[seriesID] = metricHistoryDescriptor{series: MetricSeries{SeriesID: seriesID, EntityID: entityID, Metric: metric, Unit: unit}, sourceSeconds: metricHistoryIntervalSeconds(intervalSeconds, defaultMetricIntervalSeconds)}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate SQL metric series: %w", err)
+	}
+	return result, nil
+}
+
+func (s *Store) queryMetricHistoryRawSQL(ctx context.Context, query MetricQuery, descriptors map[string]metricHistoryDescriptor) (map[string][]metricHistoryRaw, map[string]metricHistoryDescriptor, error) {
+	conditions := []string{
+		"ms.device_id = $1",
+		"ms.storage_generation = storage.storage_generation",
+		"ms.observed_at >= $2",
+		"ms.observed_at < $3",
+	}
+	args := []any{query.DeviceID, query.From.Add(-time.Duration(maxMetricIntervalSeconds) * time.Second), query.To.Add(time.Duration(maxMetricIntervalSeconds) * time.Second)}
+	if len(query.SeriesIDs) > 0 {
+		knownIDs := make([]string, 0, len(query.SeriesIDs))
+		for _, seriesID := range query.SeriesIDs {
+			if _, exists := descriptors[seriesID]; exists {
+				knownIDs = append(knownIDs, seriesID)
+			}
+		}
+		if len(knownIDs) == 0 {
+			return map[string][]metricHistoryRaw{}, map[string]metricHistoryDescriptor{}, nil
+		}
+		placeholders := make([]string, len(knownIDs))
+		for index, seriesID := range knownIDs {
+			args = append(args, seriesID)
+			placeholders[index] = fmt.Sprintf("$%d", len(args))
+		}
+		conditions = append(conditions, "COALESCE(ms.series_id, '') IN ("+strings.Join(placeholders, ", ")+")")
+	} else {
+		if query.Metric != "" {
+			args = append(args, query.Metric)
+			conditions = append(conditions, fmt.Sprintf("ms.metric = $%d", len(args)))
+		}
+		if query.EntityID != "" {
+			args = append(args, query.EntityID)
+			conditions = append(conditions, fmt.Sprintf("ms.entity_id = $%d", len(args)))
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(ms.series_id, ''), ms.entity_id, ms.metric, ms.unit,
+		       ms.value, ms.availability, ms.observed_at, ms.received_at, ms.interval_seconds
+		FROM metric_samples AS ms
+		JOIN monitoring_storage_state AS storage ON storage.singleton = true
+		WHERE `+strings.Join(conditions, " AND ")+`
+		ORDER BY COALESCE(ms.series_id, ''), ms.observed_at, ms.received_at, ms.id`, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query SQL metric history samples: %w", err)
+	}
+	defer rows.Close()
+	grouped := map[string][]metricHistoryRaw{}
+	discovered := map[string]metricHistoryDescriptor{}
+	for rows.Next() {
+		var row sqlMetricRow
+		var value sql.NullFloat64
+		if err := rows.Scan(&row.seriesID, &row.entityID, &row.metric, &row.unit, &value, &row.availability, &row.observedAt, &row.receivedAt, &row.intervalSeconds); err != nil {
+			return nil, nil, fmt.Errorf("scan SQL metric history sample: %w", err)
+		}
+		if value.Valid {
+			row.value = floatPointer(value.Float64)
+		}
+		if row.entityID == "" {
+			row.entityID = "host"
+		}
+		if row.unit == "" {
+			row.unit = "unknown"
+		}
+		if row.seriesID == "" {
+			row.seriesID = deterministicSeriesID(query.DeviceID, "legacy", row.entityID, row.metric, row.unit, []byte("{}"))
+		}
+		if len(query.SeriesIDs) > 0 {
+			if _, exists := descriptors[row.seriesID]; !exists {
+				continue
+			}
+		}
+		if _, exists := descriptors[row.seriesID]; !exists {
+			discovered[row.seriesID] = metricHistoryDescriptor{series: MetricSeries{SeriesID: row.seriesID, EntityID: row.entityID, Metric: row.metric, Unit: row.unit}, sourceSeconds: metricHistoryIntervalSeconds(row.intervalSeconds, defaultMetricIntervalSeconds)}
+		}
+		grouped[row.seriesID] = append(grouped[row.seriesID], metricHistoryRaw{seriesID: row.seriesID, entityID: row.entityID, metric: row.metric, unit: row.unit, value: cloneMetricValue(row.value), availability: row.availability, observedAt: row.observedAt.UTC(), receivedAt: row.receivedAt.UTC(), intervalSeconds: row.intervalSeconds})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate SQL metric history samples: %w", err)
+	}
+	return grouped, discovered, nil
+}
+
+func (s *Store) queryMetricHistoryAggregatesSQL(ctx context.Context, query MetricQuery, descriptors map[string]metricHistoryDescriptor, tier metricHistoryTier) (map[string][]MetricAggregate, error) {
+	knownIDs := make([]string, 0, len(descriptors))
+	for seriesID := range descriptors {
+		knownIDs = append(knownIDs, seriesID)
+	}
+	if len(knownIDs) == 0 {
+		return map[string][]MetricAggregate{}, nil
+	}
+	sort.Strings(knownIDs)
+	args := make([]any, 0, len(knownIDs)+3)
+	placeholders := make([]string, len(knownIDs))
+	for index, seriesID := range knownIDs {
+		args = append(args, seriesID)
+		placeholders[index] = fmt.Sprintf("$%d", len(args))
+	}
+	resolution := metricHistoryTierSeconds(tier)
+	args = append(args, resolution, query.From.Truncate(time.Duration(resolution)*time.Second), metricHistoryCeil(query.To, time.Duration(resolution)*time.Second))
+	resolutionArg, fromArg, toArg := len(knownIDs)+1, len(knownIDs)+2, len(knownIDs)+3
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT series_id, resolution_seconds, bucket_start, count, sum, min, max,
+		       expected_count, covered_seconds, bucket_seconds, partial, generation
+		FROM metric_aggregates
+		WHERE series_id IN (`+strings.Join(placeholders, ", ")+
+		fmt.Sprintf(") AND resolution_seconds = $%d AND bucket_start >= $%d AND bucket_start < $%d", resolutionArg, fromArg, toArg)+`
+		ORDER BY series_id, bucket_start`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query SQL metric aggregates: %w", err)
+	}
+	defer rows.Close()
+	grouped := map[string][]MetricAggregate{}
+	for rows.Next() {
+		var aggregate MetricAggregate
+		var sum, minValue, maxValue sql.NullFloat64
+		if err := rows.Scan(&aggregate.SeriesID, &aggregate.ResolutionSeconds, &aggregate.BucketStart, &aggregate.Count, &sum, &minValue, &maxValue, &aggregate.ExpectedCount, &aggregate.CoveredSeconds, &aggregate.BucketSeconds, &aggregate.Partial, &aggregate.Generation); err != nil {
+			return nil, fmt.Errorf("scan SQL metric aggregate: %w", err)
+		}
+		if sum.Valid {
+			aggregate.Sum = floatPointer(sum.Float64)
+		}
+		if minValue.Valid {
+			aggregate.Min = floatPointer(minValue.Float64)
+		}
+		if maxValue.Valid {
+			aggregate.Max = floatPointer(maxValue.Float64)
+		}
+		aggregate.BucketStart = aggregate.BucketStart.UTC()
+		grouped[aggregate.SeriesID] = append(grouped[aggregate.SeriesID], aggregate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate SQL metric aggregates: %w", err)
+	}
+	return grouped, nil
 }
 
 func (s *Store) telemetryStatusSQL(ctx context.Context) (TelemetryStatus, error) {

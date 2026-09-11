@@ -92,7 +92,7 @@ func TestAuthoritativeTelemetryUsesSQLIdentityAndAtomicReplay(t *testing.T) {
 		t.Fatalf("invalid batch left SQL rows behind: before=%d after=%d", beforeRollback, afterRollback)
 	}
 
-	series, err := repository.QueryMetrics(ctx, store.MetricQuery{DeviceID: device.ID, Metric: "disk.read_rate", MaxPoints: 600})
+	series, err := repository.QueryMetrics(ctx, store.MetricQuery{DeviceID: device.ID, Metric: "disk.read_rate", From: base.Add(-time.Minute), To: base.Add(2 * time.Minute), MaxPoints: 600})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,10 +106,21 @@ func TestAuthoritativeTelemetryUsesSQLIdentityAndAtomicReplay(t *testing.T) {
 			t.Fatalf("SQL series metadata or points missing: %+v", item)
 		}
 	}
-	if got := *seriesByEntity["disk-a"].Points[0].Value; got != outOfOrder || *seriesByEntity["disk-a"].Points[1].Value != first {
+	findPoint := func(item store.MetricSeries, observedAt time.Time) (float64, bool) {
+		for _, point := range item.Points {
+			if point.ObservedAt.Equal(observedAt) && point.Value != nil {
+				return *point.Value, true
+			}
+		}
+		return 0, false
+	}
+	if got, ok := findPoint(seriesByEntity["disk-a"], base.Add(-time.Minute)); !ok || got != outOfOrder {
 		t.Fatalf("out-of-order SQL history was not retained: %+v", seriesByEntity["disk-a"])
 	}
-	if got := *seriesByEntity["disk-b"].Points[0].Value; got != secondEntity {
+	if got, ok := findPoint(seriesByEntity["disk-a"], base); !ok || got != first {
+		t.Fatalf("latest SQL history was not retained: %+v", seriesByEntity["disk-a"])
+	}
+	if got, ok := findPoint(seriesByEntity["disk-b"], base.Add(time.Minute)); !ok || got != secondEntity {
 		t.Fatalf("second entity history was not retained: %+v", seriesByEntity["disk-b"])
 	}
 	currentDevice, err := repository.GetDevice(ctx, device.ID)
