@@ -2,42 +2,58 @@ package telemetry
 
 import (
 	"context"
-	"time"
 
 	"scout.local/scout/internal/store"
 )
 
 type RetentionPolicy struct {
-	Hours      int
-	MaxSamples int
+	Hours          int
+	MaxSamples     int
+	RawDays        int
+	FiveMinuteDays int
+	HourlyDays     int
 }
 
 type RetentionReport struct {
-	ExpiredSamples int                   `json:"expiredSamples"`
-	OrphanedItems  int                   `json:"orphanedItems"`
-	LimitedSamples int                   `json:"limitedSamples"`
-	Status         store.TelemetryStatus `json:"status"`
+	ExpiredSamples        int64                 `json:"expiredSamples"`
+	ExpiredFiveMinuteRows int64                 `json:"expiredFiveMinuteRows"`
+	ExpiredHourlyRows     int64                 `json:"expiredHourlyRows"`
+	DeferredSamples       int64                 `json:"deferredSamples"`
+	OrphanedItems         int                   `json:"orphanedItems"`
+	LimitedSamples        int                   `json:"limitedSamples"`
+	Status                store.TelemetryStatus `json:"status"`
 }
 
 func (s *Service) EnforceRetention(ctx context.Context, policy RetentionPolicy) (RetentionReport, error) {
 	if s == nil || s.Store == nil {
 		return RetentionReport{}, store.ErrInvalid
 	}
-	workspace, err := s.Store.Workspace(ctx)
+	settings, err := s.Store.GetMonitoringSettings(ctx)
 	if err != nil {
 		return RetentionReport{}, err
 	}
-	if policy.Hours == 0 {
-		policy.Hours = workspace.RetentionHours
+	if policy.RawDays == 0 {
+		if policy.Hours > 0 {
+			policy.RawDays = policy.Hours / 24
+		} else {
+			policy.RawDays = settings.Retention.RawDays
+		}
+	}
+	if policy.FiveMinuteDays == 0 {
+		policy.FiveMinuteDays = settings.Retention.FiveMinuteDays
+	}
+	if policy.HourlyDays == 0 {
+		policy.HourlyDays = settings.Retention.HourlyDays
 	}
 	if policy.MaxSamples == 0 {
+		workspace, workspaceErr := s.Store.Workspace(ctx)
+		if workspaceErr != nil {
+			return RetentionReport{}, workspaceErr
+		}
 		policy.MaxSamples = workspace.MaxSamples
 	}
-	if policy.Hours < 1 || policy.MaxSamples < 0 {
-		return RetentionReport{}, store.ErrInvalid
-	}
 	now := s.clock()
-	expired, err := s.Store.PruneSamples(ctx, now.Add(-time.Duration(policy.Hours)*time.Hour))
+	retained, err := s.Store.RetainTelemetry(ctx, store.RetentionSettings{RawDays: policy.RawDays, FiveMinuteDays: policy.FiveMinuteDays, HourlyDays: policy.HourlyDays}, now)
 	if err != nil {
 		return RetentionReport{}, err
 	}
@@ -52,18 +68,12 @@ func (s *Service) EnforceRetention(ctx context.Context, policy RetentionPolicy) 
 			return RetentionReport{}, err
 		}
 	}
-	when := now
-	if _, err := s.Store.SetWorkspace(ctx, func(state *store.WorkspaceState) error {
-		state.RetentionHours = policy.Hours
-		state.MaxSamples = policy.MaxSamples
-		state.LastRetentionAt = &when
-		return nil
-	}); err != nil {
+	if err := s.Store.RecordMonitoringJobSuccess(ctx, "retention", now); err != nil {
 		return RetentionReport{}, err
 	}
 	status, err := s.Store.TelemetryStatus(ctx)
 	if err != nil {
 		return RetentionReport{}, err
 	}
-	return RetentionReport{ExpiredSamples: expired, OrphanedItems: orphaned, LimitedSamples: limited, Status: status}, nil
+	return RetentionReport{ExpiredSamples: retained.RawDeleted, ExpiredFiveMinuteRows: retained.FiveMinuteDeleted, ExpiredHourlyRows: retained.HourlyDeleted, DeferredSamples: retained.RawDeferred, OrphanedItems: orphaned, LimitedSamples: limited, Status: status}, nil
 }

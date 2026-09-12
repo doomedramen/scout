@@ -210,6 +210,7 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 		}
 		if sampleCount+int64(len(samples)) > int64(state.Workspace.MaxSamples) {
 			state.Workspace.TelemetryBackpressure = true
+			state.Workspace.TelemetryBackpressureCount++
 			stripMigratedTelemetry(&state)
 			if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
 				return BatchResult{}, err
@@ -231,6 +232,7 @@ func (s *Store) ingestBatchSQL(ctx context.Context, agentID, bootID, batchID, pa
 	}
 	if !telemetryBudgetHasRoom(usedBytes, state.Workspace.TelemetryBudgetBytes, estimate) {
 		state.Workspace.TelemetryBackpressure = true
+		state.Workspace.TelemetryBackpressureCount++
 		stripMigratedTelemetry(&state)
 		if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
 			return BatchResult{}, err

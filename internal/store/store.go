@@ -74,7 +74,7 @@ func newState() State {
 		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{}, Candidates: map[string]Candidate{}, Workers: map[string]WorkerIdentity{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, AlertRules: map[string]AlertRule{}, AlertOverrides: map[string]AlertOverride{}, NotificationDestinations: map[string]NotificationDestination{}, NotificationDeliveries: map[string]NotificationDelivery{}, SuppressionWindows: map[string]SuppressionWindow{}, SuppressionEpisodes: map[string]SuppressionEpisode{}, AlertEvaluations: map[string]AlertEvaluation{}, Incidents: map[string]Incident{}, IncidentTransitions: map[string]IncidentTransition{}, AlertWork: map[string]AlertWorkItem{}, Releases: map[string]Release{},
-		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{PolicyRevision: 1, SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
+		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, RetentionPreviews: map[string]RetentionPreview{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{PolicyRevision: 1, MonitoringRevision: 1, MonitoringDefaultsVersion: MonitoringDefaultsVersion, RetentionRawDays: DefaultRawRetentionDays, RetentionFiveMinuteDays: DefaultFiveMinuteRetentionDays, RetentionHourlyDays: DefaultHourlyRetentionDays, SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
 	}
 }
 
@@ -185,14 +185,35 @@ func ensureStateMaps(state *State) {
 	if state.Rollouts == nil {
 		state.Rollouts = map[string]Rollout{}
 	}
+	if state.RetentionPreviews == nil {
+		state.RetentionPreviews = map[string]RetentionPreview{}
+	}
 	if state.Workspace.SchemaVersion == 0 {
 		state.Workspace.SchemaVersion = 1
 	}
 	if state.Workspace.PolicyRevision < 1 {
 		state.Workspace.PolicyRevision = 1
 	}
+	if state.Workspace.MonitoringRevision < 1 {
+		state.Workspace.MonitoringRevision = state.Workspace.PolicyRevision
+		if state.Workspace.MonitoringRevision < 1 {
+			state.Workspace.MonitoringRevision = 1
+		}
+	}
+	if state.Workspace.MonitoringDefaultsVersion == "" {
+		state.Workspace.MonitoringDefaultsVersion = MonitoringDefaultsVersion
+	}
 	if state.Workspace.RetentionHours == 0 {
 		state.Workspace.RetentionHours = DefaultRetentionHours
+	}
+	if state.Workspace.RetentionRawDays == 0 {
+		state.Workspace.RetentionRawDays = clampInt(state.Workspace.RetentionHours/24, 1, DefaultRawRetentionDays)
+	}
+	if state.Workspace.RetentionFiveMinuteDays == 0 {
+		state.Workspace.RetentionFiveMinuteDays = DefaultFiveMinuteRetentionDays
+	}
+	if state.Workspace.RetentionHourlyDays == 0 {
+		state.Workspace.RetentionHourlyDays = DefaultHourlyRetentionDays
 	}
 	if state.Workspace.TelemetryBudgetBytes == 0 {
 		state.Workspace.TelemetryBudgetBytes = DefaultTelemetryBudgetBytes

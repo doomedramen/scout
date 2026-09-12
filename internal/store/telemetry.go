@@ -72,12 +72,14 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 		}
 		if state.Workspace.MaxSamples > 0 && len(state.Samples)+len(samples) > state.Workspace.MaxSamples {
 			state.Workspace.TelemetryBackpressure = true
+			state.Workspace.TelemetryBackpressureCount++
 			return ErrBackpressure
 		}
 		if state.Workspace.TelemetryBudgetBytes > 0 {
 			used := memoryTelemetryBytes(*state)
 			if !telemetryBudgetHasRoom(used, state.Workspace.TelemetryBudgetBytes, memoryTelemetryEstimate(len(samples), len(observations))) {
 				state.Workspace.TelemetryBackpressure = true
+				state.Workspace.TelemetryBackpressureCount++
 				return ErrBackpressure
 			}
 		}
@@ -130,7 +132,9 @@ func (s *Store) ingestBatchMemory(ctx context.Context, agentID, bootID, batchID,
 		}
 		device.AgentVersion = agent.InstalledVersion
 		state.Devices[agent.DeviceID] = device
-		_ = dropped
+		if dropped > 0 {
+			state.Workspace.DroppedSamples += int64(dropped)
+		}
 		result = BatchResult{AcceptedAt: now}
 		return nil
 	})
@@ -170,6 +174,11 @@ func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, heartbeat H
 			agent.InstalledVersion = heartbeat.InstalledVersion
 		}
 		device.CollectorStates = append([]CollectorDescriptorState(nil), heartbeat.CollectorStates...)
+		for _, collector := range heartbeat.CollectorStates {
+			if strings.Contains(strings.ToLower(collector.Diagnostic), "truncated") {
+				state.Workspace.TelemetryTruncated++
+			}
+		}
 		state.Devices[agent.DeviceID] = device
 		state.Agents[agentID] = agent
 		revision = scopeRevision(state)

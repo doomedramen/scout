@@ -98,6 +98,11 @@ func (s *Service) RunRollups(ctx context.Context, policy RollupPolicy) (RollupRe
 		success := time.Now().UTC()
 		report.LastSuccess = &success
 	}
+	if report.LastSuccess != nil {
+		if err := s.Store.RecordMonitoringJobSuccess(ctx, "rollup", *report.LastSuccess); err != nil {
+			return report, err
+		}
+	}
 	return report, nil
 }
 

@@ -2,7 +2,6 @@ package control
 
 import (
 	"net/http"
-	"time"
 
 	"scout.local/scout/internal/alerts"
 	"scout.local/scout/internal/audit"
@@ -82,34 +81,10 @@ func (a *App) resumeNotifications(w http.ResponseWriter, r *http.Request) {
 		"queued":   result.Enqueued,
 		"dropped":  result.Dropped,
 	})
-	writeJSON(w, http.StatusOK, recoveryMonitoringSettingsResponse(state, a.Store.Now()))
-}
-
-func recoveryMonitoringSettingsResponse(state store.WorkspaceState, now time.Time) map[string]any {
-	rawDays := state.RetentionHours / 24
-	if rawDays < 1 {
-		rawDays = 1
+	settings, err := a.Store.GetMonitoringSettings(r.Context())
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
 	}
-	if rawDays > 30 {
-		rawDays = 30
-	}
-	diskBudget := state.TelemetryBudgetBytes
-	if diskBudget < 1 {
-		diskBudget = store.DefaultTelemetryBudgetBytes
-	}
-	if diskBudget > 1<<40 {
-		diskBudget = 1 << 40
-	}
-	return map[string]any{
-		"revision":            state.PolicyRevision,
-		"defaultsVersion":     "002",
-		"notificationsPaused": state.NotificationsPaused,
-		"retention": map[string]any{
-			"rawDays":        rawDays,
-			"fiveMinuteDays": 90,
-			"hourlyDays":     365,
-		},
-		"diskBudgetBytes": diskBudget,
-		"updatedAt":       now.UTC(),
-	}
+	writeJSON(w, http.StatusOK, settings)
 }

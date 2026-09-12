@@ -52,6 +52,7 @@ func migrations() []migration {
 		{version: 7, sql: notificationDeliveriesMigrationSQL},
 		{version: 8, sql: suppressionMigrationSQL},
 		{version: 9, sql: telemetryIntervalMigrationSQL},
+		{version: 10, sql: monitoringPolicyMigrationSQL},
 	}
 }
 
@@ -449,4 +450,75 @@ const telemetryIntervalMigrationSQL = `
 ALTER TABLE metric_samples ADD COLUMN IF NOT EXISTS interval_seconds integer NOT NULL DEFAULT 0 CHECK (interval_seconds >= 0 AND interval_seconds <= 86400);
 ALTER TABLE rollup_work ADD COLUMN IF NOT EXISTS lease_owner text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS metric_samples_series_observed_idx ON metric_samples(series_id, observed_at, received_at, id);
+`
+
+const monitoringPolicyMigrationSQL = `
+CREATE TABLE IF NOT EXISTS monitoring_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  defaults_version text NOT NULL DEFAULT '002',
+  notifications_paused boolean NOT NULL DEFAULT false,
+  raw_days integer NOT NULL DEFAULT 30 CHECK (raw_days >= 1 AND raw_days <= 30),
+  five_minute_days integer NOT NULL DEFAULT 90 CHECK (five_minute_days >= 1 AND five_minute_days <= 90),
+  hourly_days integer NOT NULL DEFAULT 365 CHECK (hourly_days >= 1 AND hourly_days <= 365),
+  disk_budget_bytes bigint NOT NULL DEFAULT 536870912000 CHECK (disk_budget_bytes >= 1 AND disk_budget_bytes <= 1099511627776),
+  migration_generation bigint NOT NULL DEFAULT 0 CHECK (migration_generation >= 0),
+  dropped_count bigint NOT NULL DEFAULT 0 CHECK (dropped_count >= 0),
+  truncated_count bigint NOT NULL DEFAULT 0 CHECK (truncated_count >= 0),
+  backpressure_count bigint NOT NULL DEFAULT 0 CHECK (backpressure_count >= 0),
+  active_admission_failures bigint NOT NULL DEFAULT 0 CHECK (active_admission_failures >= 0),
+  last_evaluation_at timestamptz,
+  last_rollup_at timestamptz,
+  last_retention_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO monitoring_settings(
+  singleton, revision, notifications_paused, raw_days, five_minute_days,
+  hourly_days, disk_budget_bytes, migration_generation, dropped_count,
+  truncated_count, backpressure_count, active_admission_failures,
+  last_retention_at
+)
+SELECT
+  true,
+  GREATEST(COALESCE((state_json->'workspace'->>'policyRevision')::bigint, 1), 1),
+  COALESCE((state_json->'workspace'->>'notificationsPaused')::boolean, false),
+  LEAST(GREATEST(COALESCE(((state_json->'workspace'->>'retentionHours')::integer / 24), 30), 1), 30),
+  90,
+  365,
+  LEAST(GREATEST(COALESCE((state_json->'workspace'->>'telemetryBudgetBytes')::bigint, 536870912000), 1), 1099511627776),
+  COALESCE((SELECT migration_generation FROM monitoring_storage_state WHERE singleton = true), 0),
+  GREATEST(COALESCE((state_json->'workspace'->>'droppedSamples')::bigint, 0), 0),
+  0,
+  0,
+  0,
+  CASE
+    WHEN state_json->'workspace'->>'lastRetentionAt' IS NULL THEN NULL
+    ELSE (state_json->'workspace'->>'lastRetentionAt')::timestamptz
+  END
+FROM workspace_state
+WHERE singleton = true
+ON CONFLICT (singleton) DO NOTHING;
+
+INSERT INTO monitoring_settings(singleton)
+VALUES (true)
+ON CONFLICT (singleton) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS retention_previews (
+  id text PRIMARY KEY,
+  idempotency_key text NOT NULL DEFAULT '',
+  expected_revision bigint NOT NULL CHECK (expected_revision >= 1),
+  raw_days integer NOT NULL CHECK (raw_days >= 1 AND raw_days <= 30),
+  five_minute_days integer NOT NULL CHECK (five_minute_days >= 1 AND five_minute_days <= 90),
+  hourly_days integer NOT NULL CHECK (hourly_days >= 1 AND hourly_days <= 365),
+  estimated_rows bigint NOT NULL CHECK (estimated_rows >= 0),
+  irreversible boolean NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  consumed_at timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS retention_previews_idempotency_uq
+  ON retention_previews(idempotency_key)
+  WHERE idempotency_key <> '' AND consumed_at IS NULL;
+CREATE INDEX IF NOT EXISTS retention_previews_expiry_idx ON retention_previews(expires_at, consumed_at);
 `

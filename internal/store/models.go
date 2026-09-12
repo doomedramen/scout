@@ -627,12 +627,22 @@ type WorkspaceState struct {
 	EnrollmentPaused           bool       `json:"enrollmentPaused"`
 	UpdatesPaused              bool       `json:"updatesPaused"`
 	NotificationsPaused        bool       `json:"notificationsPaused"`
+	MonitoringRevision         int64      `json:"monitoringRevision"`
+	MonitoringDefaultsVersion  string     `json:"monitoringDefaultsVersion"`
+	RetentionRawDays           int        `json:"retentionRawDays"`
+	RetentionFiveMinuteDays    int        `json:"retentionFiveMinuteDays"`
+	RetentionHourlyDays        int        `json:"retentionHourlyDays"`
 	RetentionHours             int        `json:"retentionHours"`
 	MaxSamples                 int        `json:"maxSamples"`
 	TelemetryBudgetBytes       int64      `json:"telemetryBudgetBytes"`
 	DroppedSamples             int64      `json:"droppedSamples"`
+	TelemetryTruncated         int64      `json:"telemetryTruncated"`
+	TelemetryBackpressureCount int64      `json:"telemetryBackpressureCount"`
+	ActiveAdmissionFailures    int64      `json:"activeAdmissionFailures"`
 	TelemetryBackpressure      bool       `json:"telemetryBackpressure"`
 	LastRetentionAt            *time.Time `json:"lastRetentionAt,omitempty"`
+	LastEvaluationAt           *time.Time `json:"lastEvaluationAt,omitempty"`
+	LastRollupAt               *time.Time `json:"lastRollupAt,omitempty"`
 	PauseRequested             bool       `json:"pauseRequested"`
 	PausePending               bool       `json:"pausePending"`
 	ExecutionHolders           []string   `json:"executionHolders,omitempty"`
@@ -677,6 +687,7 @@ type State struct {
 	CollectorConfigs         map[string]CollectorConfig          `json:"collectorConfigs"`
 	ServiceEntities          map[string]ServiceEntity            `json:"serviceEntities"`
 	Rollouts                 map[string]Rollout                  `json:"rollouts"`
+	RetentionPreviews        map[string]RetentionPreview         `json:"retentionPreviews"`
 	AuditEvents              []AuditEvent                        `json:"auditEvents"`
 	Workspace                WorkspaceState                      `json:"workspace"`
 }

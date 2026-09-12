@@ -235,6 +235,7 @@ func (s *Store) ApplyAlertEvaluationWithDeliveries(ctx context.Context, evaluati
 					}
 				}
 				if _, exists := state.Incidents[incident.ID]; !exists && active >= MaxActiveIncidents {
+					state.Workspace.ActiveAdmissionFailures++
 					return ErrIncidentCap
 				}
 			}
@@ -614,6 +615,20 @@ func (s *Store) applyAlertEvaluationSQL(ctx context.Context, evaluation AlertEva
 				return fmt.Errorf("count active incidents: %w", err)
 			}
 			if active >= MaxActiveIncidents {
+				state, stateErr := readWorkspaceStateTx(ctx, tx)
+				if stateErr != nil {
+					return stateErr
+				}
+				state.Workspace.ActiveAdmissionFailures++
+				if writeErr := writeWorkspaceStateTx(ctx, tx, state); writeErr != nil {
+					return writeErr
+				}
+				if syncErr := syncMonitoringSettingsTx(ctx, tx, state.Workspace, s.now().UTC()); syncErr != nil {
+					return syncErr
+				}
+				if commitErr := tx.Commit(); commitErr != nil {
+					return fmt.Errorf("commit active incident admission failure: %w", commitErr)
+				}
 				return ErrIncidentCap
 			}
 		}

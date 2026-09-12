@@ -204,6 +204,9 @@ func (s *Store) restoreSQL(ctx context.Context, input State) error {
 	if err := writeWorkspaceStateTx(ctx, tx, restored); err != nil {
 		return err
 	}
+	if err := syncMonitoringSettingsTx(ctx, tx, restored.Workspace, now); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit workspace restore: %w", err)
 	}
@@ -240,6 +243,9 @@ func (s *Store) startRecoverySQL(ctx context.Context) (WorkspaceState, error) {
 		return WorkspaceState{}, err
 	}
 	if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
+		return WorkspaceState{}, err
+	}
+	if err := syncMonitoringSettingsTx(ctx, tx, state.Workspace, now); err != nil {
 		return WorkspaceState{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -297,6 +303,9 @@ func (s *Store) reconcileRecoverySQL(ctx context.Context) (WorkspaceState, error
 	if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
 		return WorkspaceState{}, err
 	}
+	if err := syncMonitoringSettingsTx(ctx, tx, state.Workspace, now); err != nil {
+		return WorkspaceState{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return WorkspaceState{}, fmt.Errorf("commit recovery reconciliation: %w", err)
 	}
@@ -337,6 +346,9 @@ func (s *Store) resumeNotificationDeliveriesSQL(ctx context.Context, expectedRev
 	if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
 		return WorkspaceState{}, result, err
 	}
+	if err := syncMonitoringSettingsTx(ctx, tx, state.Workspace, now); err != nil {
+		return WorkspaceState{}, result, err
+	}
 	if err := tx.Commit(); err != nil {
 		return WorkspaceState{}, NotificationDeliveryEnqueueResult{}, fmt.Errorf("commit notification resume: %w", err)
 	}
@@ -373,9 +385,11 @@ func pauseRecoveryState(state *State, now time.Time) {
 func advancePolicyRevision(workspace *WorkspaceState) {
 	if workspace.PolicyRevision < 1 {
 		workspace.PolicyRevision = 1
+		workspace.MonitoringRevision = workspace.PolicyRevision
 		return
 	}
 	workspace.PolicyRevision++
+	workspace.MonitoringRevision = workspace.PolicyRevision
 }
 
 func resetAlertEvaluationsState(state *State, now time.Time) {
