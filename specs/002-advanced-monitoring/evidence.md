@@ -782,3 +782,33 @@ For future results append: task and requirement IDs, commit, date, exact command
   and its mixed-version/interrupted-aggregation integration evidence. The
   disposable fixture does not claim 100-device/year capacity or live hardware
   support.
+
+## T028 — durable monitoring policy and retention coordination
+
+- Requirements: FR-020, FR-023, FR-024, FR-033; SC-008, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: `3f776bd`.
+- Added the versioned `monitoring_settings` store with revision-fenced policy
+  updates, bounded disk budgets, tiered raw/five-minute/hourly retention, and
+  five-minute idempotent retention previews. Destructive retention reductions
+  require an unexpired preview tied to the expected revision. Monitoring
+  status reports evaluation/rollup lag, bounded queues, dropped/truncated/
+  backpressure/admission-failure counters, delivery failures, storage
+  pressure thresholds, and last successful job times without exposing secrets.
+- Retention now uses observation-time cutoffs and keeps raw samples while
+  required five-minute/hourly rollups are missing, partial, dirty, or queued;
+  completed aggregate generations are safe to delete according to their tier.
+  Ingestion, collector diagnostics, active-incident admission, rollups, and
+  recovery paths contribute bounded operational counters and job timestamps.
+  Authenticated monitoring settings, preview, and status routes are covered by
+  a development-mode HTTP test that confirms the preview fence and negative
+  path.
+- Exact verification commands and outcomes: `go test
+  ./internal/store ./internal/telemetry ./internal/control`; `scripts/test-integration.sh`
+  against disposable PostgreSQL 17; `go test ./... -count=1`; `go vet ./...`;
+  `npm run format:check`; `npm run lint`; `npm run check`; `npm run build`; and
+  `git diff --check` all passed. The SQL integration fixture proves that an
+  unaggregated raw row is deferred and is removed only after both aggregate
+  tiers are committed.
+- No production database, real device, production credential, or deployment
+  was used. T029 still owns the device/recovery UI wiring and interrupted or
+  mixed-version aggregation presentation evidence.

@@ -53,7 +53,7 @@ Independent gate: Year-range queries retain extrema/coverage after restart withi
 - [X] T025 [US5] Add deterministic bucket/cadence/coverage/late-data/retention fixtures in internal/telemetry/rollups_test.go, including weighted means, partial boundaries and >600-hour ranges (FR-020, FR-021, FR-022, FR-023; SC-007, SC-008).
 - [X] T026 [US5] Implement leased generation-aware five-minute/hourly aggregation and bounded retained-data backfill in internal/telemetry/rollups.go and internal/store/rollups.go (FR-020, FR-021, FR-023; SC-007, SC-008).
 - [X] T027 [US5] Extend internal/store/telemetry.go and internal/control/inventory.go history queries with automatic tier grouping, count/coverage/resolution and full-range empty buckets (FR-019, FR-021, FR-022; SC-007).
-- [ ] T028 [US5] Coordinate retention, dirty generations, storage thresholds and operator policy changes in internal/telemetry/retention.go and internal/control/settings.go; expose rollup lag and pressure (FR-020, FR-023, FR-024, FR-033; SC-008, SC-011).
+- [X] T028 [US5] Coordinate retention, dirty generations, storage thresholds and operator policy changes in internal/telemetry/retention.go and internal/control/settings.go; expose rollup lag and pressure (FR-020, FR-023, FR-024, FR-033; SC-008, SC-011).
 - [ ] T029 [US5] Wire history resolution/partial metadata and retention preview into apps/web/src/views/device.tsx and apps/web/src/views/recovery.tsx; verify interrupted aggregation and mixed-version agents in tests/integration/rollups_test.go (FR-019, FR-020, FR-021, FR-022, FR-023, FR-024; SC-007, SC-008, SC-010).
 ## Storage health (P2)
 
