@@ -4,6 +4,7 @@ import {
   BellRing,
   Bell,
   CircleHelp,
+  Cpu,
   Download,
   HardDrive,
   KeyRound,
@@ -21,6 +22,7 @@ import { AccessView } from "@/views/access";
 import { AgentSetupView } from "@/views/agent-setup";
 import { EnrollmentView } from "@/views/enrollment";
 import { IncidentsView } from "@/views/incidents";
+import { HardwareView } from "@/views/hardware";
 import { NetworkView } from "@/views/network";
 import { NotificationsView } from "@/views/notifications";
 import { RecoveryView } from "@/views/recovery";
@@ -41,6 +43,7 @@ type Page =
   | "Scopes"
   | "Enrollment"
   | "Services"
+  | "Hardware"
   | "Storage";
 
 const pages = [
@@ -52,6 +55,7 @@ const pages = [
   { name: "Enrollment" as const, icon: ServerCog },
   { name: "Access" as const, icon: KeyRound },
   { name: "Services" as const, icon: Terminal },
+  { name: "Hardware" as const, icon: Cpu },
   { name: "Storage" as const, icon: HardDrive },
   { name: "Updates" as const, icon: Download },
 ];
@@ -65,6 +69,10 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   Enrollment: { title: "Enrollment", description: "Bounded discovery and automatic enrollment progress." },
   Access: { title: "Access", description: "Resolve credentials and trust without exposing secrets." },
   Services: { title: "Services", description: "Provider health and associated service entities." },
+  Hardware: {
+    title: "Hardware telemetry",
+    description: "See exposed temperature, fan, and GPU fields without invented readings.",
+  },
   Storage: {
     title: "Storage health",
     description: "See explicit disk and pool faults without confusing capacity with health.",
@@ -250,6 +258,7 @@ export default function App() {
             {page === "Enrollment" && <EnrollmentView />}
             {page === "Access" && <AccessView />}
             {page === "Services" && <ServicesView onOpenIncident={openIncident} />}
+            {page === "Hardware" && <HardwareView />}
             {page === "Storage" && <StorageView onOpenIncident={openIncident} />}
             {page === "Updates" && <UpdatesView />}
           </>

@@ -1034,3 +1034,32 @@ For future results append: task and requirement IDs, commit, date, exact command
   AMD, or Intel Linux lab, so live driver/kernel versions, permissions, and
   family compatibility remain unvalidated. T037 is next; T038 remains the
   live hardware evidence gate and no GPU family is advertised as validated.
+
+## T037 — hardware telemetry view and exact exclusions
+
+- Requirements: FR-019, FR-029, FR-030, FR-031; SC-009, SC-010.
+- Date: 2026-09-12 (Europe/London); implementation commit: `7456380`.
+- Added the authenticated Hardware workspace to the main navigation. It
+  filters sensor and GPU entities by enrolled device, shows online/fault/
+  unavailable state, stable identity and freshness metadata, and renders each
+  field with its unit and explicit availability. GPU history uses the existing
+  bounded metrics API and keeps unavailable/partial samples as visible gaps;
+  tabular samples remain available for keyboard and screen-reader users.
+  The view exposes exact stable sensor IDs as checkbox exclusions and persists
+  only the bounded `excludedIds` collector setting with revision fencing. It
+  does not create universal thermal, fan, utilization, or wear thresholds;
+  explicit owner alert rules remain the path for thresholds.
+- Exact verification commands and outcomes: `npx prettier --write
+  apps/web/src/views/hardware.tsx apps/web/src/App.tsx apps/web/src/styles.css
+  tests/e2e/playwright/hardware.spec.ts`; `npm run format:check`; `npm run
+  check`; `npm run build`; and `npx playwright test
+  tests/e2e/playwright/hardware.spec.ts` all passed. The focused browser test
+  used a secret-free fixture and proved current temperature rendering,
+  unavailable GPU fields, visible history gaps, stable-ID-only exclusion
+  persistence, and the success response after refresh. No production
+  database, credential, real device, or deployment was used.
+- Remaining limits: the development host is macOS and has no owner-authorized
+  representative Linux hwmon/GPU lab, so live driver/kernel and permission
+  support remains unvalidated under T038. The agent runtime still needs to
+  schedule and transmit the sensors/GPU collector results from enrolled hosts;
+  this UI evidence does not claim live hardware telemetry delivery.
