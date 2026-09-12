@@ -50,22 +50,23 @@ type Config struct {
 }
 
 type App struct {
-	Store      *store.Store
-	Auth       *auth.Service
-	Identity   *identity.Service
-	Authority  *identity.Authority
-	Secrets    *secrets.KeyRing
-	Audit      *audit.Logger
-	Policy     *policy.Engine
-	Discovery  *discovery.Service
-	Jobs       jobs.Queue
-	Telemetry  *telemetry.Service
-	Updates    *updates.ReleaseService
-	Ntfy       *ntfy.Client
-	Database   Database
-	Config     Config
-	setupToken string
-	limiter    *rateLimiter
+	Store       *store.Store
+	Auth        *auth.Service
+	Identity    *identity.Service
+	Authority   *identity.Authority
+	Secrets     *secrets.KeyRing
+	Audit       *audit.Logger
+	Policy      *policy.Engine
+	Discovery   *discovery.Service
+	Coordinator *discovery.Coordinator
+	Jobs        jobs.Queue
+	Telemetry   *telemetry.Service
+	Updates     *updates.ReleaseService
+	Ntfy        *ntfy.Client
+	Database    Database
+	Config      Config
+	setupToken  string
+	limiter     *rateLimiter
 }
 
 const defaultAgentBootstrapDir = "/usr/local/share/scout/agent"
@@ -126,6 +127,7 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	app.Audit = audit.NewLogger(repository)
 	app.Policy = &policy.Engine{Store: repository}
 	app.Discovery = &discovery.Service{Store: repository, Policy: app.Policy, Now: repository.Now}
+	app.Coordinator = discovery.NewCoordinator(repository, app.Policy, discovery.TCPScanner{})
 	app.Jobs = jobs.Queue{Store: repository}
 	app.Telemetry = &telemetry.Service{Store: repository}
 	trust := updates.NewTrustStore()
