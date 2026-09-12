@@ -56,14 +56,22 @@ type persistedIdentity struct {
 }
 
 type Runtime struct {
-	Config    Config
-	identity  persistedIdentity
-	collector *collector.HostCollector
-	spool     *Spool
-	bootID    string
-	client    *http.Client
-	mu        sync.Mutex
-	startedAt time.Time
+	Config       Config
+	identity     persistedIdentity
+	collector    *collector.HostCollector
+	spool        *Spool
+	scanSpool    *Spool
+	bootID       string
+	client       *http.Client
+	mu           sync.Mutex
+	scanMu       sync.Mutex
+	scanStateMu  sync.Mutex
+	scanCancel   context.CancelFunc
+	scanRunID    string
+	scanEpoch    int64
+	scanRevision int64
+	scanExecutor func(context.Context, ScanAssignment) error
+	startedAt    time.Time
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
@@ -89,7 +97,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
-	return &Runtime{Config: config, collector: collector.NewHostCollector(config.Root), spool: NewSpool(filepath.Join(config.DataDir, "spool"), 64<<20, time.Hour), bootID: store.NewID(), client: client, startedAt: time.Now().UTC()}, nil
+	return &Runtime{Config: config, collector: collector.NewHostCollector(config.Root), spool: NewSpool(filepath.Join(config.DataDir, "spool"), 64<<20, time.Hour), scanSpool: NewSpool(filepath.Join(config.DataDir, "scan-spool"), 16<<20, time.Hour), bootID: store.NewID(), client: client, startedAt: time.Now().UTC()}, nil
 }
 
 func (r *Runtime) Run(ctx context.Context) error {
@@ -151,6 +159,7 @@ func (r *Runtime) ReportOnce(ctx context.Context) error {
 	}
 	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}, "capabilities": map[string]any{"scanProtocolVersions": []int{1}, "scanTransports": []string{store.ScanTransportTCP}}})
 	_ = r.post(ctx, "/api/v1/agent/v1/heartbeat", heartbeat)
+	_ = r.syncScan(ctx)
 	_ = r.syncUpdate(ctx)
 	return nil
 }
