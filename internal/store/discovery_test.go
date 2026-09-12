@@ -125,6 +125,46 @@ func TestWorkerClaimIsSiteScopedAndRecoveryAware(t *testing.T) {
 	}
 }
 
+func TestWorkerProgressKeepsLeaseUntilTerminalState(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemory()
+	site, _ := s.CreateSite(ctx, Site{Name: "progress-site"})
+	scope, err := s.CreateScope(ctx, Scope{SiteID: site.ID, Ranges: []string{"192.0.2.0/24"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, _ := s.CreateDevice(ctx, Device{DisplayName: "target", SiteID: site.ID})
+	job, err := s.CreateJob(ctx, Job{Kind: "enrollment", DeviceID: device.ID, ScopeID: scope.ID, ScopeRevision: scope.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := WorkerIdentity{ID: "worker-progress", Kind: "enroller", SiteIDs: []string{site.ID}}
+	claimed, err := s.ClaimWorkerJob(ctx, worker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReportJob(ctx, job.ID, worker.ID, claimed.Epoch, "connecting", nil); err != nil {
+		t.Fatal(err)
+	}
+	progress, err := s.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.State != "connecting" || progress.LeaseExpiry == nil {
+		t.Fatalf("progress lease = %+v", progress)
+	}
+	if err := s.ReportJob(ctx, job.ID, worker.ID, claimed.Epoch, "failed", map[string]string{"code": "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := s.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.State != "failed" || terminal.LeaseExpiry != nil {
+		t.Fatalf("terminal lease = %+v", terminal)
+	}
+}
+
 func TestScanStoreConcurrentLeaseRollbackAndCrossPageDuplicate(t *testing.T) {
 	ctx := context.Background()
 	s, scope, policy := newScanFixture(t)

@@ -32,6 +32,8 @@ services:
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
       SCOUT_WEB_DIR: /usr/local/share/scout/web
+      SCOUT_PUBLIC_ORIGIN: ${SCOUT_PUBLIC_ORIGIN:-http://127.0.0.1:${SCOUT_PORT:-8080}}
+      SCOUT_AUTO_ENROLLMENT: ${SCOUT_AUTO_ENROLLMENT:-true}
     ports:
       - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:8080"
     volumes:

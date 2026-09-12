@@ -1004,6 +1004,7 @@ export const api = {
     allowedUse: string[];
     targets: string[];
     endpoint?: string;
+    username?: string;
     scopeId?: string;
     expectedScopeRevision?: number;
   }) => request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),

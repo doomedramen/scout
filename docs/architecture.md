@@ -4,7 +4,7 @@
 
 The Go control plane owns inventory, agent identities, discovery policy, enrollment authorization, metric retention, alert rules, and the topology graph in PostgreSQL. The React/TypeScript browser application uses shadcn/ui and talks to this service; Go agents establish outbound authenticated connections to it. Turborepo coordinates build and development tasks.
 
-Start with a modular server and a separate agent rather than many independently deployed services. Keep credential handling and enrollment behind a narrow interface so an isolated worker can execute privileged operations later.
+Start with a modular server and a separate agent rather than many independently deployed services. Keep credential handling and enrollment behind a narrow interface so the server-local worker can execute privileged operations without giving ordinary agents installation authority; an isolated relay remains an optional deployment boundary.
 
 The first release has one owner. Enrollment runs automatically within the owner's configured scopes using supplied access; no routine per-device approval is required. The initial agent is bootstrapped by the owner, then every newly enrolled agent contributes observations that extend coverage. Preserve exactly one agent identity per device through idempotent installation and reconciliation.
 
@@ -12,7 +12,7 @@ The first release has one owner. Enrollment runs automatically within the owner'
 
 An agent collects host CPU, memory, filesystem, uptime, and network-interface metrics. It reports its own interfaces, routes, and locally visible neighbors where permitted. Active discovery is a separate, disabled-by-default capability requiring an explicit policy.
 
-Agents do not hold the owner's reusable SSH credentials, authorize other agents, or select arbitrary installation targets. A relay worker may run near an isolated network, but it needs its own explicitly assigned role and receives only approved enrollment jobs.
+Agents do not hold the owner's reusable SSH credentials, authorize other agents, or select arbitrary installation targets. The default server-local worker may install only an owner-approved, scope-bound job; a relay worker may run near an isolated network, but it needs its own explicitly assigned role and receives only approved enrollment jobs.
 
 Each agent has a distinct identity and capability set. Collection runs without root where possible; privileged collectors are optional and separately documented. Containerized collectors must describe their host visibility limits rather than silently reporting container metrics as host metrics.
 

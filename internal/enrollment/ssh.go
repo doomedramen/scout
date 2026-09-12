@@ -15,11 +15,28 @@ import (
 )
 
 type SSHOptions struct {
-	Address        string
-	Username       string
-	PrivateKeyPEM  []byte
-	KnownHostsFile string
-	Timeout        time.Duration
+	Address         string
+	Username        string
+	PrivateKeyPEM   []byte
+	KnownHostsFile  string
+	HostKeyCallback ssh.HostKeyCallback
+	Timeout         time.Duration
+}
+
+var ErrHostKeyMismatch = errors.New("SSH host key does not match the trusted fingerprint")
+var ErrSSHConnectivity = errors.New("SSH target could not be reached")
+var ErrSSHAuthentication = errors.New("SSH authentication failed")
+
+// FingerprintHostKeyCallback makes an owner-supplied fingerprint usable by
+// the server-local enrollment worker without creating a known_hosts file.
+func FingerprintHostKeyCallback(expected string) ssh.HostKeyCallback {
+	expected = strings.TrimSpace(expected)
+	return func(_ string, _ net.Addr, key ssh.PublicKey) error {
+		if key == nil || expected == "" || !strings.EqualFold(ssh.FingerprintSHA256(key), expected) {
+			return ErrHostKeyMismatch
+		}
+		return nil
+	}
 }
 
 type sshTransport struct {
@@ -30,16 +47,27 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	if err := ValidateTarget(options.Address); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(options.Username) == "" || len(options.PrivateKeyPEM) == 0 || options.KnownHostsFile == "" {
-		return nil, errors.New("SSH identity and known_hosts are required")
+	if strings.TrimSpace(options.Username) == "" || len(options.PrivateKeyPEM) == 0 || options.KnownHostsFile == "" && options.HostKeyCallback == nil {
+		return nil, errors.New("SSH identity and host trust are required")
 	}
 	signer, err := ssh.ParsePrivateKey(options.PrivateKeyPEM)
 	if err != nil {
-		return nil, errors.New("SSH private key is invalid")
+		return nil, ErrSSHAuthentication
 	}
-	hostKeyCallback, err := knownhosts.New(options.KnownHostsFile)
-	if err != nil {
-		return nil, fmt.Errorf("load known_hosts: %w", err)
+	hostKeyCallback := options.HostKeyCallback
+	var callbackErr error
+	if hostKeyCallback != nil {
+		callback := hostKeyCallback
+		hostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			callbackErr = callback(hostname, remote, key)
+			return callbackErr
+		}
+	}
+	if hostKeyCallback == nil {
+		hostKeyCallback, err = knownhosts.New(options.KnownHostsFile)
+		if err != nil {
+			return nil, fmt.Errorf("load known_hosts: %w", err)
+		}
 	}
 	timeout := options.Timeout
 	if timeout <= 0 {
@@ -52,18 +80,24 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	dialer := net.Dialer{Timeout: timeout}
 	connection, err := dialer.DialContext(ctx, "tcp", options.Address)
 	if err != nil {
-		return nil, errors.New("SSH connection failed")
+		return nil, ErrSSHConnectivity
 	}
 	clientConnection, channels, requests, err := ssh.NewClientConn(connection, options.Address, config)
 	if err != nil {
 		_ = connection.Close()
+		if errors.Is(callbackErr, ErrHostKeyMismatch) {
+			return nil, ErrHostKeyMismatch
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "unable to authenticate") {
+			return nil, ErrSSHAuthentication
+		}
 		return nil, errors.New("SSH handshake failed")
 	}
 	return &sshTransport{client: ssh.NewClient(clientConnection, channels, requests)}, nil
 }
 
 func (t *sshTransport) Upload(ctx context.Context, path string, data []byte) error {
-	if t == nil || t.client == nil || (path != "/var/lib/scout/agent/scout-agent.new" && path != "/etc/systemd/system/scout-agent.service") {
+	if t == nil || t.client == nil || (path != "/tmp/scout-agent.new" && path != "/tmp/scout-agent.service" && path != "/tmp/scout-agent.invitation") {
 		return errors.New("upload path is not permitted")
 	}
 	session, err := t.client.NewSession()

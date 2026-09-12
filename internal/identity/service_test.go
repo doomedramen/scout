@@ -49,6 +49,13 @@ func TestEnrollmentConsumesInvitationAndPreventsSecondAgent(t *testing.T) {
 	if result.AgentID == "" || result.AgentToken == "" {
 		t.Fatal("bootstrap did not issue identity")
 	}
+	updated, err := s.GetDevice(ctx, device.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Platform != "linux" || updated.Architecture != "amd64" {
+		t.Fatalf("enrollment did not record platform: %+v", updated)
+	}
 	if _, err := service.Enroll(ctx, EnrollmentRequest{Invitation: token, CSRPEM: csrForTest(t), AgentVersion: "0.1.0", Platform: "linux", Architecture: "amd64"}); !errors.Is(err, store.ErrDuplicate) {
 		t.Fatalf("reused invitation: %v", err)
 	}

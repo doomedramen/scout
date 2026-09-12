@@ -46,7 +46,7 @@ func main() {
 		database = db
 	}
 	production := os.Getenv("SCOUT_PRODUCTION") == "true"
-	config := control.Config{Production: production, AllowedOrigin: os.Getenv("SCOUT_ALLOWED_ORIGIN"), WebDir: os.Getenv("SCOUT_WEB_DIR"), SetupToken: os.Getenv("SCOUT_SETUP_TOKEN"), SetupTokenFile: os.Getenv("SCOUT_SETUP_TOKEN_FILE"), SecretKeyFile: os.Getenv("SCOUT_SECRET_KEY_FILE"), AgentCAFile: os.Getenv("SCOUT_AGENT_CA_FILE"), AgentCAKeyFile: os.Getenv("SCOUT_AGENT_CA_KEY_FILE"), StartRecovery: os.Getenv("SCOUT_RECOVERY_MODE") == "true", ReleaseTrustFile: os.Getenv("SCOUT_RELEASE_TRUST_FILE"), ArtifactDir: os.Getenv("SCOUT_ARTIFACT_DIR"), AgentBootstrapDir: os.Getenv("SCOUT_AGENT_BOOTSTRAP_DIR"), AgentInstallerFile: os.Getenv("SCOUT_AGENT_INSTALLER_FILE"), AgentRequireMTLS: os.Getenv("SCOUT_REQUIRE_AGENT_MTLS") == "true"}
+	config := control.Config{Production: production, AllowedOrigin: os.Getenv("SCOUT_ALLOWED_ORIGIN"), WebDir: os.Getenv("SCOUT_WEB_DIR"), SetupToken: os.Getenv("SCOUT_SETUP_TOKEN"), SetupTokenFile: os.Getenv("SCOUT_SETUP_TOKEN_FILE"), SecretKeyFile: os.Getenv("SCOUT_SECRET_KEY_FILE"), AgentCAFile: os.Getenv("SCOUT_AGENT_CA_FILE"), AgentCAKeyFile: os.Getenv("SCOUT_AGENT_CA_KEY_FILE"), StartRecovery: os.Getenv("SCOUT_RECOVERY_MODE") == "true", ReleaseTrustFile: os.Getenv("SCOUT_RELEASE_TRUST_FILE"), ArtifactDir: os.Getenv("SCOUT_ARTIFACT_DIR"), AgentBootstrapDir: os.Getenv("SCOUT_AGENT_BOOTSTRAP_DIR"), AgentInstallerFile: os.Getenv("SCOUT_AGENT_INSTALLER_FILE"), AgentRequireMTLS: os.Getenv("SCOUT_REQUIRE_AGENT_MTLS") == "true", PublicOrigin: os.Getenv("SCOUT_PUBLIC_ORIGIN"), EnrollmentEnabled: os.Getenv("SCOUT_AUTO_ENROLLMENT") != "false", EnrollmentArtifactFile: os.Getenv("SCOUT_AGENT_ARTIFACT_FILE"), EnrollmentServiceUnitFile: os.Getenv("SCOUT_AGENT_SERVICE_UNIT_FILE"), EnrollmentAgentVersion: os.Getenv("SCOUT_AGENT_VERSION"), EnrollmentUsername: os.Getenv("SCOUT_ENROLLMENT_SSH_USER")}
 	app, err := control.NewApp(func() *store.Store {
 		if db != nil {
 			return store.NewSQL(db)
@@ -64,6 +64,14 @@ func main() {
 			log.Printf("scan coordinator stopped: %v", err)
 		}
 	}()
+	if app.LocalEnrollment != nil {
+		app.LocalEnrollment.Config.Logf = func(format string, args ...any) { log.Printf(format, args...) }
+		go func() {
+			if err := app.LocalEnrollment.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("local enrollment worker stopped: %v", err)
+			}
+		}()
+	}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

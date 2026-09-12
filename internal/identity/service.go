@@ -185,6 +185,13 @@ func (s *Service) Enroll(ctx context.Context, request EnrollmentRequest) (Enroll
 	if err := s.Store.CreateAgentIdentity(ctx, identity); err != nil {
 		return EnrollmentResult{}, err
 	}
+	if _, err := s.Store.UpdateDevice(ctx, device.ID, func(item *store.Device) error {
+		item.Platform = request.Platform
+		item.Architecture = request.Architecture
+		return nil
+	}); err != nil {
+		return EnrollmentResult{}, err
+	}
 	return EnrollmentResult{DeviceID: device.ID, AgentID: identity.ID, AgentToken: token, CertificatePEM: string(certPEM), CABundlePEM: string(s.Authority.CAPEM), ExpiresAt: identity.ExpiresAt, ProtocolVersion: 1}, nil
 }
 

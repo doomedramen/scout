@@ -29,6 +29,7 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [trust, setTrust] = useState<TrustRecord[]>([]);
   const [credentialKind, setCredentialKind] = useState("ssh");
+  const [username, setUsername] = useState("scout");
   const [secret, setSecret] = useState("");
   const [targets, setTargets] = useState("");
   const [endpoint, setEndpoint] = useState("");
@@ -170,6 +171,7 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
         targets: splitValues(targets),
         allowedUse: ["enrollment"],
         endpoint,
+        username: credentialKind === "ssh" ? username : undefined,
         scopeId: focusedCandidate?.scopeId,
         expectedScopeRevision: focusedCandidate?.scopeRevision,
       });
@@ -369,6 +371,12 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
               onChange={(event) => setSecret(event.target.value)}
             />
           </label>
+          {credentialKind === "ssh" && (
+            <label>
+              SSH username
+              <Input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
+            </label>
+          )}
           <label>
             Exact targets <span className="label-hint">host:port, comma separated</span>
             <Input

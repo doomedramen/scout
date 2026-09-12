@@ -32,43 +32,52 @@ import (
 type Database interface{ PingContext(context.Context) error }
 
 type Config struct {
-	Production         bool
-	AllowedOrigin      string
-	WebDir             string
-	SetupToken         string
-	SetupTokenFile     string
-	SecretKeyFile      string
-	AgentCAFile        string
-	AgentCAKeyFile     string
-	StartRecovery      bool
-	ReleaseTrustFile   string
-	ArtifactDir        string
-	AgentBootstrapDir  string
-	AgentInstallerFile string
-	MaxBodyBytes       int64
-	RateLimitPerMinute int
-	AgentRequireMTLS   bool
+	Production                bool
+	AllowedOrigin             string
+	WebDir                    string
+	SetupToken                string
+	SetupTokenFile            string
+	SecretKeyFile             string
+	AgentCAFile               string
+	AgentCAKeyFile            string
+	StartRecovery             bool
+	ReleaseTrustFile          string
+	ArtifactDir               string
+	AgentBootstrapDir         string
+	AgentInstallerFile        string
+	PublicOrigin              string
+	EnrollmentEnabled         bool
+	EnrollmentPoll            time.Duration
+	EnrollmentSSHTimeout      time.Duration
+	EnrollmentArtifactFile    string
+	EnrollmentServiceUnitFile string
+	EnrollmentAgentVersion    string
+	EnrollmentUsername        string
+	MaxBodyBytes              int64
+	RateLimitPerMinute        int
+	AgentRequireMTLS          bool
 }
 
 type App struct {
-	Store       *store.Store
-	Auth        *auth.Service
-	Identity    *identity.Service
-	Authority   *identity.Authority
-	Secrets     *secrets.KeyRing
-	Audit       *audit.Logger
-	Policy      *policy.Engine
-	Discovery   *discovery.Service
-	Enrollment  *enrollment.Access
-	Coordinator *discovery.Coordinator
-	Jobs        jobs.Queue
-	Telemetry   *telemetry.Service
-	Updates     *updates.ReleaseService
-	Ntfy        *ntfy.Client
-	Database    Database
-	Config      Config
-	setupToken  string
-	limiter     *rateLimiter
+	Store           *store.Store
+	Auth            *auth.Service
+	Identity        *identity.Service
+	Authority       *identity.Authority
+	Secrets         *secrets.KeyRing
+	Audit           *audit.Logger
+	Policy          *policy.Engine
+	Discovery       *discovery.Service
+	Enrollment      *enrollment.Access
+	LocalEnrollment *enrollment.LocalWorker
+	Coordinator     *discovery.Coordinator
+	Jobs            jobs.Queue
+	Telemetry       *telemetry.Service
+	Updates         *updates.ReleaseService
+	Ntfy            *ntfy.Client
+	Database        Database
+	Config          Config
+	setupToken      string
+	limiter         *rateLimiter
 }
 
 const defaultAgentBootstrapDir = "/usr/local/share/scout/agent"
@@ -129,6 +138,13 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	app.Audit = audit.NewLogger(repository)
 	app.Policy = &policy.Engine{Store: repository}
 	app.Enrollment = &enrollment.Access{Policy: app.Policy, Store: repository, Now: repository.Now}
+	if config.EnrollmentEnabled {
+		app.LocalEnrollment = enrollment.NewLocalWorker(repository, app.Enrollment, &secrets.Broker{Store: repository, KeyRing: keyRing}, enrollment.LocalWorkerConfig{
+			PublicOrigin: config.PublicOrigin, ArtifactDir: config.AgentBootstrapDir, ArtifactFile: config.EnrollmentArtifactFile,
+			ServiceUnitFile: config.EnrollmentServiceUnitFile, AgentVersion: config.EnrollmentAgentVersion, Username: config.EnrollmentUsername,
+			PollInterval: config.EnrollmentPoll, SSHTimeout: config.EnrollmentSSHTimeout,
+		})
+	}
 	app.Discovery = &discovery.Service{Store: repository, Policy: app.Policy, Enrollment: app.Enrollment, Now: repository.Now}
 	app.Coordinator = discovery.NewCoordinator(repository, app.Policy, discovery.TCPScanner{})
 	app.Jobs = jobs.Queue{Store: repository}

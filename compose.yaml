@@ -40,6 +40,8 @@ services:
       SCOUT_ARTIFACT_DIR: /var/lib/scout/releases
       SCOUT_REQUIRE_AGENT_MTLS: "true"
       SCOUT_ALLOWED_ORIGIN: ${SCOUT_ALLOWED_ORIGIN:?Set SCOUT_ALLOWED_ORIGIN for the production profile}
+      SCOUT_PUBLIC_ORIGIN: ${SCOUT_PUBLIC_ORIGIN:?Set SCOUT_PUBLIC_ORIGIN to the HTTPS URL reachable by target Linux hosts}
+      SCOUT_AUTO_ENROLLMENT: ${SCOUT_AUTO_ENROLLMENT:-true}
     ports:
       - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8443}:8443"
     volumes:

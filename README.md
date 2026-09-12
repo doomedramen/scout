@@ -60,6 +60,11 @@ Binding to `0.0.0.0` exposes this no-TLS quickstart on every host interface;
 use it only on a trusted network protected by a firewall. Omit
 `SCOUT_BIND_ADDRESS` to keep the safer localhost-only default.
 
+If the server will install agents on other hosts, also set
+`SCOUT_PUBLIC_ORIGIN` to the URL those hosts can reach, for example
+`SCOUT_PUBLIC_ORIGIN=http://192.168.1.242:8041`. The internal listener remains
+`0.0.0.0:8080`; changing `SCOUT_PORT` changes only the host-side port mapping.
+
 The equivalent Compose file, for direct copy/paste, is:
 
 ```yaml
@@ -97,6 +102,8 @@ services:
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
       SCOUT_WEB_DIR: /usr/local/share/scout/web
+      SCOUT_PUBLIC_ORIGIN: ${SCOUT_PUBLIC_ORIGIN:-http://127.0.0.1:${SCOUT_PORT:-8080}}
+      SCOUT_AUTO_ENROLLMENT: ${SCOUT_AUTO_ENROLLMENT:-true}
     ports:
       - "${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:8080"
     volumes:
@@ -133,11 +140,11 @@ production-shaped [Compose file](compose.yaml) and [operations guide](docs/opera
 for TLS, agent mTLS, separately provisioned keys, and owner-authorized
 deployment.
 
-The image workflow publishes `scout` (server plus UI) and `scout-agent` for
-Linux AMD64 and ARM64 on pushes to `main` and version tags. To mirror them to
-Docker Hub as well, configure repository secrets `DOCKERHUB_USERNAME` and
-`DOCKERHUB_TOKEN`; the workflow then publishes
-`docker.io/<username>/scout` and `docker.io/<username>/scout-agent`.
+The image workflow publishes only `scout` (server plus UI and the native
+Linux agent artifacts it serves) for AMD64 and ARM64 on pushes to `main` and
+version tags. To mirror it to Docker Hub as well, configure repository secrets
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; the workflow then publishes
+`docker.io/<username>/scout`.
 
 ## Proxmox VE helper script
 
@@ -212,9 +219,10 @@ device-bound invitation that expires after five minutes, then shows a
 copyable installation recipe. The browser does not install a privileged
 service by itself.
 
-The native recipe is a single command. Run it on the Linux host Scout should
-monitor, replacing the invitation placeholder with the one-time value shown in
-the setup panel:
+The native recipe is a single-command recovery path for the first agent or a
+host the server cannot reach. Run it on the Linux host Scout should monitor,
+replacing the invitation placeholder with the one-time value shown in the
+setup panel:
 
 ```sh
 SCOUT_OTI='paste-the-one-time-invitation-here' bash -c "$(curl -fsSL 'https://scout.example.test/api/v1/bootstrap/agent/install.sh')"
@@ -243,12 +251,10 @@ data directory, consumed during first enrollment, and then removed. The
 bootstrap checksum detects transfer corruption; signed release metadata still
 governs subsequent agent updates.
 
-The setup panel also provides a same-host Docker recipe. It uses the public
-`ghcr.io/doomedramen/scout-agent` image, host networking, host PID/UTS
-namespaces, and a read-only host-root mount so Linux host metrics are visible.
-Native installation is preferred because it does not expose the host
-filesystem to a container. Both paths preserve the one-agent-per-device
-identity model.
+The setup panel keeps the manual native installer as a recovery path. Normal
+discovered-device enrollment is performed by the server-local worker using
+owner-supplied SSH access; no separate agent image or worker container is
+needed.
 
 This repository now contains the runnable implementation slices described by
 the handoff. Fixture and local integration coverage exists for owner
@@ -261,7 +267,11 @@ real devices without an owner-authorized lab.
 
 ## First usable milestone
 
-One control server and one manually enrolled Linux agent, with live host metrics, health history, an inventory, and a network map that distinguishes observed relationships from inferred ones. This milestone does not collect SSH credentials or install agents remotely.
+One control server and one Linux agent, with live host metrics, health history,
+an inventory, and a network map that distinguishes observed relationships from
+inferred ones. After the owner defines a bounded scope and supplies target-
+bound SSH access plus host trust, the server installs agents on eligible Linux
+devices automatically.
 
 The Linux-first MVP is the selected direction. It includes server-delivered agent updates before expanding into scoped discovery, access requests, and audited SSH enrollment. The sequence is in [the roadmap](docs/roadmap.md).
 

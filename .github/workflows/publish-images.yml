@@ -12,13 +12,6 @@ permissions:
 
 jobs:
   publish-ghcr:
-    strategy:
-      matrix:
-        include:
-          - dockerfile: packaging/containers/server.Dockerfile
-            suffix: ""
-          - dockerfile: packaging/containers/agent.Dockerfile
-            suffix: "-agent"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +25,7 @@ jobs:
       - id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}${{ matrix.suffix }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -43,7 +36,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: packaging/containers/server.Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
@@ -55,13 +48,6 @@ jobs:
 
   publish-dockerhub:
     if: ${{ github.event_name != 'pull_request' }}
-    strategy:
-      matrix:
-        include:
-          - dockerfile: packaging/containers/server.Dockerfile
-            suffix: ""
-          - dockerfile: packaging/containers/agent.Dockerfile
-            suffix: "-agent"
     runs-on: ubuntu-latest
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -80,7 +66,7 @@ jobs:
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/${{ env.DOCKERHUB_USERNAME }}/scout${{ matrix.suffix }}
+          images: docker.io/${{ env.DOCKERHUB_USERNAME }}/scout
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -92,7 +78,7 @@ jobs:
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: packaging/containers/server.Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.metadata.outputs.tags }}

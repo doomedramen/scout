@@ -75,11 +75,12 @@ outside the repository and mount them read-only:
 - an agent CA certificate and CA private key;
 - a release trust file containing operator-approved publisher public keys.
 
-The production profile requires SCOUT_DB_PASSWORD and SCOUT_ALLOWED_ORIGIN.
-It enables SCOUT_PRODUCTION, TLS, agent mTLS, PostgreSQL migrations, named
-server data storage, and an immutable release artifact directory. The images
-run as non-root. The Compose file does not mount the host root or Docker
-socket.
+The production profile requires SCOUT_DB_PASSWORD, SCOUT_ALLOWED_ORIGIN, and
+SCOUT_PUBLIC_ORIGIN. The latter is the HTTPS URL target Linux hosts use to
+connect back after installation. It enables SCOUT_PRODUCTION, TLS, agent mTLS,
+PostgreSQL migrations, named server data storage, and an immutable release
+artifact directory. The images run as non-root. The Compose file does not mount
+the host root or Docker socket.
 
 After provisioning the secret, TLS, and database inputs, an owner can start
 the profile with:
@@ -102,9 +103,10 @@ boundary and configure the TLS certificate for the actual hostname.
 ## First Linux agent
 
 After owner setup, create a site, then open **Systems → Agent setup**. The
-panel creates a five-minute, device-bound invitation and provides recipes for
-the native Linux agent or the same-host Docker image. The browser does not
-install a privileged service.
+panel creates a five-minute, device-bound invitation. Discovered Linux targets
+are normally enrolled by the server-local worker after the owner supplies SSH
+access and host trust; the native installer is retained as a recovery path.
+The browser does not install a privileged service itself.
 
 The native installer at `scripts/install-agent.sh` downloads the matching
 AMD64/ARM64 bootstrap binary from the configured Scout server and verifies its
@@ -119,11 +121,10 @@ for a locally built binary when the server has no bootstrap artifact. Do not
 put invitations in command arguments, shell history, logs, or repository
 files.
 
-The Docker recipe is Linux-only and intentionally explicit: it uses host
-networking plus PID/UTS namespaces and a read-only host-root mount. Prefer the
-native service where possible. A containerized agent is separate from the
-server container and is the agent for that host; it is not silently installed
-by the control plane.
+The manual native installer remains a recovery path for the first agent or a
+host the server cannot reach. Discovered Linux targets use the server-local
+enrollment worker after the owner supplies SSH access; no agent image or
+separate worker container is required for the normal flow.
 
 ## Access and automatic enrollment
 
@@ -133,12 +134,18 @@ reference before enabling it. Enabling a scope is the authorization for
 automatic, target-bound enrollment; routine per-device approval is not part
 of the model. Exclusions win over sightings and are persistent.
 
-Create an explicitly registered enroller worker for the site. The worker
-token is returned once at creation and must be stored outside logs, shell
-history, and repository files. Run apps/enroller only with a disposable Linux
-target, a verified artifact, a known_hosts file, and an owner-approved SSH
-account. The worker receives only a currently leased enrollment job and a
-short-lived credential grant.
+The server starts its site-scoped enrollment worker automatically. Set
+`SCOUT_PUBLIC_ORIGIN` to the HTTPS URL that the target Linux host can reach;
+the server image contains the amd64/arm64 bootstrap artifacts and signed
+release verification remains the update path. The worker uses the owner’s
+target-bound SSH credential, checks the stored host fingerprint, uploads a
+short-lived one-time invitation, and runs only the fixed agent installation
+operation. The SSH account must have root access or non-interactive sudo for
+that bounded operation.
+
+An explicitly registered `apps/enroller` relay remains available for a later
+segmented-network deployment, but it is not needed by the default Compose
+stack and is not started automatically.
 
 Pause discovery, enrollment, or updates before changing access or scope
 policy. A pause may remain pending while a worker acknowledges its safe

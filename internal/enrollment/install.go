@@ -27,6 +27,7 @@ type InstallRequest struct {
 	Version      string
 	Artifact     []byte
 	ArtifactHash string
+	Invitation   []byte
 	ServiceUnit  []byte
 }
 
@@ -89,8 +90,9 @@ func Install(ctx context.Context, transport SSHTransport, request InstallRequest
 	}
 	defer transport.Close()
 	const (
-		stagingPath = "/var/lib/scout/agent/scout-agent.new"
-		unitPath    = "/etc/systemd/system/scout-agent.service"
+		stagingPath    = "/tmp/scout-agent.new"
+		unitPath       = "/tmp/scout-agent.service"
+		invitationPath = "/tmp/scout-agent.invitation"
 	)
 	if err := transport.Upload(ctx, stagingPath, request.Artifact); err != nil {
 		return InstallResult{}, err
@@ -100,7 +102,12 @@ func Install(ctx context.Context, transport SSHTransport, request InstallRequest
 			return InstallResult{}, err
 		}
 	}
-	command, err := fixedInstallCommand(request.Version, stagingPath, unitPath, len(request.ServiceUnit) > 0)
+	if len(request.Invitation) > 0 {
+		if err := transport.Upload(ctx, invitationPath, request.Invitation); err != nil {
+			return InstallResult{}, err
+		}
+	}
+	command, err := fixedInstallCommand(request.Version, stagingPath, unitPath, invitationPath, len(request.ServiceUnit) > 0, len(request.Invitation) > 0)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -110,13 +117,17 @@ func Install(ctx context.Context, transport SSHTransport, request InstallRequest
 	return InstallResult{Target: request.Target, Version: request.Version, Confirmed: true, Completed: time.Now().UTC()}, nil
 }
 
-func fixedInstallCommand(version, stagingPath, unitPath string, installUnit bool) (string, error) {
-	if !safeVersion.MatchString(version) || stagingPath != "/var/lib/scout/agent/scout-agent.new" || unitPath != "/etc/systemd/system/scout-agent.service" {
+func fixedInstallCommand(version, stagingPath, unitPath, invitationPath string, installUnit, installInvitation bool) (string, error) {
+	if !safeVersion.MatchString(version) || stagingPath != "/tmp/scout-agent.new" || unitPath != "/tmp/scout-agent.service" || invitationPath != "/tmp/scout-agent.invitation" {
 		return "", errors.New("unsafe fixed installation parameters")
 	}
 	unitStep := ""
 	if installUnit {
-		unitStep = "install -o root -g root -m 0644 /etc/systemd/system/scout-agent.service /etc/systemd/system/scout-agent.service && "
+		unitStep = "$as_root install -o root -g root -m 0644 /tmp/scout-agent.service /etc/systemd/system/scout-agent.service && "
 	}
-	return fmt.Sprintf("set -eu; test ! -e /var/lib/scout/agent/.install.lock || exit 73; install -d -o root -g root -m 0755 /var/lib/scout/agent; mkdir /var/lib/scout/agent/.install.lock; trap 'rmdir /var/lib/scout/agent/.install.lock' EXIT; printf 'stage=installing version=%s\\n' '%s' > /var/lib/scout/agent/install.journal; test -s %s; install -o root -g root -m 0755 %s /usr/local/libexec/scout-agent; %ssystemctl daemon-reload; systemctl enable --now scout-agent.service; systemctl is-active --quiet scout-agent.service; printf 'stage=confirmed version=%s\\n' '%s' > /var/lib/scout/agent/install.journal", version, version, stagingPath, stagingPath, unitStep, version, version), nil
+	invitationStep := ""
+	if installInvitation {
+		invitationStep = "$as_root install -o scout-agent -g scout-agent -m 0400 /tmp/scout-agent.invitation /var/lib/scout/agent/invitation && "
+	}
+	return fmt.Sprintf("set -eu; if [ \"$(id -u)\" -eq 0 ]; then as_root=; elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then as_root=sudo; else exit 77; fi; $as_root sh -c 'id scout-agent >/dev/null 2>&1 || useradd --system --user-group --home-dir /var/lib/scout/agent --shell /usr/sbin/nologin scout-agent'; $as_root install -d -o scout-agent -g scout-agent -m 0700 /var/lib/scout/agent; $as_root install -d -o root -g root -m 0755 /usr/local/libexec; $as_root test ! -e /var/lib/scout/agent/.install.lock || exit 73; $as_root mkdir /var/lib/scout/agent/.install.lock; trap '$as_root rmdir /var/lib/scout/agent/.install.lock; rm -f /tmp/scout-agent.new /tmp/scout-agent.service /tmp/scout-agent.invitation' EXIT; $as_root sh -c 'printf \"stage=installing version=%s\\n\" > /var/lib/scout/agent/install.journal'; test -s %s; $as_root install -o root -g root -m 0755 %s /usr/local/libexec/scout-agent; %s%s$as_root systemctl daemon-reload; $as_root systemctl enable --now scout-agent.service; $as_root systemctl is-active --quiet scout-agent.service; $as_root sh -c 'printf \"stage=confirmed version=%s\\n\" > /var/lib/scout/agent/install.journal'", version, stagingPath, stagingPath, invitationStep, unitStep, version), nil
 }

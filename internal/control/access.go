@@ -290,6 +290,7 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		AllowedUse            []string `json:"allowedUse"`
 		Targets               []string `json:"targets"`
 		Endpoint              string   `json:"endpoint"`
+		Username              string   `json:"username"`
 		ScopeID               string   `json:"scopeId"`
 		ExpectedScopeRevision int64    `json:"expectedScopeRevision"`
 	}
@@ -301,13 +302,22 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
+	username := strings.TrimSpace(req.Username)
+	if username != "" && (len(username) > 128 || strings.ContainsAny(username, "\x00\r\n \t/\\:")) {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
 	id := store.NewID()
 	envelope, err := a.Secrets.EncryptSecret(id, req.Kind, []byte(req.Secret))
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
-	credential, err := a.Store.PutCredential(r.Context(), store.CredentialRef{ID: id, Kind: req.Kind, Endpoint: req.Endpoint, AllowedUse: req.AllowedUse, Targets: req.Targets, Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion, Metadata: map[string]string{"created": "owner"}})
+	metadata := map[string]string{"created": "owner"}
+	if username != "" {
+		metadata["username"] = username
+	}
+	credential, err := a.Store.PutCredential(r.Context(), store.CredentialRef{ID: id, Kind: req.Kind, Endpoint: req.Endpoint, AllowedUse: req.AllowedUse, Targets: req.Targets, Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion, Metadata: metadata})
 	if err != nil {
 		writeMappedError(w, r, err)
 		return

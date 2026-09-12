@@ -499,7 +499,12 @@ func (s *Store) ReportJob(ctx context.Context, id, worker string, epoch int64, n
 		}
 		item.State = nextState
 		item.Result = cloneMap(result)
-		item.LeaseExpiry = nil
+		if jobStateTerminal(nextState) {
+			item.LeaseExpiry = nil
+		} else {
+			expires := s.now().UTC().Add(60 * time.Second)
+			item.LeaseExpiry = &expires
+		}
 		if nextState == "retry" {
 			if item.Attempts >= 8 {
 				item.State = "failed"
@@ -511,6 +516,15 @@ func (s *Store) ReportJob(ctx context.Context, id, worker string, epoch int64, n
 		state.Jobs[id] = item
 		return nil
 	})
+}
+
+func jobStateTerminal(state string) bool {
+	switch state {
+	case "enrolled", "failed", "retry", "paused", "excluded", "unsupported":
+		return true
+	default:
+		return false
+	}
 }
 
 func jobPaused(workspace WorkspaceState, kind string) bool {

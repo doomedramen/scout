@@ -23,7 +23,7 @@ export default defineConfig({
     ? undefined
     : {
         command:
-          "SCOUT_PRODUCTION=false SCOUT_LISTEN=127.0.0.1:18082 SCOUT_SETUP_TOKEN=playwright-setup SCOUT_WEB_DIR=apps/web/dist go run ./apps/server",
+          "SCOUT_PRODUCTION=false SCOUT_AUTO_ENROLLMENT=false SCOUT_LISTEN=127.0.0.1:18082 SCOUT_SETUP_TOKEN=playwright-setup SCOUT_WEB_DIR=apps/web/dist go run ./apps/server",
         url: `${baseURL}/api/status`,
         reuseExistingServer: false,
         timeout: 120_000,
