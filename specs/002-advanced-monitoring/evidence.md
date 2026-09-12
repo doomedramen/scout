@@ -938,3 +938,33 @@ For future results append: task and requirement IDs, commit, date, exact command
   disposable-ZFS evidence script and support record. The agent runtime has
   not yet been wired to transmit SMART/ZFS service entities from a live
   enrolled host; no live hardware support claim is made.
+
+## T034 — storage health evidence runner
+
+- Requirements: FR-025, FR-026, FR-027, FR-028, FR-034; SC-009.
+- Date: 2026-09-12 (Europe/London); implementation commit: `4e92a33`.
+- Added `scripts/test-storage-health.sh`. Its default path runs the SMART,
+  ZFS, and typed storage-alert fixture suites with race detection and does
+  not contact host utilities or devices. The opt-in lab path requires both
+  `SCOUT_STORAGE_LAB=1` and `SCOUT_STORAGE_LAB_CONFIRM=YES`, requires Linux,
+  reports only utility versions, command exit status, bounded row counts, and
+  the invoking uid/groups, and suppresses raw SMART serial/WWN/path and ZFS
+  status output. It executes only the fixed read queries used by the
+  collectors and never uses sudo, wakes disks, starts tests, creates or
+  destroys pools, scrubs, repairs, imports, exports, or mutates datasets.
+- Exact verification commands and outcomes: `scripts/test-storage-health.sh`
+  passed the SMART/ZFS/storage-alert fixtures; `bash -n
+  scripts/test-storage-health.sh` passed; `SCOUT_STORAGE_LAB=1
+  scripts/test-storage-health.sh` returned the expected status 2 for missing
+  confirmation; and `SCOUT_STORAGE_LAB=1 SCOUT_STORAGE_LAB_CONFIRM=YES
+  scripts/test-storage-health.sh` returned the expected status 2 on this
+  macOS development host without contacting storage utilities. Existing
+  fixture suites prove SATA/SAS/NVMe exit-bitmask handling, path-change and
+  replacement separation, ambiguous identities, ZFS GUID replacement, and
+  permission/standby/reset behavior. No production database, credential,
+  real storage device, ZFS pool, or deployment was used.
+- Remaining limits: no owner-authorized disposable Linux host or physical
+  SMART/ZFS lab is available in this workspace, so exact live utility/kernel
+  versions, grants, and representative family compatibility remain
+  unvalidated. The script is ready for that explicitly authorized run; no
+  live support claim is made.
