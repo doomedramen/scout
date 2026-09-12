@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,5 +65,73 @@ func TestWorkerClaimIsSiteScopedAndRecoveryAware(t *testing.T) {
 	worker.SiteIDs = []string{site.ID}
 	if _, err := s.ClaimWorkerJob(ctx, worker); !errors.Is(err, ErrConflict) {
 		t.Fatalf("paused enrollment was not fenced: %v", err)
+	}
+}
+
+func TestScanStoreConcurrentLeaseRollbackAndCrossPageDuplicate(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	run, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "concurrent-lease", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leases := make(chan error, 2)
+	var group sync.WaitGroup
+	for _, owner := range []string{"scanner-a", "scanner-b"} {
+		group.Add(1)
+		go func(owner string) {
+			defer group.Done()
+			_, leaseErr := s.LeaseScanRun(ctx, run.ID, owner, time.Minute)
+			leases <- leaseErr
+		}(owner)
+	}
+	group.Wait()
+	close(leases)
+	successes := 0
+	conflicts := 0
+	for leaseErr := range leases {
+		if leaseErr == nil {
+			successes++
+		} else if errors.Is(leaseErr, ErrConflict) {
+			conflicts++
+		} else {
+			t.Fatalf("unexpected concurrent lease error: %v", leaseErr)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent lease result: successes=%d conflicts=%d", successes, conflicts)
+	}
+	leased, err := s.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartScanRun(ctx, run.ID, leased.LeaseOwner, leased.LeaseEpoch); err != nil {
+		t.Fatal(err)
+	}
+	invalid := ScanResultReceipt{RunID: run.ID, PageOrdinal: 0, ContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ResultCount: 1}
+	badObservation := EntryPointObservation{RunID: run.ID, PageOrdinal: 0, ScopeID: "wrong-scope", ScopeRevision: run.ScopeRevision, ScannerKind: run.ScannerKind, ScannerID: run.ScannerID, Address: "192.0.2.10", Transport: ScanTransportTCP, Port: 22, EntryPointID: policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: now}
+	if _, _, err := s.AcceptScanResultPage(ctx, invalid, []EntryPointObservation{badObservation}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("invalid page did not roll back: %v", err)
+	}
+	if _, err := s.ScanResultReceipt(ctx, run.ID, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("invalid page left receipt: %v", err)
+	}
+	goodObservation := badObservation
+	goodObservation.ScopeID = scope.ID
+	first, duplicate, err := s.AcceptScanResultPage(ctx, invalid, []EntryPointObservation{goodObservation})
+	if err != nil || duplicate || first.ResultCount != 1 {
+		t.Fatalf("valid page: %+v duplicate=%t err=%v", first, duplicate, err)
+	}
+	second := invalid
+	second.PageOrdinal = 1
+	second.ContentHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	goodObservation.PageOrdinal = 1
+	if _, _, err := s.AcceptScanResultPage(ctx, second, []EntryPointObservation{goodObservation}); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("cross-page duplicate was accepted: %v", err)
+	}
+	current, err := s.GetScanRun(ctx, run.ID)
+	if err != nil || current.AttemptsCompleted != 1 {
+		t.Fatalf("cross-page duplicate changed counters: %+v err=%v", current, err)
 	}
 }

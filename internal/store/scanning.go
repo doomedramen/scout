@@ -215,7 +215,7 @@ func validateScanPolicy(policy ScanPolicy, scope Scope) error {
 
 func (s *Store) UpdateScanPolicy(ctx context.Context, scopeID string, expected int64, next ScanPolicy) (ScanPolicy, error) {
 	var result ScanPolicy
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		scope, ok := state.Scopes[scopeID]
 		if !ok {
 			return ErrNotFound
@@ -273,7 +273,7 @@ func decodeScanCursor(raw string) (scanCursor, error) {
 
 func (s *Store) CreateScanRun(ctx context.Context, run ScanRun) (ScanRun, error) {
 	var result ScanRun
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		scope, ok := state.Scopes[run.ScopeID]
 		if !ok {
 			return ErrNotFound
@@ -424,7 +424,7 @@ func (s *Store) LeaseScanRun(ctx context.Context, runID, owner string, duration 
 	if strings.TrimSpace(owner) == "" || duration <= 0 {
 		return result, ErrInvalid
 	}
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[runID]
 		if !ok {
 			return ErrNotFound
@@ -458,7 +458,7 @@ func (s *Store) RenewScanLease(ctx context.Context, runID, owner string, epoch i
 	if strings.TrimSpace(owner) == "" || epoch < 1 || duration <= 0 {
 		return result, ErrInvalid
 	}
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[runID]
 		if !ok {
 			return ErrNotFound
@@ -491,7 +491,7 @@ func (s *Store) BeginScanUpload(ctx context.Context, runID, owner string, epoch 
 
 func (s *Store) transitionScanRun(ctx context.Context, runID, owner string, epoch int64, nextState, reason string) (ScanRun, error) {
 	var result ScanRun
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[runID]
 		if !ok {
 			return ErrNotFound
@@ -523,7 +523,7 @@ func (s *Store) transitionScanRun(ctx context.Context, runID, owner string, epoc
 
 func (s *Store) RequestScanCancellation(ctx context.Context, runID string) (ScanRun, error) {
 	var result ScanRun
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[runID]
 		if !ok {
 			return ErrNotFound
@@ -554,7 +554,7 @@ func (s *Store) FinalizeScanRun(ctx context.Context, runID, owner string, epoch 
 	if !scanRunTerminalStates[terminalState] {
 		return result, ErrInvalid
 	}
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[runID]
 		if !ok {
 			return ErrNotFound
@@ -585,7 +585,7 @@ func (s *Store) FinalizeScanRun(ctx context.Context, runID, owner string, epoch 
 func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultReceipt, observations []EntryPointObservation) (ScanResultReceipt, bool, error) {
 	var result ScanResultReceipt
 	duplicate := false
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		run, ok := state.ScanRuns[receipt.RunID]
 		if !ok {
 			return ErrNotFound

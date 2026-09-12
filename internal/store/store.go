@@ -320,6 +320,38 @@ func (s *Store) mutate(ctx context.Context, fn func(*State) error) error {
 	return s.persistLocked(ctx)
 }
 
+// mutateWithWorkspaceLock serializes scan state across Store instances. The
+// regular in-process mutex is not enough when two control-server processes
+// share PostgreSQL.
+func (s *Store) mutateWithWorkspaceLock(ctx context.Context, fn func(*State) error) error {
+	if s.db == nil {
+		return s.mutate(ctx, fn)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	state, err := readWorkspaceStateTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if err := fn(&state); err != nil {
+		return err
+	}
+	if err := writeWorkspaceStateTx(ctx, tx, state); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.state = state
+	s.loaded = true
+	return nil
+}
+
 func (s *Store) read(ctx context.Context, fn func(*State) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
