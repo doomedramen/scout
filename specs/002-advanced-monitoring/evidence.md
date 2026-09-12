@@ -904,5 +904,37 @@ For future results append: task and requirement IDs, commit, date, exact command
   `git diff --check` all passed. No production database, real device, ZFS
   pool, production credential, or deployment was used; the development host
   has no live OpenZFS lab, so T034 remains the live-evidence gate.
-- T033 is now the next unchecked task. Live SMART/ZFS family support, expanded
+- T034 is now the next unchecked task. Live SMART/ZFS family support, expanded
   load capacity, and production deployment remain unclaimed evidence gates.
+
+## T033 — typed storage-fault evaluation and storage health view
+
+- Requirements: FR-001, FR-019, FR-025, FR-026, FR-027, FR-028; SC-009,
+  SC-010.
+- Date: 2026-09-12 (Europe/London); implementation commit: `ac4c06c`.
+- Added typed storage observations for SMART disks and ZFS pools. Explicit
+  failing SMART health, NVMe critical-warning/family predicates already
+  translated by the collector, ZFS degraded pool states, and explicit ZFS
+  scrub/data errors can trigger the critical storage-fault lineage. Wear and
+  error counters alone remain healthy evidence; a scrub in progress alone is
+  healthy; missing/denied/expired evidence is unsupported or unknown and
+  cannot recover an active incident. Storage recovery requires two fresh
+  samples separated by the provider collection interval. ZFS datasets remain
+  inventory-only for this fault rule, so one device/pool/entity key cannot
+  create a duplicate dataset fault.
+- Added the authenticated Storage workspace using the existing service-entity
+  API. It polls for updates, filters by device, links active incidents, shows
+  stable identity/freshness metadata, and renders SMART metrics plus ZFS pool
+  physical allocation and dataset usable space in separate sections. The UI
+  explicitly explains that physical and usable capacity are not summed or
+  treated as one health value, and all health meaning is represented by text
+  and icons as well as color.
+- Exact verification commands and outcomes: `go test
+  ./internal/alerts -race -count=1`; `go test ./... -count=1`; `go vet
+  ./...`; `npm run check`; `npm run build`; `npm run lint`; `npm run
+  format:check`; and `git diff --check` all passed. No production database,
+  credential, real storage device, ZFS pool, or deployment was used.
+- Remaining limits: T034 still owns the fixture-backed/live SMART and
+  disposable-ZFS evidence script and support record. The agent runtime has
+  not yet been wired to transmit SMART/ZFS service entities from a live
+  enrolled host; no live hardware support claim is made.
