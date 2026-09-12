@@ -191,3 +191,26 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: result ingestion does not yet materialize desired-state
   assignments, execute probes, reconcile candidates, or start enrollment;
   those remain in T008+.
+
+## T008 — capability-gated agent desired state
+
+- Requirements: FR-003, FR-006, FR-007, FR-014, FR-017, FR-022.
+- Date: 2026-09-12 (Europe/London); implementation commit: 2d7af77.
+- Added bounded scan capability declarations to agent heartbeats and persisted
+  them with authenticated agent state. The agent runtime reports protocol 1 and
+  TCP support. Desired state now returns at most one active leased/running scan
+  assignment matching the authenticated, explicitly assigned agent and current
+  policy revision. It returns no scan ranges or scopes to older, unassigned,
+  revoked, expired, cancelled, stale, or incompatible agents. Assignment data
+  contains only immutable ranges, exclusions, typed entry points, limits, run
+  identity, lease epoch, and expiry; it contains no credentials, trust material,
+  commands, or remote payloads.
+- Exact verification commands and outcomes: `npx prettier --write
+  api/schemas/heartbeat.json`; `go test ./... -count=1` passed, including the
+  disposable PostgreSQL integration suite; `go vet ./...` passed; and `git diff
+  --check` passed. Control tests verify compatible assignment delivery,
+  capability persistence, no all-scope exposure, and no assignment after an
+  older-agent heartbeat omits capabilities. No real device, network, or
+  credential was contacted.
+- Remaining limits: coordinator scheduling/leases, agent scan execution,
+  candidate reconciliation, and owner UI/API wiring remain for T009+.
