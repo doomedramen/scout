@@ -1179,7 +1179,7 @@ For future results append: task and requirement IDs, commit, date, exact command
 ## T042 — operations guidance and reconciled release gates
 
 - Requirements: FR-024, FR-033, FR-034, FR-035; SC-008, SC-009, SC-011.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: aee1a35.
 - Added `docs/advanced-monitoring.md` with the verified behavior boundary,
   fixture-first verification commands, operational semantics, backup/restore
   fence, troubleshooting guidance, and explicit gates for live receivers,
