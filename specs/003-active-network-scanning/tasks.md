@@ -77,7 +77,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Add failing reconciliation tests for supported versus observation-only entry points, multi-vantage duplicates, stale/contradictory evidence, request dedupe, and candidate state transitions in internal/discovery/reconcile_test.go (FR-008–FR-013, FR-015, FR-019; SC-003–SC-006).
+- [X] T021 [P] [US2] Add failing reconciliation tests for supported versus observation-only entry points, multi-vantage duplicates, stale/contradictory evidence, request dedupe, and candidate state transitions in internal/discovery/reconcile_test.go (FR-008–FR-013, FR-015, FR-019; SC-003–SC-006).
 - [ ] T022 [P] [US2] Add failing integration tests for credential and trust mutation re-evaluation, invalid authentication, insufficient privilege, host-key mismatch, server-connectivity failure, and exactly one enrollment job in tests/integration/active_discovery_test.go and tests/integration/access_test.go (FR-010–FR-015; SC-003–SC-005, SC-008).
 
 ### Implementation for User Story 2

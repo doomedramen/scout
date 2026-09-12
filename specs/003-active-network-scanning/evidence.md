@@ -322,8 +322,10 @@ Never attach credential values, private keys, host-key private material, banners
   ./...`; and `git diff --check` passed. The controlled loopback listener
   produced one persisted non-actionable `open` observation and a completed
   run. No real device, network, or credential was contacted.
-- Remaining limits: result-page ingestion is still evidence-only by design;
-  candidate reconciliation and credential/enrollment handoff remain T021+.
+- Remaining limits: result-page ingestion remains authoritative evidence first;
+  the accepted evidence now has a conservative candidate/access projection, but
+  full per-vantage freshness, credential re-evaluation, and enrollment handoff
+  remain in T023–T025.
 
 ## T015 — server coordinator lifecycle
 
@@ -388,3 +390,24 @@ Never attach credential values, private keys, host-key private material, banners
   scheduling/lease materialization for assigned agents and service packaging
   remain T017/T031; candidate reconciliation, owner actions, and live
   server/agent network proof remain T021+ and T043.
+
+## T021 — scan reconciliation failure-first tests
+
+- Requirements: FR-008–FR-013, FR-015, FR-019; SC-003–SC-006.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: 7367dbd.
+- Tests were written before the candidate projection existed. The focused
+  ingestion test first failed because accepted open evidence produced no
+  candidate; the direct reconciliation test then failed because the
+  reconciliation method was absent. The completed tests cover supported SSH
+  versus observation-only entry points, one candidate for multi-vantage
+  evidence, one deduplicated candidate/method/endpoint request, retained
+  candidates after contradictory evidence, current versus contradicted
+  coverage, and actionable open-SSH evidence.
+- Exact verification commands and outcomes: `go test ./internal/discovery
+  ./internal/store -count=1`; `go test ./... -count=1` (including the
+  disposable PostgreSQL integration suite); `go vet ./...`; and `git diff
+  --check` passed. No real device, network, or credential was contacted.
+- Remaining limits: the projection is intentionally credential-free and does
+  not create a device or enrollment job; full per-vantage current projections,
+  credential/trust re-evaluation, and owner-facing candidate APIs remain open
+  in T023–T028.
