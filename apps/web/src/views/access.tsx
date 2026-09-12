@@ -3,6 +3,7 @@ import { KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   APIError,
   api,
@@ -21,9 +22,16 @@ function splitValues(value: string) {
     .filter(Boolean);
 }
 
-export function AccessView({ candidate }: { candidate?: Candidate | null } = {}) {
+export function AccessView({
+  candidate,
+  embedded = false,
+}: {
+  candidate?: Candidate | null;
+  embedded?: boolean;
+} = {}) {
   const [development, setDevelopment] = useState(false);
   const [candidateDetail, setCandidateDetail] = useState<CandidateDetail | null>(null);
+  const [scopeRevision, setScopeRevision] = useState<number | undefined>();
   const [owner, setOwner] = useState<Owner | null>(null);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -55,12 +63,17 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
     }
     let cancelled = false;
     setCandidateDetail(null);
+    setScopeRevision(undefined);
     const defaultEndpoint = `${candidate.address}:22`;
     setTargets(defaultEndpoint);
     setEndpoint(defaultEndpoint);
     setTrustScope(candidate.scopeId);
     setTrustHost(candidate.address);
     setTrustEndpoint(defaultEndpoint);
+    void api
+      .scope(candidate.scopeId)
+      .then((scope) => setScopeRevision(scope.revision))
+      .catch(() => setScopeRevision(undefined));
     void api
       .candidate(candidate.id)
       .then((result) => {
@@ -173,7 +186,7 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
         endpoint,
         username: credentialKind === "ssh" ? username : undefined,
         scopeId: focusedCandidate?.scopeId,
-        expectedScopeRevision: focusedCandidate?.scopeRevision,
+        expectedScopeRevision: scopeRevision,
       });
       setSecret("");
       setMessage("Credential stored. The secret is write-only and will not be shown again.");
@@ -215,38 +228,43 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
             <KeyRound size={17} />
             <div>
               <h2 id="access-focus-title">
-                Prepare access for {focusedCandidate.displayName || focusedCandidate.address}
+                {embedded
+                  ? "SSH found on this system"
+                  : `Prepare access for ${focusedCandidate.displayName || focusedCandidate.address}`}
               </h2>
               <p>
-                Scout found an SSH entry point at <strong>{endpoint || `${focusedCandidate.address}:22`}</strong>. Store
-                a target-bound credential below and Scout will re-evaluate this device automatically.
+                {embedded
+                  ? "Provide credentials and Scout will install the agent automatically."
+                  : `Scout found an SSH entry point at ${endpoint || `${focusedCandidate.address}:22`}. Store a target-bound credential below and Scout will re-evaluate this device automatically.`}
               </p>
             </div>
           </div>
           <Badge variant="outline">{focusedCandidate.state.replaceAll("_", " ")}</Badge>
         </section>
       )}
-      <div className="section-heading">
-        <div>
-          <Badge variant="outline">
-            <ShieldCheck size={13} />
-            Owner-controlled access
-          </Badge>
-          <h2>Resolve prerequisites</h2>
-          <p>
-            Credentials are encrypted, target-bound, and never returned by listing endpoints. Host trust changes remain
-            explicit and audited.
-          </p>
+      {!embedded && (
+        <div className="section-heading">
+          <div>
+            <Badge variant="outline">
+              <ShieldCheck size={13} />
+              Owner-controlled access
+            </Badge>
+            <h2>Resolve prerequisites</h2>
+            <p>
+              Credentials are encrypted, target-bound, and never returned by listing endpoints. Host trust changes
+              remain explicit and audited.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Refresh access state"
+            onClick={() => refresh().catch(() => setError("Could not refresh access state"))}
+          >
+            <RefreshCw size={16} />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Refresh access state"
-          onClick={() => refresh().catch(() => setError("Could not refresh access state"))}
-        >
-          <RefreshCw size={16} />
-        </Button>
-      </div>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -257,100 +275,102 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
           {message}
         </p>
       )}
-      <section className="data-panel security-panel" aria-labelledby="owner-security-title">
-        <div className="section-heading">
-          <div>
-            <h3 id="owner-security-title">Owner security</h3>
-            <p>
-              {development
-                ? "Development mode keeps authentication and CSRF protection but bypasses the recent-MFA ceremony."
-                : "Scope changes, credentials, discovery, and agent invitations require recent MFA."}
-            </p>
+      {(!embedded || !development) && (
+        <section className="data-panel security-panel" aria-labelledby="owner-security-title">
+          <div className="section-heading">
+            <div>
+              <h3 id="owner-security-title">Owner security</h3>
+              <p>
+                {development
+                  ? "Development mode keeps authentication and CSRF protection but bypasses the recent-MFA ceremony."
+                  : "Scope changes, credentials, discovery, and agent invitations require recent MFA."}
+              </p>
+            </div>
+            <Badge variant="outline">
+              {development ? "Development bypass" : owner?.mfaEnabled ? "MFA enabled" : "MFA required"}
+            </Badge>
           </div>
-          <Badge variant="outline">
-            {development ? "Development bypass" : owner?.mfaEnabled ? "MFA enabled" : "MFA required"}
-          </Badge>
-        </div>
-        {development ? (
-          <p className="form-help">Production deployments still require MFA before sensitive changes.</p>
-        ) : !owner ? (
-          <p className="empty-inline">Loading owner security state…</p>
-        ) : owner.mfaEnabled ? (
-          <form className="security-form" onSubmit={reauthenticate}>
-            <p className="form-help">Re-authenticate to unlock sensitive changes for five minutes.</p>
-            <div className="form-inline security-form-fields">
-              <label>
-                Owner password
-                <Input
-                  required
-                  type="password"
-                  autoComplete="current-password"
-                  value={mfaPassword}
-                  onChange={(event) => setMfaPassword(event.target.value)}
-                />
-              </label>
-              <label>
-                Authenticator code
-                <Input
-                  required
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={mfaCode}
-                  onChange={(event) => setMfaCode(event.target.value)}
-                />
-              </label>
-              <Button type="submit" disabled={securityBusy}>
-                {securityBusy ? "Checking…" : "Unlock sensitive actions"}
-              </Button>
-            </div>
-          </form>
-        ) : !mfaSecret ? (
-          <form className="security-form" onSubmit={beginMFA}>
-            <p className="form-help">Set up an authenticator once before storing credentials or enrolling agents.</p>
-            <div className="form-inline security-form-fields">
-              <label>
-                Owner password
-                <Input
-                  required
-                  type="password"
-                  autoComplete="current-password"
-                  value={mfaPassword}
-                  onChange={(event) => setMfaPassword(event.target.value)}
-                />
-              </label>
-              <Button type="submit" disabled={securityBusy}>
-                {securityBusy ? "Preparing…" : "Set up MFA"}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <div className="security-form">
-            <p className="form-help">Add this secret to your authenticator app. It is shown only during setup.</p>
-            <code className="mfa-secret">{mfaSecret}</code>
-            <form className="form-inline security-form-fields" onSubmit={confirmMFA}>
-              <label>
-                Authenticator code
-                <Input
-                  required
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={mfaCode}
-                  onChange={(event) => setMfaCode(event.target.value)}
-                />
-              </label>
-              <Button type="submit" disabled={securityBusy}>
-                {securityBusy ? "Confirming…" : "Confirm MFA"}
-              </Button>
+          {development ? (
+            <p className="form-help">Production deployments still require MFA before sensitive changes.</p>
+          ) : !owner ? (
+            <p className="empty-inline">Loading owner security state…</p>
+          ) : owner.mfaEnabled ? (
+            <form className="security-form" onSubmit={reauthenticate}>
+              <p className="form-help">Re-authenticate to unlock sensitive changes for five minutes.</p>
+              <div className="form-inline security-form-fields">
+                <label>
+                  Owner password
+                  <Input
+                    required
+                    type="password"
+                    autoComplete="current-password"
+                    value={mfaPassword}
+                    onChange={(event) => setMfaPassword(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Authenticator code
+                  <Input
+                    required
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value)}
+                  />
+                </label>
+                <Button type="submit" disabled={securityBusy}>
+                  {securityBusy ? "Checking…" : "Unlock sensitive actions"}
+                </Button>
+              </div>
             </form>
-          </div>
-        )}
-        {recoveryCodes.length > 0 && (
-          <div className="recovery-codes" role="status">
-            <strong>Save these recovery codes</strong>
-            <pre>{recoveryCodes.join("\n")}</pre>
-          </div>
-        )}
-      </section>
+          ) : !mfaSecret ? (
+            <form className="security-form" onSubmit={beginMFA}>
+              <p className="form-help">Set up an authenticator once before storing credentials or enrolling agents.</p>
+              <div className="form-inline security-form-fields">
+                <label>
+                  Owner password
+                  <Input
+                    required
+                    type="password"
+                    autoComplete="current-password"
+                    value={mfaPassword}
+                    onChange={(event) => setMfaPassword(event.target.value)}
+                  />
+                </label>
+                <Button type="submit" disabled={securityBusy}>
+                  {securityBusy ? "Preparing…" : "Set up MFA"}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="security-form">
+              <p className="form-help">Add this secret to your authenticator app. It is shown only during setup.</p>
+              <code className="mfa-secret">{mfaSecret}</code>
+              <form className="form-inline security-form-fields" onSubmit={confirmMFA}>
+                <label>
+                  Authenticator code
+                  <Input
+                    required
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value)}
+                  />
+                </label>
+                <Button type="submit" disabled={securityBusy}>
+                  {securityBusy ? "Confirming…" : "Confirm MFA"}
+                </Button>
+              </form>
+            </div>
+          )}
+          {recoveryCodes.length > 0 && (
+            <div className="recovery-codes" role="status">
+              <strong>Save these recovery codes</strong>
+              <pre>{recoveryCodes.join("\n")}</pre>
+            </div>
+          )}
+        </section>
+      )}
       <div className="access-columns">
         <form className="form-panel" onSubmit={createCredential}>
           <div className="panel-title">
@@ -363,13 +383,16 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
           </label>
           <label>
             Secret
-            <Input
+            <Textarea
               required
-              type="password"
               autoComplete="new-password"
+              aria-label="Secret"
+              placeholder={credentialKind === "ssh" ? "Paste the complete private key" : "Paste the secret"}
+              spellCheck={false}
               value={secret}
               onChange={(event) => setSecret(event.target.value)}
             />
+            {credentialKind === "ssh" && <span className="label-hint">Keep the original line breaks.</span>}
           </label>
           {credentialKind === "ssh" && (
             <label>
@@ -435,73 +458,77 @@ export function AccessView({ candidate }: { candidate?: Candidate | null } = {})
           </Button>
         </form>
       </div>
-      <div className="data-panel">
-        <div className="section-heading">
-          <div>
-            <h3>Open access requests</h3>
-            <p>Specific missing prerequisites; no command output or secrets.</p>
+      {!embedded && (
+        <div className="data-panel">
+          <div className="section-heading">
+            <div>
+              <h3>Open access requests</h3>
+              <p>Specific missing prerequisites; no command output or secrets.</p>
+            </div>
+            <Badge variant="outline">{requests.length}</Badge>
           </div>
-          <Badge variant="outline">{requests.length}</Badge>
+          {requests.length ? (
+            <div className="compact-list">
+              {requests.map((item) => (
+                <div key={item.id}>
+                  <strong>{item.reasonCode.replaceAll("_", " ")}</strong>
+                  <span>{item.safeDetails.target ?? "Target unavailable"}</span>
+                  <small>{new Date(item.lastAttempt).toLocaleString()}</small>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-inline">No unresolved access requests.</p>
+          )}
         </div>
-        {requests.length ? (
-          <div className="compact-list">
-            {requests.map((item) => (
-              <div key={item.id}>
-                <strong>{item.reasonCode.replaceAll("_", " ")}</strong>
-                <span>{item.safeDetails.target ?? "Target unavailable"}</span>
-                <small>{new Date(item.lastAttempt).toLocaleString()}</small>
+      )}
+      {!embedded && (
+        <div className="access-columns">
+          <div className="data-panel">
+            <div className="section-heading">
+              <h3>Stored metadata</h3>
+              <Badge variant="outline">{credentials.length}</Badge>
+            </div>
+            {credentials.length ? (
+              <div className="compact-list">
+                {credentials.map((item) => (
+                  <div key={item.id}>
+                    <strong>{item.kind}</strong>
+                    <span>{item.targets.join(", ") || "No targets"}</span>
+                    <small>
+                      revision {item.revision}
+                      {item.revokedAt ? " · revoked" : ""}
+                    </small>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <p className="empty-inline">No credentials stored.</p>
+            )}
           </div>
-        ) : (
-          <p className="empty-inline">No unresolved access requests.</p>
-        )}
-      </div>
-      <div className="access-columns">
-        <div className="data-panel">
-          <div className="section-heading">
-            <h3>Stored metadata</h3>
-            <Badge variant="outline">{credentials.length}</Badge>
-          </div>
-          {credentials.length ? (
-            <div className="compact-list">
-              {credentials.map((item) => (
-                <div key={item.id}>
-                  <strong>{item.kind}</strong>
-                  <span>{item.targets.join(", ") || "No targets"}</span>
-                  <small>
-                    revision {item.revision}
-                    {item.revokedAt ? " · revoked" : ""}
-                  </small>
-                </div>
-              ))}
+          <div className="data-panel">
+            <div className="section-heading">
+              <h3>Trusted identities</h3>
+              <Badge variant="outline">{trust.length}</Badge>
             </div>
-          ) : (
-            <p className="empty-inline">No credentials stored.</p>
-          )}
-        </div>
-        <div className="data-panel">
-          <div className="section-heading">
-            <h3>Trusted identities</h3>
-            <Badge variant="outline">{trust.length}</Badge>
+            {trust.length ? (
+              <div className="compact-list">
+                {trust.map((item) => (
+                  <div key={item.id}>
+                    <strong>{item.host}</strong>
+                    <span>{item.endpoint}</span>
+                    <small>
+                      {item.fingerprint} · revision {item.revision}
+                    </small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-inline">No trusted identities stored.</p>
+            )}
           </div>
-          {trust.length ? (
-            <div className="compact-list">
-              {trust.map((item) => (
-                <div key={item.id}>
-                  <strong>{item.host}</strong>
-                  <span>{item.endpoint}</span>
-                  <small>
-                    {item.fingerprint} · revision {item.revision}
-                  </small>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="empty-inline">No trusted identities stored.</p>
-          )}
         </div>
-      </div>
+      )}
     </section>
   );
 }

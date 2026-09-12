@@ -13,7 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { api, APIError, type Device, type MetricSeries } from "@/lib/api";
+import { AccessView } from "@/views/access";
+import { api, APIError, type Candidate, type Device, type MetricSeries } from "@/lib/api";
 
 type RangeKey = "1h" | "6h" | "24h" | "7d";
 type ChartPoint = {
@@ -212,6 +213,7 @@ export function DeviceView({
   onChanged?: (device: Device) => void;
 }) {
   const [device, setDevice] = useState(selected);
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [series, setSeries] = useState<MetricSeries[]>([]);
   const [range, setRange] = useState<RangeKey>("1h");
   const [reload, setReload] = useState(0);
@@ -229,6 +231,7 @@ export function DeviceView({
 
   useEffect(() => {
     setDevice(selected);
+    setCandidate(null);
     setSeries([]);
     setError("");
     setOperationError("");
@@ -245,10 +248,10 @@ export function DeviceView({
     setError("");
     const from = new Date(Date.now() - selectedRange.minutes * 60 * 1000).toISOString();
     const query = "?from=" + encodeURIComponent(from) + "&maxPoints=" + String(selectedRange.maxPoints);
-    Promise.all([api.device(selected.id), api.metrics(selected.id, query)])
-      .then(([detail, metrics]) => {
+    api
+      .metrics(selected.id, query)
+      .then((metrics) => {
         if (cancelled) return;
-        setDevice(detail);
         setSeries(metrics.series);
       })
       .catch((caught) => {
@@ -261,6 +264,44 @@ export function DeviceView({
       cancelled = true;
     };
   }, [demo, reload, selected.id, selectedRange.maxPoints, selectedRange.minutes]);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    const loadDevice = () =>
+      api
+        .device(selected.id)
+        .then((detail) => {
+          if (!cancelled) setDevice(detail);
+        })
+        .catch(() => {});
+    void loadDevice();
+    const timer = window.setInterval(loadDevice, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [demo, selected.id]);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    const loadCandidate = () =>
+      api
+        .candidates(`?deviceId=${encodeURIComponent(selected.id)}&limit=1`)
+        .then((result) => {
+          if (!cancelled) setCandidate(result.items[0] ?? null);
+        })
+        .catch(() => {
+          if (!cancelled) setCandidate(null);
+        });
+    void loadCandidate();
+    const timer = window.setInterval(loadCandidate, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [demo, selected.id]);
 
   const cpu = currentValue(device, "cpu.utilization");
   const memory = currentValue(device, "memory.used_percent");
@@ -398,6 +439,7 @@ export function DeviceView({
           <span>Agent {device.availability}; retained measurements are historical and are not current.</span>
         </div>
       )}
+      {!demo && !hasAgent && candidate && <AccessView candidate={candidate} embedded />}
       <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
         <div className="chart-heading">
           <div>

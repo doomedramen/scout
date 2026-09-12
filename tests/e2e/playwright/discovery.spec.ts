@@ -88,10 +88,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await page.getByRole("button", { name: "Network" }).click();
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   const foundDevices = page.getByRole("list", { name: "Found devices" });
-  const foundHost = foundDevices
-    .getByRole("listitem")
-    .filter({ hasText: "127.0.0.1" })
-    .filter({ hasText: "unsupported" });
+  const foundHost = foundDevices.getByRole("listitem").filter({ hasText: "127.0.0.1" });
   await expect(foundHost).toHaveCount(1);
   const foundHostButton = foundHost.getByRole("button");
   await foundHostButton.focus();
@@ -136,6 +133,14 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   expect(jobsResponse.status()).toBe(200);
   const jobs = (await jobsResponse.json()) as { items: Array<{ kind: string }> };
   expect(jobs.items.filter((job) => job.kind === "enrollment")).toHaveLength(1);
+
+  await page.getByRole("button", { name: "Systems" }).click();
+  const systemRow = page.locator("tbody tr").filter({ hasText: "127.0.0.1" });
+  await expect(systemRow).toBeVisible();
+  await systemRow.getByRole("button", { name: /View / }).click();
+  await expect(page.getByRole("heading", { name: "SSH found on this system" })).toBeVisible();
+  await expect(page.getByText("Provide credentials and Scout will install the agent automatically.")).toBeVisible();
+  await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
 
   const scopeResponse = await page.request.get(`/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}`);
   expect(scopeResponse.status()).toBe(200);
@@ -229,7 +234,10 @@ test("owner keeps unsupported services observable without requesting irrelevant 
 
   await page.getByRole("button", { name: "Network" }).click();
   const foundDevices = page.getByRole("list", { name: "Found devices" });
-  const foundHost = foundDevices.getByRole("listitem").filter({ hasText: "127.0.0.1" });
+  const foundHost = foundDevices
+    .getByRole("listitem")
+    .filter({ hasText: "127.0.0.1" })
+    .filter({ hasText: "unsupported" });
   await expect(foundHost).toHaveCount(1);
   const foundHostButton = foundHost.getByRole("button");
   await foundHostButton.focus();

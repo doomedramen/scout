@@ -274,6 +274,10 @@ func filterCandidates(items []store.Candidate, r *http.Request) (candidateFilter
 	if len(query) > 128 {
 		return candidateFilterResult{}, store.ErrInvalid
 	}
+	deviceID := strings.TrimSpace(r.URL.Query().Get("deviceId"))
+	if len(deviceID) > 128 {
+		return candidateFilterResult{}, store.ErrInvalid
+	}
 	cursor, err := decodeCandidateCursor(r.URL.Query().Get("cursor"))
 	if err != nil {
 		return candidateFilterResult{}, err
@@ -284,6 +288,9 @@ func filterCandidates(items []store.Candidate, r *http.Request) (candidateFilter
 	}
 	filtered := make([]store.Candidate, 0, len(items))
 	for _, candidate := range items {
+		if deviceID != "" && candidate.DeviceID != deviceID {
+			continue
+		}
 		if stateFilter != "" && apiCandidateState(candidate.State) != stateFilter {
 			continue
 		}

@@ -72,7 +72,14 @@ export function CandidateView({
   }, [retry, selected.id]);
 
   const candidate = detail?.candidate ?? selected;
-  const canProvideAccess = ["needs_credentials", "invalid_credentials", "needs_host_trust"].includes(candidate.state);
+  const hasOpenCredentialRequest =
+    detail?.accessRequests.some(
+      (request) =>
+        request.state === "open" && ["missing_credentials", "invalid_credentials"].includes(request.reasonCode),
+    ) ?? false;
+  const canProvideAccess =
+    ["needs_credentials", "invalid_credentials", "needs_host_trust"].includes(candidate.state) ||
+    hasOpenCredentialRequest;
   const openSSH = detail?.entryPoints.items.filter((item) => item.outcome === "open" && item.transport === "tcp") ?? [];
 
   return (
@@ -117,7 +124,11 @@ export function CandidateView({
             <KeyRound size={17} />
             <div>
               <h3 id="candidate-action-title">SSH access is the next step</h3>
-              <p>{stateDescription(candidate.state)}</p>
+              <p>
+                {hasOpenCredentialRequest && candidate.state === "discovered"
+                  ? "SSH was found on this system, but Scout needs credentials to continue."
+                  : stateDescription(candidate.state)}
+              </p>
             </div>
           </div>
           <Button onClick={() => onOpenAccess(candidate)}>
