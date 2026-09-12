@@ -652,3 +652,46 @@ Never attach credential values, private keys, host-key private material, banners
   multi-vantage, segmented-packet, workload, recovery, and viewport matrices;
   the public deployment must rebuild from the pushed commits before it serves
   these UI and installer changes.
+
+## Password-authenticated enrollment and multi-key SSH follow-up
+
+- Requirements: FR-010–FR-015, FR-017, FR-019–FR-021; SC-003–SC-005,
+  SC-008, SC-009.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: f3607d2.
+- Authorized topology: disposable Docker network `scout-v1-lab`, a local
+  Scout server published only on `127.0.0.1:18083`, and disposable Debian
+  Bookworm systemd targets at isolated container addresses `172.20.0.4` and
+  `172.20.0.5`. Both targets exposed SSH on port 22 with a disposable
+  username/password account and non-interactive sudo. No production device,
+  network, credential, or deployment was contacted.
+- Positive journey: the current UI created the second site/scope, enabled the
+  reviewed server scan, and queued an on-demand run. The scan retained one
+  open SSH entry point and one `needs_credentials` candidate. Opening the
+  system from Systems rendered `SSH found on this system`, defaulted to
+  `Username + password`, showed the required SSH username/password fields,
+  and prefilled the exact `172.20.0.5:22` target. Submitting the credential
+  and an owner-trusted Ed25519 host fingerprint caused a re-evaluated job to
+  install the native agent over SSH. The candidate became `enrolled`; the
+  Systems row became `Online`; and the detail view showed agent identity,
+  version `0.1.0`, current CPU/memory values, and a recent heartbeat.
+- Negative and compatibility evidence: a pre-fix local run with a trusted
+  Ed25519 fingerprint recorded `host_key_mismatch` because the SSH client
+  selected the target's ECDSA key first, leaving the candidate at
+  `needs_host_trust`. A red regression test reproduced this with a server
+  publishing both keys. The fixed worker now retries each supported secure
+  host-key algorithm until the explicit fingerprint matches; the green
+  regression test proves the Ed25519-trusted path succeeds without accepting
+  a different key. Wrong-password coverage remains green, and no secret is
+  returned by credential listing or included in job/result output.
+- Exact verification commands and outcomes: `go test ./... -count=1` passed;
+  `go vet ./...` passed; `npm run check` passed; `npm run lint` passed;
+  `npm run format:check` passed; `npm run build` passed; `go test
+  ./tests/contracts -count=1` passed; `npx playwright test` passed with 10
+  tests; and `git diff --check` passed. The local image was rebuilt with
+  `docker build -f packaging/containers/server.Dockerfile -t scout:local-v1
+  .` and the server was restarted from the resulting image before the
+  successful Ed25519-trust retry.
+- Remaining limits: this is a two-target local Docker acceptance run, not the
+  packet-captured segmented multi-vantage lab, 256-address/100-device load,
+  recovery, older-agent, or full viewport matrix. T029–T044 therefore remain
+  open in `tasks.md`.
