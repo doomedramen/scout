@@ -33,6 +33,15 @@ var ErrHostKeyMismatch = errors.New("SSH host key does not match the trusted fin
 var ErrSSHConnectivity = errors.New("SSH target could not be reached")
 var ErrSSHAuthentication = errors.New("SSH authentication failed")
 
+var secureSSHHostKeyAlgorithms = []string{
+	ssh.KeyAlgoECDSA256,
+	ssh.KeyAlgoECDSA384,
+	ssh.KeyAlgoECDSA521,
+	ssh.KeyAlgoED25519,
+	ssh.KeyAlgoRSASHA256,
+	ssh.KeyAlgoRSASHA512,
+}
+
 func NormalizeSSHAuthMethod(value string) (string, bool) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
@@ -80,17 +89,9 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	if options.Password != "" {
 		authMethods = append(authMethods, ssh.Password(options.Password))
 	}
-	var err error
 	hostKeyCallback := options.HostKeyCallback
-	var callbackErr error
-	if hostKeyCallback != nil {
-		callback := hostKeyCallback
-		hostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			callbackErr = callback(hostname, remote, key)
-			return callbackErr
-		}
-	}
 	if hostKeyCallback == nil {
+		var err error
 		hostKeyCallback, err = knownhosts.New(options.KnownHostsFile)
 		if err != nil {
 			return nil, fmt.Errorf("load known_hosts: %w", err)
@@ -103,13 +104,49 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	if timeout > 60*time.Second {
 		return nil, errors.New("SSH timeout exceeds limit")
 	}
-	config := &ssh.ClientConfig{User: options.Username, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: timeout}
+
+	algorithms := [][]string{nil}
+	if options.HostKeyCallback != nil {
+		for _, algorithm := range secureSSHHostKeyAlgorithms {
+			algorithms = append(algorithms, []string{algorithm})
+		}
+	}
+	var lastErr error
+	sawHostKeyMismatch := false
+	for _, hostKeyAlgorithms := range algorithms {
+		transport, err := dialSSHAttempt(ctx, options.Address, options.Username, authMethods, hostKeyCallback, timeout, hostKeyAlgorithms)
+		if err == nil {
+			return transport, nil
+		}
+		lastErr = err
+		if errors.Is(err, ErrHostKeyMismatch) {
+			sawHostKeyMismatch = true
+			continue
+		}
+		if isHostKeyNegotiationError(err) {
+			continue
+		}
+		return nil, err
+	}
+	if sawHostKeyMismatch {
+		return nil, ErrHostKeyMismatch
+	}
+	return nil, lastErr
+}
+
+func dialSSHAttempt(ctx context.Context, address, username string, authMethods []ssh.AuthMethod, callback ssh.HostKeyCallback, timeout time.Duration, hostKeyAlgorithms []string) (SSHTransport, error) {
+	var callbackErr error
+	hostKeyCallback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		callbackErr = callback(hostname, remote, key)
+		return callbackErr
+	}
+	config := &ssh.ClientConfig{User: username, Auth: authMethods, HostKeyCallback: hostKeyCallback, HostKeyAlgorithms: hostKeyAlgorithms, Timeout: timeout}
 	dialer := net.Dialer{Timeout: timeout}
-	connection, err := dialer.DialContext(ctx, "tcp", options.Address)
+	connection, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, ErrSSHConnectivity
 	}
-	clientConnection, channels, requests, err := ssh.NewClientConn(connection, options.Address, config)
+	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, config)
 	if err != nil {
 		_ = connection.Close()
 		if errors.Is(callbackErr, ErrHostKeyMismatch) {
@@ -118,9 +155,17 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 		if strings.Contains(strings.ToLower(err.Error()), "unable to authenticate") {
 			return nil, ErrSSHAuthentication
 		}
+		if isHostKeyNegotiationError(err) {
+			return nil, err
+		}
 		return nil, errors.New("SSH handshake failed")
 	}
 	return &sshTransport{client: ssh.NewClient(clientConnection, channels, requests)}, nil
+}
+
+func isHostKeyNegotiationError(err error) bool {
+	var negotiationError *ssh.AlgorithmNegotiationError
+	return errors.As(err, &negotiationError) && negotiationError.What == "host key"
 }
 
 func (t *sshTransport) Upload(ctx context.Context, path string, data []byte) error {

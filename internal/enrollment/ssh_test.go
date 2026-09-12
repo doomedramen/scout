@@ -2,7 +2,9 @@ package enrollment
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"errors"
 	"net"
@@ -42,6 +44,43 @@ func TestDialSSHAuthenticatesWithPassword(t *testing.T) {
 	}
 }
 
+func TestDialSSHAuthenticatesWithPasswordUsingTrustedNonPreferredHostKey(t *testing.T) {
+	ecdsaPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ECDSA host key: %v", err)
+	}
+	ecdsaHostKey, err := ssh.NewSignerFromKey(ecdsaPrivateKey)
+	if err != nil {
+		t.Fatalf("create ECDSA host signer: %v", err)
+	}
+	_, ed25519PrivateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate Ed25519 host key: %v", err)
+	}
+	ed25519HostKey, err := ssh.NewSignerFromKey(ed25519PrivateKey)
+	if err != nil {
+		t.Fatalf("create Ed25519 host signer: %v", err)
+	}
+	listener := passwordSSHServerWithHostKeys(t, "fixture-password", ecdsaHostKey, ed25519HostKey)
+	defer listener.Close()
+
+	transport, err := DialSSH(context.Background(), SSHOptions{
+		Address:  listener.Addr().String(),
+		Username: "fixture",
+		Password: "fixture-password",
+		HostKeyCallback: FingerprintHostKeyCallback(
+			ssh.FingerprintSHA256(ed25519HostKey.PublicKey()),
+		),
+		Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("password SSH dial with trusted non-preferred key failed: %v", err)
+	}
+	if err := transport.Close(); err != nil {
+		t.Fatalf("close SSH transport: %v", err)
+	}
+}
+
 func TestDialSSHRejectsWrongPassword(t *testing.T) {
 	listener, _ := passwordSSHServer(t, "fixture-password")
 	defer listener.Close()
@@ -74,6 +113,12 @@ func passwordSSHServer(t *testing.T, expectedPassword string) (net.Listener, pas
 	if err != nil {
 		t.Fatalf("create SSH host signer: %v", err)
 	}
+	listener := passwordSSHServerWithHostKeys(t, expectedPassword, hostKey)
+	return listener, passwordSSHServerConfig{hostKey: hostKey}
+}
+
+func passwordSSHServerWithHostKeys(t *testing.T, expectedPassword string, hostKeys ...ssh.Signer) net.Listener {
+	t.Helper()
 	config := &ssh.ServerConfig{
 		PasswordCallback: func(connection ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 			if connection.User() != "fixture" || string(password) != expectedPassword {
@@ -82,26 +127,32 @@ func passwordSSHServer(t *testing.T, expectedPassword string) (net.Listener, pas
 			return nil, nil
 		},
 	}
-	config.AddHostKey(hostKey)
+	for _, hostKey := range hostKeys {
+		config.AddHostKey(hostKey)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen for SSH test server: %v", err)
 	}
 	go func() {
-		connection, acceptErr := listener.Accept()
-		if acceptErr != nil {
-			return
+		for {
+			connection, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			go func(connection net.Conn) {
+				server, channels, requests, handshakeErr := ssh.NewServerConn(connection, config)
+				if handshakeErr != nil {
+					_ = connection.Close()
+					return
+				}
+				go ssh.DiscardRequests(requests)
+				for channel := range channels {
+					_ = channel.Reject(ssh.Prohibited, "test does not open channels")
+				}
+				_ = server.Close()
+			}(connection)
 		}
-		server, channels, requests, handshakeErr := ssh.NewServerConn(connection, config)
-		if handshakeErr != nil {
-			_ = connection.Close()
-			return
-		}
-		go ssh.DiscardRequests(requests)
-		for channel := range channels {
-			_ = channel.Reject(ssh.Prohibited, "test does not open channels")
-		}
-		_ = server.Close()
 	}()
-	return listener, passwordSSHServerConfig{hostKey: hostKey}
+	return listener
 }
