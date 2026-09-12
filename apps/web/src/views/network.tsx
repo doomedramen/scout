@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Network as NetworkIcon, RefreshCw, Server, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api, APIError, type Device, type Relationship, type TopologyNode } from "@/lib/api";
+import { api, APIError, type Candidate, type Device, type Relationship, type TopologyNode } from "@/lib/api";
 import { demoDevices, type Device as DemoDevice } from "@/demo";
 
 function demoDevice(item: DemoDevice, index: number): Device {
@@ -51,10 +51,22 @@ function confidenceLabel(value: number): string {
   return (value * 100).toFixed(0) + "%";
 }
 
-export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (device: Device) => void }) {
+export function NetworkView({
+  demo,
+  onSelect,
+  onCandidateSelect,
+}: {
+  demo: boolean;
+  onSelect: (device: Device) => void;
+  onCandidateSelect: (candidate: Candidate) => void;
+}) {
   const [nodes, setNodes] = useState<TopologyNode[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidateState, setCandidateState] = useState("");
+  const [candidateQuery, setCandidateQuery] = useState("");
   const [error, setError] = useState("");
+  const [candidateError, setCandidateError] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -76,6 +88,33 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
       });
     return () => {
       cancelled = true;
+    };
+  }, [demo, retry]);
+
+  useEffect(() => {
+    if (demo) {
+      setCandidates([]);
+      setCandidateError("");
+      return;
+    }
+    let cancelled = false;
+    const loadCandidates = () =>
+      api
+        .candidates("?limit=100")
+        .then((result) => {
+          if (cancelled) return;
+          setCandidates(result.items);
+          setCandidateError("");
+        })
+        .catch((caught) => {
+          if (!cancelled)
+            setCandidateError(caught instanceof APIError ? caught.message : "Could not load found devices");
+        });
+    void loadCandidates();
+    const timer = window.setInterval(loadCandidates, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
     };
   }, [demo, retry]);
 
@@ -109,6 +148,16 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
       ]
     : relationships;
   const shownRelationships = demo ? demoRelationships : relationships;
+  const shownCandidates = useMemo(() => {
+    const query = candidateQuery.trim().toLowerCase();
+    return candidates.filter((candidate) => {
+      if (candidateState && candidate.state !== candidateState) return false;
+      if (!query) return true;
+      return [candidate.displayName, candidate.hostname, candidate.address, candidate.source]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query));
+    });
+  }, [candidateQuery, candidateState, candidates]);
 
   return (
     <section className="network-panel">
@@ -144,6 +193,85 @@ export function NetworkView({ demo, onSelect }: { demo: boolean; onSelect: (devi
         </div>
       ) : (
         <>
+          <section className="found-devices-panel" aria-labelledby="found-devices-heading">
+            <div className="section-heading">
+              <div>
+                <Badge variant="outline">
+                  <ShieldCheck size={13} />
+                  Scan evidence
+                </Badge>
+                <h2 id="found-devices-heading">Found devices</h2>
+                <p>Hosts seen on an approved scope. Select one to review SSH access and adopt it.</p>
+              </div>
+              <Badge variant="outline">{demo ? 0 : candidates.length}</Badge>
+            </div>
+            {!demo && (
+              <div className="filter-row candidate-filters">
+                <label>
+                  Search found devices
+                  <input
+                    value={candidateQuery}
+                    onChange={(event) => setCandidateQuery(event.target.value)}
+                    placeholder="Address or hostname"
+                  />
+                </label>
+                <label>
+                  State
+                  <select value={candidateState} onChange={(event) => setCandidateState(event.target.value)}>
+                    <option value="">All states</option>
+                    <option value="needs_credentials">Needs credentials</option>
+                    <option value="needs_host_trust">Needs host trust</option>
+                    <option value="needs_privilege">Needs privilege</option>
+                    <option value="needs_server_connectivity">Needs server connectivity</option>
+                    <option value="queued">Queued</option>
+                    <option value="enrolling">Enrolling</option>
+                    <option value="enrolled">Enrolled</option>
+                    <option value="unsupported">Unsupported service</option>
+                    <option value="stale">Stale evidence</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {candidateError ? (
+              <div className="empty-inline" role="alert">
+                {candidateError}
+              </div>
+            ) : demo ? (
+              <p className="empty-inline">Found-device evidence is hidden in demo mode.</p>
+            ) : shownCandidates.length ? (
+              <div className="candidate-list" role="list" aria-label="Found devices">
+                {shownCandidates.map((candidate) => (
+                  <div className="candidate-row" key={candidate.id} role="listitem">
+                    <button type="button" className="candidate-row-main" onClick={() => onCandidateSelect(candidate)}>
+                      <span className="candidate-row-icon" aria-hidden="true">
+                        <Server size={18} />
+                      </span>
+                      <span className="candidate-row-copy">
+                        <strong>{candidate.displayName || candidate.hostname || candidate.address}</strong>
+                        <small>
+                          {candidate.address} · {candidate.entryPointCount ?? candidate.entryPointIds?.length ?? 0}{" "}
+                          known service
+                          {(candidate.entryPointCount ?? candidate.entryPointIds?.length ?? 0) === 1 ? "" : "s"} · last
+                          seen{" "}
+                          {candidate.lastScannedAt ? new Date(candidate.lastScannedAt).toLocaleString() : "not yet"}
+                        </small>
+                      </span>
+                      <span className="candidate-row-state">
+                        <Badge variant="outline">{candidate.state.replaceAll("_", " ")}</Badge>
+                        <small>{candidate.action?.label ?? "No action"}</small>
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-inline">
+                {candidates.length
+                  ? "No found devices match this filter."
+                  : "No devices found yet. Run a bounded scan from Scopes."}
+              </p>
+            )}
+          </section>
           <div className="map-root">
             <NetworkIcon size={22} />
             <strong>{demo ? "Lab network" : "Scout network"}</strong>

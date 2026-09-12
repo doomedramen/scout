@@ -17,9 +17,10 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api, type Device, type Status } from "@/lib/api";
+import { api, type Candidate, type Device, type Status } from "@/lib/api";
 import { AccessView } from "@/views/access";
 import { AgentSetupView } from "@/views/agent-setup";
+import { CandidateView } from "@/views/candidate";
 import { EnrollmentView } from "@/views/enrollment";
 import { IncidentsView } from "@/views/incidents";
 import { HardwareView } from "@/views/hardware";
@@ -88,6 +89,7 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Device | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [incidentFocus, setIncidentFocus] = useState("");
   const [help, setHelp] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
@@ -134,6 +136,7 @@ export default function App() {
   function navigate(next: Page) {
     setPage(next);
     setSelected(null);
+    setSelectedCandidate(null);
     setQuery("");
     if (next !== "Incidents") setIncidentFocus("");
   }
@@ -141,6 +144,12 @@ export default function App() {
   function openIncident(incidentId: string) {
     setIncidentFocus(incidentId);
     navigate("Incidents");
+  }
+
+  function openCandidate(candidate: Candidate) {
+    setPage("Network");
+    setSelected(null);
+    setSelectedCandidate(candidate);
   }
 
   const detail = pageDetails[page];
@@ -196,6 +205,7 @@ export default function App() {
           onClick={() => {
             setDemo(!demo);
             setSelected(null);
+            setSelectedCandidate(null);
             setQuery("");
           }}
         >
@@ -216,7 +226,16 @@ export default function App() {
           </div>
         )}
         {help && <AgentSetupView onClose={() => setHelp(false)} />}
-        {selected && (page === "Systems" || page === "Network") ? (
+        {selectedCandidate && page === "Network" ? (
+          <CandidateView
+            selected={selectedCandidate}
+            onBack={() => setSelectedCandidate(null)}
+            onOpenAccess={(candidate) => {
+              setSelectedCandidate(candidate);
+              setPage("Access");
+            }}
+          />
+        ) : selected && (page === "Systems" || page === "Network") ? (
           <Suspense
             fallback={
               <div className="empty" role="status">
@@ -252,11 +271,11 @@ export default function App() {
             {page === "Incidents" && (
               <IncidentsView focusIncidentId={incidentFocus} onFocusConsumed={() => setIncidentFocus("")} />
             )}
-            {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} />}
+            {page === "Network" && <NetworkView demo={demo} onSelect={setSelected} onCandidateSelect={openCandidate} />}
             {page === "Notifications" && <NotificationsView />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}
-            {page === "Access" && <AccessView />}
+            {page === "Access" && <AccessView candidate={selectedCandidate} />}
             {page === "Services" && <ServicesView onOpenIncident={openIncident} />}
             {page === "Hardware" && <HardwareView />}
             {page === "Storage" && <StorageView onOpenIncident={openIncident} />}

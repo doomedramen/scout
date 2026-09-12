@@ -54,12 +54,13 @@ type ScanRunPage struct {
 }
 
 type EntryPointObservationQuery struct {
-	ScopeID   string
-	RunID     string
-	ScannerID string
-	Address   string
-	Cursor    string
-	Limit     int
+	ScopeID     string
+	RunID       string
+	ScannerID   string
+	Address     string
+	CurrentOnly bool
+	Cursor      string
+	Limit       int
 }
 
 type EntryPointObservationPage struct {
@@ -740,6 +741,10 @@ func updateCurrentObservation(state *State, observation EntryPointObservation) {
 	if observation.ExpiresAt.Before(observation.ReceivedAt) {
 		freshness = "stale"
 	}
+	contradicted := false
+	if exists {
+		contradicted = current.Contradicted || current.Outcome != observation.Outcome
+	}
 	state.EntryPointCurrent[key] = EntryPointCurrent{
 		Key:           key,
 		ScopeID:       observation.ScopeID,
@@ -751,6 +756,7 @@ func updateCurrentObservation(state *State, observation EntryPointObservation) {
 		ObservationID: observation.ID,
 		Outcome:       observation.Outcome,
 		Freshness:     freshness,
+		Contradicted:  contradicted,
 		ObservedAt:    observation.ObservedAt,
 		ReceivedAt:    observation.ReceivedAt,
 		ExpiresAt:     observation.ExpiresAt,
@@ -1139,6 +1145,13 @@ func (s *Store) ListEntryPointObservations(ctx context.Context, query EntryPoint
 		for _, observation := range state.EntryPointObservations {
 			if query.ScopeID != "" && observation.ScopeID != query.ScopeID || query.RunID != "" && observation.RunID != query.RunID || query.ScannerID != "" && observation.ScannerID != query.ScannerID || query.Address != "" && observation.Address != query.Address {
 				continue
+			}
+			if query.CurrentOnly {
+				key := entryPointCurrentKey(observation.ScopeID, observation.Address, observation.Transport, observation.Port, observation.ScannerKind, observation.ScannerID)
+				current, ok := state.EntryPointCurrent[key]
+				if !ok || current.ObservationID != observation.ID {
+					continue
+				}
 			}
 			if !cursor.Time.IsZero() && !scanCursorAfter(observation.ObservedAt, observation.ID, cursor) {
 				continue

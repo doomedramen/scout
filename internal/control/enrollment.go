@@ -16,6 +16,9 @@ import (
 func (a *App) registerEnrollmentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/candidates", a.listCandidates)
 	mux.HandleFunc("POST /api/v1/candidates", a.createCandidate)
+	mux.HandleFunc("GET /api/v1/candidates/{candidateId}", a.getCandidate)
+	mux.HandleFunc("GET /api/v1/candidates/{candidateId}/entry-points", a.listCandidateEntryPoints)
+	mux.HandleFunc("POST /api/v1/candidates/{candidateId}/reevaluate", a.reevaluateCandidate)
 	mux.HandleFunc("GET /api/v1/scopes/{scopeId}/candidates", a.listScopeCandidates)
 	mux.HandleFunc("POST /api/v1/scopes/{scopeId}/discover", a.discoverScope)
 	mux.HandleFunc("POST /api/v1/candidates/{candidateId}/enroll", a.enqueueCandidate)
@@ -87,27 +90,11 @@ func (a *App) discoverScope(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) listCandidates(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireOwner(w, r, false); !ok {
-		return
-	}
-	items, err := a.Store.ListCandidates(r.Context(), r.URL.Query().Get("scopeId"), r.URL.Query().Get("state"))
-	if err != nil {
-		writeMappedError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": nil})
+	a.getCandidates(w, r, r.URL.Query().Get("scopeId"))
 }
 
 func (a *App) listScopeCandidates(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireOwner(w, r, false); !ok {
-		return
-	}
-	items, err := a.Store.ListCandidates(r.Context(), r.PathValue("scopeId"), r.URL.Query().Get("state"))
-	if err != nil {
-		writeMappedError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": nil})
+	a.getCandidates(w, r, r.PathValue("scopeId"))
 }
 
 func (a *App) createCandidate(w http.ResponseWriter, r *http.Request) {

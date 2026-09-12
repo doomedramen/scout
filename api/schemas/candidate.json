@@ -8,6 +8,7 @@
     "scopeId",
     "address",
     "state",
+    "scopeRevision",
     "coverageState",
     "entryPointCount",
     "provenance",
@@ -18,11 +19,21 @@
     "id": { "$ref": "scan-common.json#/$defs/uuid" },
     "siteId": { "$ref": "scan-common.json#/$defs/uuid" },
     "scopeId": { "$ref": "scan-common.json#/$defs/uuid" },
+    "deviceId": { "$ref": "scan-common.json#/$defs/uuid" },
     "address": { "type": "string", "minLength": 2, "maxLength": 45 },
+    "hostname": { "type": "string", "maxLength": 255 },
+    "source": { "type": "string", "maxLength": 128 },
     "displayName": { "type": "string", "maxLength": 128 },
     "state": { "$ref": "scan-common.json#/$defs/candidateState" },
+    "scopeRevision": { "$ref": "scan-common.json#/$defs/revision" },
     "coverageState": { "$ref": "scan-common.json#/$defs/coverageState" },
     "entryPointCount": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "entryPointIds": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+    },
+    "preferredAccessMethod": { "type": "string", "enum": ["ssh"] },
     "provenance": {
       "type": "array",
       "maxItems": 16,
@@ -37,6 +48,10 @@
         "additionalProperties": false
       }
     },
+    "firstSeen": { "$ref": "scan-common.json#/$defs/timestamp" },
+    "lastSeen": { "$ref": "scan-common.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "scan-common.json#/$defs/timestamp" },
+    "excluded": { "type": "boolean" },
     "lastScannedAt": { "type": ["string", "null"], "format": "date-time" },
     "action": {
       "type": ["object", "null"],

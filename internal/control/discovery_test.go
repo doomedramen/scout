@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -137,6 +138,82 @@ func TestScanPolicyAndOnDemandRoutes(t *testing.T) {
 	staleRun := postJSON(t, client, server.URL+"/api/v1/scopes/"+scope.ID+"/scan-runs", runBody, login.Cookies, headers)
 	if staleRun.Code != http.StatusConflict || !strings.Contains(staleRun.Body, `"code":"scan_revision_superseded"`) {
 		t.Fatalf("stale scan run: %d %s", staleRun.Code, staleRun.Body)
+	}
+}
+
+func TestCandidateRoutesExposeActionableSafeDetail(t *testing.T) {
+	ctx := context.Background()
+	repository := store.NewMemory()
+	application, err := NewApp(repository, nil, Config{SetupToken: "candidate-api-setup-token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(application.Handler())
+	defer server.Close()
+	client := server.Client()
+
+	setup := postJSON(t, client, server.URL+"/api/v1/setup", map[string]any{"setupToken": "candidate-api-setup-token", "password": "ScoutAa1"}, nil, nil)
+	if setup.Code != http.StatusCreated {
+		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
+	}
+	login := postJSON(t, client, server.URL+"/api/v1/sessions", map[string]any{"password": "ScoutAa1"}, nil, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	var loginBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.Unmarshal([]byte(login.Body), &loginBody); err != nil {
+		t.Fatal(err)
+	}
+	headers := http.Header{"X-CSRF-Token": []string{loginBody.CSRFToken}}
+
+	site, err := repository.CreateSite(ctx, store.Site{Name: "candidate-api-site"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := repository.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"192.0.2.0/24"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := repository.UpsertCandidate(ctx, store.Candidate{
+		ScopeID: scope.ID, Address: "192.0.2.10", Hostname: "found-host", State: "needs_credentials",
+		CoverageState: "current", EntryPointIDs: []string{"ssh-default"}, PreferredAccessMethod: store.ScanAccessSSH,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.UpsertAccessRequest(ctx, store.AccessRequest{
+		DeviceID: candidate.ID, CandidateID: candidate.ID, ScopeID: scope.ID, AccessMethod: store.ScanAccessSSH,
+		Endpoint: "192.0.2.10:22", ReasonCode: "missing_credentials", State: "open",
+		SafeDetails: map[string]string{"target": "192.0.2.10:22", "method": store.ScanAccessSSH},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list := getRequest(t, client, server.URL+"/api/v1/candidates?scopeId="+scope.ID+"&state=needs_credentials&accessMethod=ssh&freshness=current&query=192.0.2.10&limit=1", login.Cookies, nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("candidate list: %d %s", list.Code, list.Body)
+	}
+	if !strings.Contains(list.Body, `"entryPointCount":1`) || !strings.Contains(list.Body, `"kind":"assign_credentials"`) || !strings.Contains(list.Body, `"address":"192.0.2.10"`) {
+		t.Fatalf("candidate list omitted actionable safe summary: %s", list.Body)
+	}
+	if strings.Contains(list.Body, "ciphertext") || strings.Contains(list.Body, "private-key") {
+		t.Fatalf("candidate list leaked secret material: %s", list.Body)
+	}
+
+	detail := getRequest(t, client, server.URL+"/api/v1/candidates/"+candidate.ID, login.Cookies, nil)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body, `"accessRequests"`) || !strings.Contains(detail.Body, `"enrollment":null`) {
+		t.Fatalf("candidate detail: %d %s", detail.Code, detail.Body)
+	}
+	entryPoints := getRequest(t, client, server.URL+"/api/v1/candidates/"+candidate.ID+"/entry-points?limit=1", login.Cookies, nil)
+	if entryPoints.Code != http.StatusOK || !strings.Contains(entryPoints.Body, `"items"`) || !strings.Contains(entryPoints.Body, `"nextCursor"`) {
+		t.Fatalf("candidate entry points: %d %s", entryPoints.Code, entryPoints.Body)
+	}
+
+	recheck := postJSON(t, client, server.URL+"/api/v1/candidates/"+candidate.ID+"/reevaluate", map[string]any{"expectedRevision": scope.Revision}, login.Cookies, headers)
+	if recheck.Code != http.StatusAccepted || !strings.Contains(recheck.Body, `"eligible":false`) || !strings.Contains(recheck.Body, `missing_credentials`) {
+		t.Fatalf("candidate re-evaluation: %d %s", recheck.Code, recheck.Body)
 	}
 }
 

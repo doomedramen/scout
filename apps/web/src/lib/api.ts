@@ -452,7 +452,11 @@ export type MonitoringStatus = {
 export type AccessRequest = {
   id: string;
   deviceId: string;
+  candidateId?: string;
   scopeId?: string;
+  accessMethod?: string;
+  endpoint?: string;
+  entryPointObservationId?: string;
   reasonCode: string;
   safeDetails: Record<string, string>;
   state: string;
@@ -485,15 +489,73 @@ export type Candidate = {
   id: string;
   siteId: string;
   scopeId: string;
+  deviceId?: string;
   address: string;
   hostname?: string;
   source: string;
+  displayName?: string;
   state: string;
+  coverageState?: "current" | "partial" | "stale" | "contradicted" | "unknown" | string;
+  entryPointCount?: number;
+  provenance?: CandidateProvenance[];
+  action?: CandidateAction | null;
   scopeRevision: number;
   firstSeen: string;
   lastSeen: string;
   expiresAt: string;
   excluded: boolean;
+  entryPointIds?: string[];
+  preferredAccessMethod?: string;
+  lastScannedAt?: string | null;
+};
+
+export type CandidateAction = {
+  kind: "assign_credentials" | "review_trust" | "retry" | "view_details" | string;
+  label: string;
+  href?: string;
+};
+
+export type CandidateProvenance = {
+  scanner: { kind: string; id: string };
+  lastObservedAt: string;
+  outcome: string;
+};
+
+export type CandidateEntryPoint = {
+  id: string;
+  runId: string;
+  pageOrdinal: number;
+  scopeId: string;
+  scopeRevision: number;
+  scanner: { kind: string; id: string };
+  address: string;
+  transport: string;
+  port: number;
+  entryPointId: string;
+  outcome: string;
+  reasonCode?: string | null;
+  latencyMilliseconds?: number | null;
+  observedAt: string;
+  receivedAt: string;
+  expiresAt: string;
+  actionable: boolean;
+};
+
+export type CandidateAccessRequest = {
+  id: string;
+  method: string;
+  endpoint: string;
+  reasonCode: string;
+  state: string;
+  safeDetails?: Record<string, string>;
+  updatedAt: string;
+};
+
+export type CandidateDetail = {
+  candidate: Candidate;
+  entryPoints: { items: CandidateEntryPoint[]; nextCursor: string | null };
+  accessRequests: CandidateAccessRequest[];
+  enrollment: { jobId: string; state: string } | null;
 };
 
 export type Job = {
@@ -942,6 +1004,8 @@ export const api = {
     allowedUse: string[];
     targets: string[];
     endpoint?: string;
+    scopeId?: string;
+    expectedScopeRevision?: number;
   }) => request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
   rotateCredential: (id: string, value: { secret: string; expectedRevision: number }) =>
     request<Credential>(`/credentials/${encodeURIComponent(id)}/rotate`, {
@@ -956,6 +1020,16 @@ export const api = {
     request<TrustRecord>(`/trust/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
   jobs: (query = "") => request<ListResponse<Job>>(`/jobs${query}`),
   candidates: (query = "") => request<ListResponse<Candidate>>(`/candidates${query}`),
+  candidate: (id: string) => request<CandidateDetail>(`/candidates/${encodeURIComponent(id)}`),
+  candidateEntryPoints: (id: string, query = "") =>
+    request<{ items: CandidateEntryPoint[]; nextCursor: string | null }>(
+      `/candidates/${encodeURIComponent(id)}/entry-points${query}`,
+    ),
+  reevaluateCandidate: (id: string, expectedRevision: number) =>
+    request<{ candidate: Candidate; eligible: boolean; reason: string; request?: CandidateAccessRequest; job?: Job }>(
+      `/candidates/${encodeURIComponent(id)}/reevaluate`,
+      { method: "POST", body: JSON.stringify({ expectedRevision }) },
+    ),
   discover: (
     scopeId: string,
     value: {

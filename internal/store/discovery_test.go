@@ -30,6 +30,9 @@ func TestCandidatesDeduplicateAndPreserveExclusions(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatalf("duplicate sighting created two candidates: %s %s", first.ID, second.ID)
 	}
+	if first.State != "discovered" {
+		t.Fatalf("candidate default state = %q, want discovered", first.State)
+	}
 	excluded, err := s.UpsertCandidate(ctx, Candidate{ScopeID: scope.ID, Address: "192.0.2.9", Source: "vantage-a"})
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +43,60 @@ func TestCandidatesDeduplicateAndPreserveExclusions(t *testing.T) {
 	items, err := s.ListCandidates(ctx, scope.ID, "")
 	if err != nil || len(items) != 2 {
 		t.Fatalf("candidate list: %d %v", len(items), err)
+	}
+}
+
+func TestCurrentEntryPointFilterKeepsNewestVantageEvidenceAndContradiction(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	accept := func(id, observedScanner string, observedAt time.Time, outcome string) {
+		runInput := scanRunFixture(scope, policy, id, observedAt)
+		runInput.ScannerID = observedScanner
+		runInput.TargetsPlanned = 1
+		runInput.AttemptsPlanned = 1
+		run, err := s.CreateScanRun(ctx, runInput)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leased, err := s.LeaseScanRun(ctx, run.ID, "coordinator", time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.StartScanRun(ctx, run.ID, "coordinator", leased.LeaseEpoch); err != nil {
+			t.Fatal(err)
+		}
+		observation := EntryPointObservation{
+			ID: NewID(), RunID: run.ID, PageOrdinal: 0, ScopeID: scope.ID, ScopeRevision: policy.Revision,
+			ScannerKind: "server", ScannerID: observedScanner, Address: "192.0.2.10", Transport: ScanTransportTCP,
+			Port: 22, EntryPointID: policy.EntryPoints[0].ID, Outcome: outcome, ObservedAt: observedAt,
+		}
+		receipt := ScanResultReceipt{RunID: run.ID, PageOrdinal: 0, ContentHash: id + "-hash", ResultCount: 1, IsFinal: true}
+		if _, _, err := s.AcceptScanResultPage(ctx, receipt, []EntryPointObservation{observation}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FinalizeScanRun(ctx, run.ID, "coordinator", leased.LeaseEpoch, ScanRunCompleted, "", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	accept("current-open", "server-vantage", now, "open")
+	accept("current-closed", "server-vantage", now.Add(time.Minute), "closed")
+
+	page, err := s.ListEntryPointObservations(ctx, EntryPointObservationQuery{ScopeID: scope.ID, Address: "192.0.2.10", CurrentOnly: true, Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Outcome != "closed" {
+		t.Fatalf("current-only projection: %+v err=%v", page, err)
+	}
+	key := entryPointCurrentKey(scope.ID, "192.0.2.10", ScanTransportTCP, 22, "server", "server-vantage")
+	var current EntryPointCurrent
+	if err := s.read(ctx, func(state *State) error {
+		current = state.EntryPointCurrent[key]
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !current.Contradicted || current.ObservationID != page.Items[0].ID {
+		t.Fatalf("contradiction/current projection: %+v", current)
 	}
 }
 

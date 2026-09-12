@@ -3,7 +3,16 @@ import { KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APIError, api, type AccessRequest, type Credential, type Owner, type TrustRecord } from "@/lib/api";
+import {
+  APIError,
+  api,
+  type AccessRequest,
+  type Candidate,
+  type CandidateDetail,
+  type Credential,
+  type Owner,
+  type TrustRecord,
+} from "@/lib/api";
 
 function splitValues(value: string) {
   return value
@@ -12,8 +21,9 @@ function splitValues(value: string) {
     .filter(Boolean);
 }
 
-export function AccessView() {
+export function AccessView({ candidate }: { candidate?: Candidate | null } = {}) {
   const [development, setDevelopment] = useState(false);
+  const [candidateDetail, setCandidateDetail] = useState<CandidateDetail | null>(null);
   const [owner, setOwner] = useState<Owner | null>(null);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -34,6 +44,47 @@ export function AccessView() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  const focusedCandidate = candidateDetail?.candidate ?? candidate;
+
+  useEffect(() => {
+    if (!candidate) {
+      setCandidateDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setCandidateDetail(null);
+    const defaultEndpoint = `${candidate.address}:22`;
+    setTargets(defaultEndpoint);
+    setEndpoint(defaultEndpoint);
+    setTrustScope(candidate.scopeId);
+    setTrustHost(candidate.address);
+    setTrustEndpoint(defaultEndpoint);
+    void api
+      .candidate(candidate.id)
+      .then((result) => {
+        if (!cancelled) setCandidateDetail(result);
+      })
+      .catch(() => {
+        if (!cancelled) setCandidateDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [candidate?.id]);
+
+  useEffect(() => {
+    if (!focusedCandidate) return;
+    const observed = candidateDetail?.entryPoints.items.find(
+      (item) => item.outcome === "open" && item.transport === "tcp",
+    );
+    const observedEndpoint = observed ? `${observed.address}:${observed.port}` : `${focusedCandidate.address}:22`;
+    setTargets(observedEndpoint);
+    setEndpoint(observedEndpoint);
+    setTrustScope(focusedCandidate.scopeId);
+    setTrustHost(focusedCandidate.address);
+    setTrustEndpoint(observedEndpoint);
+  }, [candidateDetail, focusedCandidate]);
 
   async function refresh() {
     const [statusInfo, ownerInfo, requestList, credentialList, trustList] = await Promise.all([
@@ -119,6 +170,8 @@ export function AccessView() {
         targets: splitValues(targets),
         allowedUse: ["enrollment"],
         endpoint,
+        scopeId: focusedCandidate?.scopeId,
+        expectedScopeRevision: focusedCandidate?.scopeRevision,
       });
       setSecret("");
       setMessage("Credential stored. The secret is write-only and will not be shown again.");
@@ -154,6 +207,23 @@ export function AccessView() {
 
   return (
     <section className="workspace-grid access-view">
+      {focusedCandidate && (
+        <section className="action-panel access-focus-panel" aria-labelledby="access-focus-title">
+          <div className="panel-title">
+            <KeyRound size={17} />
+            <div>
+              <h2 id="access-focus-title">
+                Prepare access for {focusedCandidate.displayName || focusedCandidate.address}
+              </h2>
+              <p>
+                Scout found an SSH entry point at <strong>{endpoint || `${focusedCandidate.address}:22`}</strong>. Store
+                a target-bound credential below and Scout will re-evaluate this device automatically.
+              </p>
+            </div>
+          </div>
+          <Badge variant="outline">{focusedCandidate.state.replaceAll("_", " ")}</Badge>
+        </section>
+      )}
       <div className="section-heading">
         <div>
           <Badge variant="outline">
