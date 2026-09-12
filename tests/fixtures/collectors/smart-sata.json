@@ -1,0 +1,45 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "exit_status": 8
+  },
+  "device": {
+    "name": "/dev/sda",
+    "type": "sat",
+    "protocol": "ATA"
+  },
+  "model_name": "Scout SATA Fixture",
+  "serial_number": "SATA-FIXTURE-001",
+  "firmware_version": "1.0",
+  "wwn": {
+    "naa": 5,
+    "oui": 1234,
+    "id": 567890
+  },
+  "smart_status": {
+    "passed": false
+  },
+  "temperature": {
+    "current": 35
+  },
+  "ata_smart_attributes": {
+    "table": [
+      {
+        "id": 5,
+        "name": "Reallocated_Sector_Ct",
+        "raw": {
+          "value": 0
+        }
+      },
+      {
+        "id": 233,
+        "name": "Percentage_Used",
+        "value": 7,
+        "raw": {
+          "value": 7
+        }
+      }
+    ]
+  }
+}

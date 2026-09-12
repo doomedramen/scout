@@ -1,0 +1,33 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "exit_status": 0
+  },
+  "device": {
+    "name": "/dev/sdb",
+    "type": "scsi",
+    "protocol": "SAS"
+  },
+  "vendor": "Scout",
+  "product": "SAS Fixture",
+  "model_name": "Scout SAS Fixture",
+  "serial_number": "SAS-FIXTURE-001",
+  "smart_status": {
+    "passed": true
+  },
+  "temperature": {
+    "current": 31
+  },
+  "scsi_error_counter_log": {
+    "read": {
+      "total_errors": 2
+    },
+    "write": {
+      "total_errors": 0
+    },
+    "verify": {
+      "total_errors": 0
+    }
+  }
+}

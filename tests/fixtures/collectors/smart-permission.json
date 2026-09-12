@@ -1,0 +1,19 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "exit_status": 2,
+    "messages": [
+      {
+        "string": "Permission denied opening device"
+      }
+    ]
+  },
+  "device": {
+    "name": "/dev/sdd",
+    "type": "scsi",
+    "protocol": "SAS"
+  },
+  "model_name": "Scout Permission Fixture",
+  "serial_number": "PERMISSION-FIXTURE-001"
+}

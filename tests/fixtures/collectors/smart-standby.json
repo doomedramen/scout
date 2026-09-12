@@ -1,0 +1,20 @@
+{
+  "json_format_version": [1, 0],
+  "smartctl": {
+    "version": [7, 4],
+    "exit_status": 2,
+    "messages": [
+      {
+        "string": "Device is in STANDBY mode"
+      }
+    ]
+  },
+  "device": {
+    "name": "/dev/sdc",
+    "type": "sat",
+    "protocol": "ATA"
+  },
+  "model_name": "Scout Standby Fixture",
+  "serial_number": "STANDBY-FIXTURE-001",
+  "power_mode": "STANDBY"
+}
