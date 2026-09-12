@@ -138,8 +138,8 @@ Never attach credential values, private keys, host-key private material, banners
   --check` passed. The full disposable PostgreSQL migration suite had already
   passed in T004; this task's store tests are deterministic in-memory tests.
 - Remaining limits: normalized-table reads/writes and concurrent PostgreSQL
-  lease contention remain for T009; scanner/result policy validation remains
-  for T007–T009.
+  lease contention remain for T009; agent assignment and capability handoff
+  remain for T008–T009.
   No scan or device was contacted.
 
 ## T006 — bounded scan policy authority
@@ -161,6 +161,33 @@ Never attach credential values, private keys, host-key private material, banners
   -count=1` passed; `go test ./internal/... -count=1` passed; `go vet
   ./internal/...` passed; and `git diff --check` passed. No scanner, real
   network, device, or credential was contacted.
-- Remaining limits: runtime scanner execution, due-run coordination,
-  authenticated result ingestion, and controller/UI wiring remain for T007+
-  and no network scan is claimed by this task.
+- Remaining limits: runtime scanner execution, due-run coordination, and
+  controller/UI wiring remain for T008+; no network scan is claimed by this
+  task.
+
+## T007 — authenticated scan-result ingestion
+
+- Requirements: FR-007–FR-009, FR-015, FR-018–FR-020.
+- Date: 2026-09-12 (Europe/London); implementation commit: 3ae0b9c.
+- Added strict scan-result page types and authenticated agent ingestion on both
+  agent route prefixes. The service validates authenticated scanner identity,
+  explicit assignment, current policy revision, lease owner/epoch and expiry,
+  assignment lifetime, bounded result fields, safe outcomes/reason codes,
+  entry-point identity, scope/exclusion membership, latency, page summaries,
+  and final completion or partial transitions. Request-body SHA-256 hashes
+  provide identical replay acknowledgement and conflicting replay rejection.
+  Stored observations are credential-free and non-actionable; ingestion alone
+  creates no candidate, access request, or enrollment job. Cross-page duplicate
+  observations are rejected atomically.
+- Tests were written first and initially failed because result-page types,
+  ingestion, and the agent route were absent. Exact verification commands and
+  outcomes: `go test ./internal/discovery ./internal/control ./internal/store
+  -count=1` passed; `go test ./... -count=1` passed; `go vet ./...` passed; and
+  `git diff --check` passed. Route coverage confirms authenticated agent
+  identity and final run completion; negative coverage confirms wrong scanner,
+  epoch, excluded/out-of-scope target, unsafe reason, expired assignment,
+  replay conflict, and no-action rejection. No real device, network, or
+  credential was contacted.
+- Remaining limits: result ingestion does not yet materialize desired-state
+  assignments, execute probes, reconcile candidates, or start enrollment;
+  those remain in T008+.
