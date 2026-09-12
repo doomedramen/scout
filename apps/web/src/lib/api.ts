@@ -897,6 +897,10 @@ export const api = {
   collectorDescriptors: () => request<ListResponse<CollectorDescriptor>>("/collectors"),
   services: (provider = "") =>
     request<ListResponse<ServiceEntity>>(`/services${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
+  storage: async () => {
+    const [smart, zfs] = await Promise.all([api.services("smart"), api.services("zfs")]);
+    return { items: [...smart.items, ...zfs.items], nextCursor: null } satisfies ListResponse<ServiceEntity>;
+  },
   collectors: (deviceId: string) =>
     request<ListResponse<CollectorConfig>>(`/devices/${encodeURIComponent(deviceId)}/collectors`),
   updateCollector: (

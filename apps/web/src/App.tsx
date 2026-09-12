@@ -5,6 +5,7 @@ import {
   Bell,
   CircleHelp,
   Download,
+  HardDrive,
   KeyRound,
   LayoutList,
   Network,
@@ -25,12 +26,22 @@ import { NotificationsView } from "@/views/notifications";
 import { RecoveryView } from "@/views/recovery";
 import { ScopesView } from "@/views/scopes";
 import { ServicesView } from "@/views/services";
+import { StorageView } from "@/views/storage";
 import { SetupView } from "@/views/setup";
 import { SystemsView } from "@/views/systems";
 import { UpdatesView } from "@/views/updates";
 
 type Page =
-  "Systems" | "Incidents" | "Network" | "Notifications" | "Updates" | "Access" | "Scopes" | "Enrollment" | "Services";
+  | "Systems"
+  | "Incidents"
+  | "Network"
+  | "Notifications"
+  | "Updates"
+  | "Access"
+  | "Scopes"
+  | "Enrollment"
+  | "Services"
+  | "Storage";
 
 const pages = [
   { name: "Systems" as const, icon: LayoutList },
@@ -41,6 +52,7 @@ const pages = [
   { name: "Enrollment" as const, icon: ServerCog },
   { name: "Access" as const, icon: KeyRound },
   { name: "Services" as const, icon: Terminal },
+  { name: "Storage" as const, icon: HardDrive },
   { name: "Updates" as const, icon: Download },
 ];
 
@@ -53,6 +65,10 @@ const pageDetails: Record<Page, { title: string; description: string }> = {
   Enrollment: { title: "Enrollment", description: "Bounded discovery and automatic enrollment progress." },
   Access: { title: "Access", description: "Resolve credentials and trust without exposing secrets." },
   Services: { title: "Services", description: "Provider health and associated service entities." },
+  Storage: {
+    title: "Storage health",
+    description: "See explicit disk and pool faults without confusing capacity with health.",
+  },
   Updates: { title: "Agent updates", description: "Keep agents current, including on isolated networks." },
 };
 
@@ -234,6 +250,7 @@ export default function App() {
             {page === "Enrollment" && <EnrollmentView />}
             {page === "Access" && <AccessView />}
             {page === "Services" && <ServicesView onOpenIncident={openIncident} />}
+            {page === "Storage" && <StorageView onOpenIncident={openIncident} />}
             {page === "Updates" && <UpdatesView />}
           </>
         )}
