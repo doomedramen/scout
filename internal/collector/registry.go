@@ -220,5 +220,6 @@ func DefaultDescriptors() []Descriptor {
 		{ID: "smart", Provider: "smart", Version: "smartctl-json-v1", RequiredPermission: []string{"smartctl:read", "block-device:read"}, ConfigSchema: map[string]string{"standbyPolicy": "never wake; smartctl -n standby,0"}, EntityLimit: 64, Interval: 5 * time.Minute, Deadline: 60 * time.Second},
 		{ID: "zfs", Provider: "zfs", Version: "openzfs-fixed-v1", RequiredPermission: []string{"zpool:read", "zfs:read", "zfs:kstat-read"}, ConfigSchema: map[string]string{}, EntityLimit: 1032, Interval: 60 * time.Second, Deadline: 20 * time.Second},
 		{ID: "sensors", Provider: "sensors", Version: "hwmon-sysfs-v1", RequiredPermission: []string{"sysfs:hwmon-read"}, ConfigSchema: map[string]string{"excludedIds": "comma-separated stable sensor IDs; exact match; max 256"}, EntityLimit: 256, Interval: 30 * time.Second, Deadline: 5 * time.Second},
+		{ID: "gpu", Provider: "gpu", Version: "gpu-fixed-v1", RequiredPermission: []string{"nvidia-smi:read", "sysfs:drm-read", "sysfs:hwmon-read"}, ConfigSchema: map[string]string{"sysfsRoot": "host sysfs mount; production default /sys"}, EntityLimit: 32, Interval: 30 * time.Second, Deadline: 10 * time.Second},
 	}
 }
