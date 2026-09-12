@@ -3,8 +3,16 @@ import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Network, Radio, Search, Serv
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, APIError, type Device } from "@/lib/api";
+import { api, APIError, type Candidate, type Device } from "@/lib/api";
 import { demoDevices, type Device as DemoDevice } from "@/demo";
+
+const candidateAccessStates = new Set([
+  "needs_credentials",
+  "invalid_credentials",
+  "needs_host_trust",
+  "needs_privilege",
+  "needs_server_connectivity",
+]);
 
 function Meter({ value }: { value: number }) {
   return (
@@ -61,6 +69,38 @@ function stateLabel(device: Device): string {
   return "Online";
 }
 
+function isBootstrapPlaceholder(device: Device): boolean {
+  return (
+    !device.candidateId &&
+    device.lifecycle === "candidate" &&
+    !device.agentId &&
+    !device.agentVersion &&
+    (device.addresses ?? []).length === 0
+  );
+}
+
+function candidateNeedsAccess(candidate: Candidate): boolean {
+  return !candidate.deviceId && !candidate.excluded && candidateAccessStates.has(candidate.state);
+}
+
+function candidateDevice(candidate: Candidate): Device {
+  return {
+    id: `candidate:${candidate.id}`,
+    candidateId: candidate.id,
+    displayName: candidate.displayName || candidate.hostname || candidate.address,
+    siteId: candidate.siteId,
+    platform: "linux",
+    architecture: "unknown",
+    hostname: candidate.hostname,
+    addresses: [candidate.address],
+    lifecycle: "candidate",
+    availability: "connecting",
+    metricFreshness: {},
+    collectorStates: [],
+    revision: candidate.scopeRevision || 1,
+  };
+}
+
 function demoToLive(item: DemoDevice, index: number): Device {
   const observedAt = new Date().toISOString();
   return {
@@ -104,6 +144,7 @@ export function SystemsView({
   onSetup: () => void;
 }) {
   const [items, setItems] = useState<Device[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(!demo);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -116,29 +157,48 @@ export function SystemsView({
       return;
     }
     let cancelled = false;
-    setLoading(true);
     setError("");
     const params = new URLSearchParams();
     if (query.trim()) params.set("query", query.trim());
     if (health) params.set("health", health);
     if (monitoringState) params.set("monitoringState", monitoringState);
-    api
-      .devices(params.toString() ? "?" + params.toString() : "")
-      .then((result) => {
-        if (!cancelled) setItems(result.items);
-      })
-      .catch((caught) => {
-        if (!cancelled) setError(caught instanceof APIError ? caught.message : "Could not load systems");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = (initial: boolean) => {
+      if (initial) setLoading(true);
+      Promise.all([api.devices(params.toString() ? "?" + params.toString() : ""), api.candidates("?limit=500")])
+        .then(([deviceResult, candidateResult]) => {
+          if (cancelled) return;
+          setItems(deviceResult.items);
+          setCandidates(candidateResult.items);
+          setError("");
+        })
+        .catch((caught) => {
+          if (!cancelled) setError(caught instanceof APIError ? caught.message : "Could not load systems");
+        })
+        .finally(() => {
+          if (!cancelled && initial) setLoading(false);
+        });
+    };
+    load(true);
+    const timer = window.setInterval(() => load(false), 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [demo, health, monitoringState, query, retry]);
 
-  const devices = demo ? demoDevices.map(demoToLive) : items;
+  const devices = useMemo(() => {
+    if (demo) return demoDevices.map(demoToLive);
+    const realDevices = items.filter((device) => !isBootstrapPlaceholder(device));
+    const provisionalDevices = candidates
+      .filter(candidateNeedsAccess)
+      .filter((candidate) => {
+        if (health && health !== "needs_access") return false;
+        return monitoringState !== "monitored" && monitoringState !== "revoked";
+      })
+      .map(candidateDevice);
+    const realIDs = new Set(realDevices.map((device) => device.id));
+    return [...realDevices, ...provisionalDevices.filter((device) => !realIDs.has(device.id))];
+  }, [candidates, demo, health, items, monitoringState]);
   const filtered = useMemo(
     () =>
       devices.filter((device) =>

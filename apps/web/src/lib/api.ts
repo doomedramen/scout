@@ -79,6 +79,7 @@ export type DeviceMetric = {
 
 export type Device = {
   id: string;
+  candidateId?: string;
   displayName: string;
   siteId?: string;
   platform: string;

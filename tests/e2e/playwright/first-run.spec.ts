@@ -6,6 +6,10 @@ test("development owner can complete the first-run access workflow", async ({ pa
   const siteName = "playwright-lab";
 
   await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Sign in to Scout" })).toBeVisible();
+  await expect(page.getByLabel("One-time setup token")).not.toBeVisible();
+  await page.getByRole("button", { name: "First run? Set up owner" }).click();
+  await expect(page.getByRole("heading", { name: "Protect your Scout workspace" })).toBeVisible();
   await page.getByLabel("One-time setup token").fill(setupToken);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create owner" }).click();

@@ -85,6 +85,20 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
     )
     .toBe("needs_credentials");
 
+  await page.getByRole("button", { name: "Systems" }).click();
+  const provisionalSystemRow = page
+    .locator("tbody tr")
+    .filter({ hasText: "127.0.0.1" })
+    .filter({ hasText: "Needs access" })
+    .last();
+  await expect(provisionalSystemRow).toBeVisible();
+  await expect(provisionalSystemRow).toContainText("Needs access");
+  await provisionalSystemRow.getByRole("button", { name: /View / }).click();
+  await expect(page.getByRole("heading", { name: "SSH found on this system" })).toBeVisible();
+  await expect(page.getByText("Provide credentials and Scout will install the agent automatically.")).toBeVisible();
+  await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
+  await page.getByRole("button", { name: "All systems" }).click();
+
   await page.getByRole("button", { name: "Network" }).click();
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   const foundDevices = page.getByRole("list", { name: "Found devices" });
@@ -139,7 +153,9 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(systemRow).toBeVisible();
   await systemRow.getByRole("button", { name: /View / }).click();
   await expect(page.getByRole("heading", { name: "SSH found on this system" })).toBeVisible();
-  await expect(page.getByText("Provide credentials and Scout will install the agent automatically.")).toBeVisible();
+  await expect(
+    page.getByText("Access is approved. Scout is installing and verifying the agent automatically."),
+  ).toBeVisible();
   await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
 
   const scopeResponse = await page.request.get(`/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}`);

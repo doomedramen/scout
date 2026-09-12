@@ -333,7 +333,7 @@ func (a *App) requireAgent(w http.ResponseWriter, r *http.Request) (store.AgentI
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "Authenticated agent identity required", false)
 		return store.AgentIdentity{}, false
 	}
-	if agent.RevokedAt != nil || !time.Now().UTC().Before(agent.ExpiresAt) {
+	if agent.RevokedAt != nil || !a.Store.Now().Before(agent.ExpiresAt) {
 		writeError(w, r, http.StatusUnauthorized, "revoked", "Agent identity is no longer valid", false)
 		return store.AgentIdentity{}, false
 	}

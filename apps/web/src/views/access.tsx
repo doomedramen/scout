@@ -85,7 +85,7 @@ export function AccessView({
     return () => {
       cancelled = true;
     };
-  }, [candidate?.id]);
+  }, [candidate?.deviceId, candidate?.id, candidate?.state]);
 
   useEffect(() => {
     if (!focusedCandidate) return;
@@ -192,6 +192,7 @@ export function AccessView({
       setMessage("Credential stored. The secret is write-only and will not be shown again.");
       await refresh();
     } catch (caught) {
+      setSecret("");
       setError(caught instanceof APIError ? caught.message : "Credential could not be stored");
     } finally {
       setBusy(false);
@@ -234,7 +235,9 @@ export function AccessView({
               </h2>
               <p>
                 {embedded
-                  ? "Provide credentials and Scout will install the agent automatically."
+                  ? ["queued", "enrolling"].includes(focusedCandidate.state)
+                    ? "Access is approved. Scout is installing and verifying the agent automatically."
+                    : "Provide credentials and Scout will install the agent automatically."
                   : `Scout found an SSH entry point at ${endpoint || `${focusedCandidate.address}:22`}. Store a target-bound credential below and Scout will re-evaluate this device automatically.`}
               </p>
             </div>

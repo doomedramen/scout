@@ -228,6 +228,10 @@ export function DeviceView({
   const [diagnosticEntity, setDiagnosticEntity] = useState("");
 
   const selectedRange = ranges.find((item) => item.key === range) ?? ranges[0];
+  const selectedCandidateID = selected.candidateId;
+  const linkedDeviceID = selectedCandidateID && candidate?.id === selectedCandidateID ? candidate.deviceId : undefined;
+  const effectiveDeviceID = selectedCandidateID ? linkedDeviceID || "" : selected.id;
+  const isProvisional = selected.id.startsWith("candidate:");
 
   useEffect(() => {
     setDevice(selected);
@@ -243,13 +247,18 @@ export function DeviceView({
       setLoading(false);
       return;
     }
+    if (!effectiveDeviceID) {
+      setSeries([]);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError("");
     const from = new Date(Date.now() - selectedRange.minutes * 60 * 1000).toISOString();
     const query = "?from=" + encodeURIComponent(from) + "&maxPoints=" + String(selectedRange.maxPoints);
     api
-      .metrics(selected.id, query)
+      .metrics(effectiveDeviceID, query)
       .then((metrics) => {
         if (cancelled) return;
         setSeries(metrics.series);
@@ -263,14 +272,14 @@ export function DeviceView({
     return () => {
       cancelled = true;
     };
-  }, [demo, reload, selected.id, selectedRange.maxPoints, selectedRange.minutes]);
+  }, [demo, effectiveDeviceID, reload, selectedRange.maxPoints, selectedRange.minutes]);
 
   useEffect(() => {
-    if (demo) return;
+    if (demo || !effectiveDeviceID) return;
     let cancelled = false;
     const loadDevice = () =>
       api
-        .device(selected.id)
+        .device(effectiveDeviceID)
         .then((detail) => {
           if (!cancelled) setDevice(detail);
         })
@@ -281,27 +290,32 @@ export function DeviceView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, selected.id]);
+  }, [demo, effectiveDeviceID]);
 
   useEffect(() => {
     if (demo) return;
     let cancelled = false;
-    const loadCandidate = () =>
-      api
-        .candidates(`?deviceId=${encodeURIComponent(selected.id)}&limit=1`)
+    const loadCandidate = () => {
+      const request = selectedCandidateID
+        ? api.candidate(selectedCandidateID).then((result) => result.candidate)
+        : api
+            .candidates(`?deviceId=${encodeURIComponent(selected.id)}&limit=1`)
+            .then((result) => result.items[0] ?? null);
+      return request
         .then((result) => {
-          if (!cancelled) setCandidate(result.items[0] ?? null);
+          if (!cancelled) setCandidate(result);
         })
         .catch(() => {
           if (!cancelled) setCandidate(null);
         });
+    };
     void loadCandidate();
     const timer = window.setInterval(loadCandidate, 5000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, selected.id]);
+  }, [demo, selected.id, selectedCandidateID]);
 
   const cpu = currentValue(device, "cpu.utilization");
   const memory = currentValue(device, "memory.used_percent");
@@ -392,6 +406,8 @@ export function DeviceView({
 
   const isDecommissioned = device.lifecycle === "decommissioned" || device.availability === "revoked";
   const hasAgent = Boolean(device.agentVersion);
+  const canConfigureCandidate =
+    candidate && !["unreachable", "unsupported", "stale", "excluded"].includes(candidate.state);
 
   return (
     <>
@@ -439,18 +455,22 @@ export function DeviceView({
           <span>Agent {device.availability}; retained measurements are historical and are not current.</span>
         </div>
       )}
-      {!demo && !hasAgent && candidate && <AccessView candidate={candidate} embedded />}
+      {!demo && !hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
       <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
         <div className="chart-heading">
           <div>
-            <h3 id="device-identity-heading">Device identity</h3>
-            <p>The stable Scout record identifies this host; network addresses are supporting evidence only.</p>
+            <h3 id="device-identity-heading">{isProvisional ? "Found system" : "Device identity"}</h3>
+            <p>
+              {isProvisional
+                ? "This scan candidate is not a Scout device yet. A stable identity is created only after authorized enrollment."
+                : "The stable Scout record identifies this host; network addresses are supporting evidence only."}
+            </p>
           </div>
         </div>
         <dl>
           <div>
-            <dt>Device ID</dt>
-            <dd title={device.id}>{device.id}</dd>
+            <dt>{isProvisional ? "Candidate ID" : "Device ID"}</dt>
+            <dd title={device.id}>{isProvisional ? selectedCandidateID : device.id}</dd>
           </div>
           <div>
             <dt>Hostname</dt>
@@ -532,7 +552,7 @@ export function DeviceView({
             </dl>
           </section>
         </div>
-      ) : (
+      ) : !canConfigureCandidate ? (
         <div className="empty">
           <Server />
           <h2>
@@ -550,7 +570,7 @@ export function DeviceView({
                 : "This candidate needs an authorized, trusted enrollment."}
           </p>
         </div>
-      )}
+      ) : null}
       {hasAgent && !isDecommissioned && !demo && diagnosticMetrics.length > 0 && (
         <section className="diagnostic-board" aria-labelledby="diagnostic-board-heading">
           <div className="diagnostic-board-heading">
@@ -619,7 +639,7 @@ export function DeviceView({
           )}
         </section>
       )}
-      {!demo && (
+      {!demo && !isProvisional && (
         <section className={"danger-panel " + (isDecommissioned ? "danger-panel-muted" : "")}>
           <div className="panel-title">
             {isDecommissioned ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}

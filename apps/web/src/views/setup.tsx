@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { APIError, api } from "@/lib/api";
 
 export function SetupView({ onSignedIn }: { onSignedIn: () => void }) {
-  const [setupMode, setSetupMode] = useState(true);
+  const [setupMode, setSetupMode] = useState(false);
   const [setupToken, setSetupToken] = useState("");
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
