@@ -22,6 +22,15 @@ type ChartPoint = {
   availability: string;
   min?: number | null;
   max?: number | null;
+  count?: number;
+  coverage?: number;
+  partial?: boolean;
+};
+
+type HistoryData = {
+  data: ChartPoint[];
+  resolutionSeconds?: number;
+  partial: boolean;
 };
 
 type ChartScale = {
@@ -100,7 +109,20 @@ function seriesPoints(series: MetricSeries[], metric: string, entityId = "host")
     availability: point.availability,
     min: point.min,
     max: point.max,
+    count: point.count,
+    coverage: point.coverage,
+    partial: point.partial,
   }));
+}
+
+function historyForSeries(series: MetricSeries[], metric: string, entityId = "host"): HistoryData {
+  const selected = seriesFor(series, metric, entityId);
+  const data = seriesPoints(series, metric, entityId);
+  return {
+    data,
+    resolutionSeconds: selected?.resolutionSeconds,
+    partial: Boolean(selected?.points.some((point) => point.partial)),
+  };
 }
 
 function formatBytes(value: number): string {
@@ -117,6 +139,12 @@ function formatBytes(value: number): string {
 
 function formatRate(value: number): string {
   return `${formatBytes(value)}/s`;
+}
+
+function formatResolution(seconds: number): string {
+  if (seconds >= 3600 && seconds % 3600 === 0) return `${seconds / 3600}-hour`;
+  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60}-minute`;
+  return `${seconds}-second`;
 }
 
 function formatMetricValue(value: number | null, unit: string): string {
@@ -157,12 +185,6 @@ function chartScale(unit: string): ChartScale {
 function chartCurrent(data: ChartPoint[]): number | null {
   const last = data[data.length - 1];
   return last?.availability === "current" && last.value !== null ? last.value : null;
-}
-
-function historyIsPartial(data: ChartPoint[], minutes: number, demo: boolean): boolean {
-  if (demo || !data.length) return false;
-  const first = data[0].time;
-  return Number.isFinite(first) && first > Date.now() - minutes * 60_000 + 15_000;
 }
 
 function entityLabel(entityId: string | undefined): string {
@@ -246,26 +268,17 @@ export function DeviceView({
   const chartData = useMemo(() => {
     if (demo) {
       return {
-        cpu: { data: demoSeries(cpu ?? 0, 1), partial: false },
-        memory: { data: demoSeries(memory ?? 0, 3), partial: false },
-        disk: { data: demoSeries(disk ?? 0, 7), partial: false },
+        cpu: { data: demoSeries(cpu ?? 0, 1), partial: false } satisfies HistoryData,
+        memory: { data: demoSeries(memory ?? 0, 3), partial: false } satisfies HistoryData,
+        disk: { data: demoSeries(disk ?? 0, 7), partial: false } satisfies HistoryData,
       };
     }
     return {
-      cpu: {
-        data: seriesPoints(series, "cpu.utilization"),
-        partial: historyIsPartial(seriesPoints(series, "cpu.utilization"), selectedRange.minutes, demo),
-      },
-      memory: {
-        data: seriesPoints(series, "memory.used_percent"),
-        partial: historyIsPartial(seriesPoints(series, "memory.used_percent"), selectedRange.minutes, demo),
-      },
-      disk: {
-        data: seriesPoints(series, "filesystem.used_percent"),
-        partial: historyIsPartial(seriesPoints(series, "filesystem.used_percent"), selectedRange.minutes, demo),
-      },
+      cpu: historyForSeries(series, "cpu.utilization"),
+      memory: historyForSeries(series, "memory.used_percent"),
+      disk: historyForSeries(series, "filesystem.used_percent"),
     };
-  }, [cpu, demo, disk, memory, selectedRange.minutes, series]);
+  }, [cpu, demo, disk, memory, series]);
 
   const diagnosticSeries = useMemo(() => series.filter((item) => !summaryMetrics.has(item.metric)), [series]);
   const diagnosticMetrics = useMemo(
@@ -291,9 +304,9 @@ export function DeviceView({
   }, [diagnosticEntities]);
 
   const selectedDiagnosticSeries = seriesFor(diagnosticSeries, diagnosticMetric, diagnosticEntity);
-  const diagnosticData = selectedDiagnosticSeries
-    ? seriesPoints([selectedDiagnosticSeries], diagnosticMetric, diagnosticEntity)
-    : [];
+  const diagnosticHistory = selectedDiagnosticSeries
+    ? historyForSeries([selectedDiagnosticSeries], diagnosticMetric, diagnosticEntity)
+    : ({ data: [], partial: false } satisfies HistoryData);
 
   async function decommissionDevice() {
     setOperationBusy(true);
@@ -427,6 +440,7 @@ export function DeviceView({
             loading={loading}
             partialRange={chartData.cpu.partial}
             rangeMinutes={selectedRange.minutes}
+            resolutionSeconds={chartData.cpu.resolutionSeconds}
           />
           <MetricChart
             title="Memory usage"
@@ -438,6 +452,7 @@ export function DeviceView({
             loading={loading}
             partialRange={chartData.memory.partial}
             rangeMinutes={selectedRange.minutes}
+            resolutionSeconds={chartData.memory.resolutionSeconds}
           />
           <MetricChart
             title="Disk usage"
@@ -449,6 +464,7 @@ export function DeviceView({
             loading={loading}
             partialRange={chartData.disk.partial}
             rangeMinutes={selectedRange.minutes}
+            resolutionSeconds={chartData.disk.resolutionSeconds}
           />
           <section className="chart-panel host-info">
             <h3>Agent</h3>
@@ -537,7 +553,7 @@ export function DeviceView({
             </label>
             {selectedDiagnosticSeries && (
               <Badge variant="outline">
-                {selectedDiagnosticSeries.unit} · {diagnosticData.length} samples
+                {selectedDiagnosticSeries.unit} · {diagnosticHistory.data.length} samples
               </Badge>
             )}
           </div>
@@ -547,11 +563,12 @@ export function DeviceView({
               detail={metricDetail(selectedDiagnosticSeries.metric)}
               unit={selectedDiagnosticSeries.unit}
               color={colorForMetric(selectedDiagnosticSeries.metric)}
-              data={diagnosticData}
-              current={chartCurrent(diagnosticData)}
+              data={diagnosticHistory.data}
+              current={chartCurrent(diagnosticHistory.data)}
               loading={loading}
-              partialRange={historyIsPartial(diagnosticData, selectedRange.minutes, demo)}
+              partialRange={diagnosticHistory.partial}
               rangeMinutes={selectedRange.minutes}
+              resolutionSeconds={diagnosticHistory.resolutionSeconds}
             />
           ) : (
             <div className="chart-empty" role="status">
@@ -631,6 +648,7 @@ function MetricChart({
   loading,
   partialRange,
   rangeMinutes,
+  resolutionSeconds,
 }: {
   title: string;
   detail: string;
@@ -641,8 +659,10 @@ function MetricChart({
   loading: boolean;
   partialRange: boolean;
   rangeMinutes: number;
+  resolutionSeconds?: number;
 }) {
   const gapCount = data.filter((point) => point.value === null || point.availability !== "current").length;
+  const partialCount = data.filter((point) => point.partial).length;
   const hasRange = data.some((point) => point.min != null || point.max != null);
   const scale = chartScale(unit);
   const chartId = title.toLowerCase().replaceAll(" ", "-");
@@ -656,7 +676,10 @@ function MetricChart({
             {gapCount ? " · gaps indicate unavailable samples" : ""}
           </p>
         </div>
-        <strong>{formatMetricValue(current, unit)}</strong>
+        <div className="chart-heading-side">
+          <strong>{formatMetricValue(current, unit)}</strong>
+          {resolutionSeconds && <small>{formatResolution(resolutionSeconds)} resolution</small>}
+        </div>
       </div>
       {loading && !data.length ? (
         <div className="chart-empty" role="status">
@@ -732,6 +755,12 @@ function MetricChart({
             </AreaChart>
           </ChartContainer>
           <ChartDataQuality gapCount={gapCount} partial={partialRange} />
+          {partialCount > 0 && (
+            <p className="chart-metadata" role="status">
+              {partialCount} partial bucket{partialCount === 1 ? "" : "s"}; values are shown only for the observed
+              portion.
+            </p>
+          )}
           <details className="chart-table">
             <summary>View tabular samples</summary>
             <div className="table-scroll">
@@ -741,6 +770,9 @@ function MetricChart({
                     <th>Observed</th>
                     <th>Value</th>
                     {hasRange && <th>Range</th>}
+                    <th>Samples</th>
+                    <th>Coverage</th>
+                    <th>Bucket</th>
                     <th>Availability</th>
                   </tr>
                 </thead>
@@ -760,6 +792,9 @@ function MetricChart({
                             : "—"}
                         </td>
                       )}
+                      <td>{point.count ?? (point.value === null ? 0 : 1)}</td>
+                      <td>{point.coverage == null ? "—" : `${Math.round(point.coverage * 100)}%`}</td>
+                      <td>{point.partial ? "Partial" : "Complete"}</td>
                       <td>{point.availability}</td>
                     </tr>
                   ))}

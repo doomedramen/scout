@@ -321,7 +321,37 @@ export type MonitoringSettings = {
   notificationsPaused: boolean;
   retention: { rawDays: number; fiveMinuteDays: number; hourlyDays: number };
   diskBudgetBytes: number;
-  updatedAt: string;
+  updatedAt: string | null;
+};
+
+export type RetentionPreview = {
+  previewId: string;
+  expectedRevision: number;
+  retention: MonitoringSettings["retention"];
+  affectedRanges: Array<{ tier: "raw" | "fiveMinute" | "hourly"; before: string; after: string }>;
+  estimatedRows: number;
+  irreversible: boolean;
+  expiresAt: string;
+};
+
+export type MonitoringStatus = {
+  evaluationLagSeconds: number;
+  rollupLagSeconds: number;
+  queues: { evaluation: number; notifications: number; rollup: number };
+  counters: {
+    dropped: number;
+    truncated: number;
+    backpressure: number;
+    deliveryFailures: number;
+    activeAdmissionFailures: number;
+  };
+  storagePressure: {
+    usedBytes: number;
+    budgetBytes: number;
+    percent: number;
+    state: "normal" | "warning" | "critical";
+  };
+  lastSuccessfulJobs: Record<string, string | null>;
 };
 
 export type AccessRequest = {
@@ -760,6 +790,23 @@ export const api = {
       telemetry: Record<string, unknown>;
     }>("/recovery/status"),
   reconcileRecovery: () => request("/recovery/reconcile", { method: "POST", body: JSON.stringify({}) }),
+  monitoringSettings: () => request<MonitoringSettings>("/monitoring/settings"),
+  retentionPreview: (
+    value: { expectedRevision: number; retention: MonitoringSettings["retention"] },
+    idempotencyKey?: string,
+  ) =>
+    request<RetentionPreview>("/monitoring/retention-preview", {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(value),
+    }),
+  updateMonitoringSettings: (value: {
+    expectedRevision: number;
+    retention?: Partial<MonitoringSettings["retention"]>;
+    diskBudgetBytes?: number;
+    retentionPreviewId?: string;
+  }) => request<MonitoringSettings>("/monitoring/settings", { method: "PATCH", body: JSON.stringify(value) }),
+  monitoringStatus: () => request<MonitoringStatus>("/monitoring/status"),
   telemetrySettings: () => request<Record<string, unknown>>("/settings/telemetry"),
   accessRequests: (state = "") =>
     request<ListResponse<AccessRequest>>(`/access-requests${state ? `?state=${encodeURIComponent(state)}` : ""}`),

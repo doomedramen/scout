@@ -154,3 +154,116 @@ func TestRollupsUseLeasesGenerationsAndBoundedBackfill(t *testing.T) {
 		t.Fatalf("reversed rollup backfill range was accepted: %v", err)
 	}
 }
+
+func TestMixedAgentVersionsKeepBaseTelemetryAndMarkUnsupportedCollectors(t *testing.T) {
+	db := openDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := store.RunMigrations(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repository := store.NewSQL(db)
+	ensureAuthoritativeMonitoring(t, ctx, repository)
+	now := time.Now().UTC().Truncate(time.Second)
+	repository.SetClock(func() time.Time { return now })
+
+	fixtures := []struct {
+		name    string
+		version string
+		value   float64
+	}{
+		{name: "legacy", version: "0.1.0", value: 18},
+		{name: "current", version: "0.2.0", value: 27},
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		device, err := repository.CreateDevice(ctx, store.Device{
+			ID:           store.NewID(),
+			DisplayName:  "mixed-version-" + fixture.name,
+			Platform:     "linux",
+			Architecture: "amd64",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent := store.AgentIdentity{
+			ID:               store.NewID(),
+			DeviceID:         device.ID,
+			CertSerial:       "mixed-version-" + fixture.name + "-" + store.NewID(),
+			PublicKeyHash:    "mixed-version-public-key-" + fixture.name,
+			CertificatePEM:   "mixed-version-certificate-" + fixture.name,
+			ExpiresAt:        now.Add(time.Hour),
+			InstalledVersion: fixture.version,
+		}
+		if err := repository.CreateAgentIdentity(ctx, agent); err != nil {
+			t.Fatal(err)
+		}
+
+		heartbeatAt, _, err := repository.RecordHeartbeat(ctx, agent.ID, store.Heartbeat{
+			BootID:           "mixed-version-boot-" + fixture.name,
+			InstalledVersion: fixture.version,
+			UptimeSeconds:    120,
+			CollectorStates: []store.CollectorDescriptorState{{
+				ID:         "service.docker",
+				Provider:   "docker",
+				State:      store.CollectorDegraded,
+				Diagnostic: "unsupported by this agent version",
+			}},
+			UpdateState: map[string]string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !heartbeatAt.Equal(now) {
+			t.Fatalf("heartbeat timestamp = %s, want %s", heartbeatAt, now)
+		}
+
+		value := fixture.value
+		observedAt := now.Add(-time.Minute)
+		if _, err := repository.IngestBatch(ctx, agent.ID, "mixed-version-boot-"+fixture.name, "mixed-version-batch-"+fixture.name, "mixed-version-hash-"+fixture.name, []store.MetricSample{{
+			CollectorID:     "host",
+			EntityID:        "host",
+			Metric:          "cpu.utilization",
+			Unit:            "percent",
+			IntervalSeconds: 60,
+			Value:           &value,
+			Availability:    store.FreshnessCurrent,
+			ObservedAt:      observedAt,
+			ReceivedAt:      observedAt,
+		}}, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+
+		updated, err := repository.GetDevice(ctx, device.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if updated.AgentVersion != fixture.version || updated.Availability != store.AvailabilityOnline || updated.LastHeartbeat == nil || !updated.LastHeartbeat.Equal(now) {
+			t.Fatalf("base device state was not preserved for %s: %+v", fixture.version, updated)
+		}
+		if len(updated.CollectorStates) != 1 || updated.CollectorStates[0].State != store.CollectorDegraded || updated.CollectorStates[0].Diagnostic != "unsupported by this agent version" {
+			t.Fatalf("unsupported collector state was not explicit for %s: %+v", fixture.version, updated.CollectorStates)
+		}
+
+		series, err := repository.QueryMetrics(ctx, store.MetricQuery{
+			DeviceID:  device.ID,
+			Metric:    "cpu.utilization",
+			From:      observedAt.Add(-time.Minute),
+			To:        now,
+			MaxPoints: 4,
+		})
+		if err != nil || len(series) != 1 || len(series[0].Points) == 0 {
+			t.Fatalf("base telemetry was not queryable for %s: series=%+v err=%v", fixture.version, series, err)
+		}
+		found := false
+		for _, point := range series[0].Points {
+			if point.Value != nil && *point.Value == fixture.value && point.Availability == store.FreshnessCurrent {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("base telemetry value was not preserved for %s: %+v", fixture.version, series[0].Points)
+		}
+	}
+}

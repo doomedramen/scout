@@ -32,10 +32,20 @@ function diagnosticDevice() {
 
 function diagnosticSeries() {
   const now = Date.now();
-  const point = (offsetMinutes: number, value: number | null, availability: string, min?: number, max?: number) => ({
+  const point = (
+    offsetMinutes: number,
+    value: number | null,
+    availability: string,
+    min?: number,
+    max?: number,
+    partial = false,
+  ) => ({
     observedAt: new Date(now - offsetMinutes * 60_000).toISOString(),
     value,
     availability,
+    count: value === null ? 0 : 1,
+    coverage: partial ? 0.5 : value === null ? 0 : 1,
+    partial,
     ...(min === undefined ? {} : { min }),
     ...(max === undefined ? {} : { max }),
   });
@@ -59,7 +69,7 @@ function diagnosticSeries() {
       unit: "bytes_per_second",
       points: [
         point(5, 4096, "current", 2048, 6144),
-        point(4, null, "unavailable"),
+        point(4, null, "unavailable", undefined, undefined, true),
         point(3, 8192, "current", 4096, 10240),
       ],
     },

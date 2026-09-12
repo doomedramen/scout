@@ -541,6 +541,20 @@ tbody tr:last-child td {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+.chart-heading-side {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.chart-heading-side small,
+.chart-metadata {
+  color: #9ea8b7;
+  font-size: 10px;
+}
+.chart-metadata {
+  margin: 9px 0 0;
+  line-height: 1.4;
+}
 .chart-heading small {
   font-size: 12px;
   color: #989fac;
@@ -2414,6 +2428,155 @@ tbody tr:last-child td {
   align-items: center;
   gap: 7px;
 }
+.recovery-monitoring,
+.retention-policy {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 28px;
+  padding: 22px;
+  border: 1px solid #2f3947;
+  border-radius: 10px;
+  background: #1b2027;
+}
+.recovery-monitoring-heading,
+.retention-policy-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.recovery-monitoring-heading > div,
+.retention-policy-heading > div {
+  display: grid;
+  gap: 7px;
+}
+.recovery-monitoring-heading h2,
+.retention-policy-heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.recovery-monitoring-heading p,
+.retention-policy-heading p,
+.retention-policy-heading small {
+  color: #aab4c2;
+  font-size: 11px;
+}
+.recovery-monitoring-heading [data-slot="badge"] {
+  width: fit-content;
+  color: #b9c6e8;
+  border-color: #4b5d78;
+}
+.monitoring-pressure {
+  flex-shrink: 0;
+  padding: 7px 9px;
+  border: 1px solid #45624f;
+  border-radius: 5px;
+  color: #9dd0af;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+.monitoring-pressure.warning {
+  border-color: #75633e;
+  color: #e1c98a;
+}
+.monitoring-pressure.critical {
+  border-color: #754c4c;
+  color: #efadad;
+}
+.monitoring-health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #303945;
+  border-radius: 7px;
+  background: #303945;
+}
+.monitoring-health-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  background: #20262e;
+}
+.monitoring-health-grid dt {
+  color: #939eae;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.monitoring-health-grid dd {
+  margin: 0;
+  color: #e1e5ec;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.monitoring-health-note {
+  margin: 0;
+  color: #d3bc80;
+  font-size: 11px;
+}
+.retention-policy {
+  background: #191c20;
+}
+.retention-policy-heading [data-slot="badge"] {
+  width: fit-content;
+  color: #b9c6e8;
+  border-color: #4b5d78;
+}
+.retention-policy-heading small {
+  white-space: nowrap;
+}
+.retention-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+}
+.retention-form label {
+  display: grid;
+  gap: 6px;
+  color: #aab2c0;
+  font-size: 11px;
+}
+.retention-form input {
+  min-height: 36px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #3b414b;
+  border-radius: 6px;
+  background: #15181c;
+  color: #e7e9ed;
+}
+.retention-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #75633e;
+  border-radius: 7px;
+  background: #292720;
+}
+.retention-preview > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+.retention-preview strong {
+  color: #f0dda7;
+  font-size: 12px;
+}
+.retention-preview p,
+.retention-ranges {
+  color: #c7bd9a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.retention-ranges {
+  display: grid;
+  gap: 3px;
+  grid-column: 1 / -1;
+}
 
 .notifications-view {
   gap: 20px;
@@ -2626,6 +2789,15 @@ tbody tr:last-child td {
   .notification-columns {
     grid-template-columns: 1fr;
   }
+  .monitoring-health-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .retention-form {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+  .retention-form > button {
+    justify-self: start;
+  }
 }
 @media (max-width: 700px) {
   .auth-shell {
@@ -2645,6 +2817,23 @@ tbody tr:last-child td {
   .recovery-panel {
     align-items: flex-start;
     padding: 18px;
+  }
+  .recovery-monitoring,
+  .retention-policy {
+    padding: 18px;
+  }
+  .recovery-monitoring-heading,
+  .retention-policy-heading,
+  .retention-preview {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+  .monitoring-health-grid,
+  .retention-form {
+    grid-template-columns: 1fr;
+  }
+  .retention-preview > button {
+    justify-self: start;
   }
   .notification-summary,
   .notification-form-grid {
