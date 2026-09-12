@@ -172,6 +172,28 @@ func ValidateScanCapabilities(capabilities ScanCapabilities) error {
 	return nil
 }
 
+// SupportsScanCapabilities reports whether an agent can execute the first
+// bounded scan protocol. An omitted capability declaration is intentionally
+// unsupported so older agents continue telemetry without receiving scan work.
+func SupportsScanCapabilities(capabilities ScanCapabilities) bool {
+	hasVersion := false
+	for _, version := range capabilities.ScanProtocolVersions {
+		if version == 1 {
+			hasVersion = true
+			break
+		}
+	}
+	if !hasVersion {
+		return false
+	}
+	for _, transport := range capabilities.ScanTransports {
+		if transport == ScanTransportTCP {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, heartbeat Heartbeat) (time.Time, int64, error) {
 	if err := ValidateScanCapabilities(heartbeat.Capabilities); err != nil {
 		return time.Time{}, 0, err

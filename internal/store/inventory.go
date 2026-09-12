@@ -224,8 +224,10 @@ func (s *Store) UpdateScope(ctx context.Context, id string, expected int64, upda
 			if !update.Enabled {
 				for runID, run := range state.ScanRuns {
 					if run.ScopeID == id && !scanRunTerminalStates[run.State] {
-						run.CancellationRequested = true
-						state.ScanRuns[runID] = run
+						state.ScanRuns[runID] = markScanRunCancellation(run, s.now().UTC())
+						if scanRunTerminalStates[state.ScanRuns[runID].State] {
+							delete(state.ScanRunLeases, runID)
+						}
 					}
 				}
 			}
@@ -372,6 +374,13 @@ func (s *Store) UpdateDevice(ctx context.Context, id string, update func(*Device
 		targetChanged = previousSiteID != item.SiteID
 		item.Revision++
 		state.Devices[id] = item
+		if targetChanged {
+			for agentID, agent := range state.Agents {
+				if agent.DeviceID == id {
+					requestScanCancellationForAgent(state, agentID, s.now().UTC())
+				}
+			}
+		}
 		if targetChanged && s.db == nil {
 			if _, err := closeIncidentsForState(state, func(incident Incident) bool { return incident.DeviceID == id }, "administrative", s.now().UTC()); err != nil {
 				return err
@@ -584,7 +593,7 @@ func (s *Store) AgentBySerial(ctx context.Context, serial string) (AgentIdentity
 }
 
 func (s *Store) RevokeAgent(ctx context.Context, id string) error {
-	return s.mutate(ctx, func(state *State) error {
+	return s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		item, ok := state.Agents[id]
 		if !ok {
 			return ErrNotFound
@@ -592,8 +601,22 @@ func (s *Store) RevokeAgent(ctx context.Context, id string) error {
 		now := s.now().UTC()
 		item.RevokedAt = &now
 		state.Agents[id] = item
+		requestScanCancellationForAgent(state, id, now)
 		return nil
 	})
+}
+
+func requestScanCancellationForAgent(state *State, agentID string, now time.Time) {
+	for runID, run := range state.ScanRuns {
+		if run.ScannerKind != "agent" || run.ScannerID != agentID || scanRunTerminalStates[run.State] {
+			continue
+		}
+		run = markScanRunCancellation(run, now)
+		if scanRunTerminalStates[run.State] {
+			delete(state.ScanRunLeases, runID)
+		}
+		state.ScanRuns[runID] = run
+	}
 }
 
 func (s *Store) UpdateAgent(ctx context.Context, id string, update func(*AgentIdentity) error) (AgentIdentity, error) {

@@ -142,6 +142,10 @@ func (e *Engine) ValidateScanVantage(ctx context.Context, scopeID string, vantag
 		return Decision{}, err
 	}
 	decision := Decision{ScopeRevision: scope.Revision}
+	if !policy.Enabled {
+		decision.Reason = "scope_disabled"
+		return decision, nil
+	}
 	now := e.Store.Now()
 	switch vantage.Kind {
 	case "server":
@@ -165,6 +169,10 @@ func (e *Engine) ValidateScanVantage(ctx context.Context, scopeID string, vantag
 			decision.Reason = "vantage_unavailable"
 			return decision, nil
 		}
+		if !store.SupportsScanCapabilities(agent.Capabilities) {
+			decision.Reason = "vantage_unavailable"
+			return decision, nil
+		}
 		if vantage.DeviceID != "" && vantage.DeviceID != agent.DeviceID {
 			decision.Reason = "vantage_unavailable"
 			return decision, nil
@@ -178,6 +186,10 @@ func (e *Engine) ValidateScanVantage(ctx context.Context, scopeID string, vantag
 			return Decision{}, deviceErr
 		}
 		if device.Excluded || device.DecommissionedAt != nil || device.Lifecycle == "decommissioned" || device.Availability == store.AvailabilityRevoked {
+			decision.Reason = "vantage_unavailable"
+			return decision, nil
+		}
+		if device.SiteID != scope.SiteID {
 			decision.Reason = "vantage_unavailable"
 			return decision, nil
 		}

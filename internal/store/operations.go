@@ -360,7 +360,7 @@ func (s *Store) DecommissionDevice(ctx context.Context, deviceID, reason string)
 		return Device{}, ErrInvalid
 	}
 	var result Device
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		device, ok := state.Devices[deviceID]
 		if !ok {
 			return ErrNotFound
@@ -384,6 +384,7 @@ func (s *Store) DecommissionDevice(ctx context.Context, deviceID, reason string)
 			if item.DeviceID == deviceID {
 				item.RevokedAt = &now
 				state.Agents[agentID] = item
+				requestScanCancellationForAgent(state, agentID, now)
 			}
 		}
 		for id, item := range state.Jobs {

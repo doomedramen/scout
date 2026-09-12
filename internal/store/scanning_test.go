@@ -142,6 +142,98 @@ func TestScanLeaseExpiryFencesLateExecutor(t *testing.T) {
 	}
 }
 
+func TestScanCancellationFencesQueuedLeasedRunningAndUploadingWork(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+
+	queued, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "cancel-queued", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err := s.RequestScanCancellation(ctx, queued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.State != ScanRunCancelled || cancelled.FinishedAt == nil || !cancelled.CancellationRequested {
+		t.Fatalf("queued cancellation did not become terminal: %+v", cancelled)
+	}
+	if _, err := s.LeaseScanRun(ctx, queued.ID, "coordinator", time.Minute); !errors.Is(err, ErrConflict) {
+		t.Fatalf("cancelled queued run was leaseable: %v", err)
+	}
+
+	leased, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "cancel-leased", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err = s.LeaseScanRun(ctx, leased.ID, "coordinator", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelled, err = s.RequestScanCancellation(ctx, leased.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.State != ScanRunCancelled || cancelled.FinishedAt == nil || cancelled.LeaseOwner != "" {
+		t.Fatalf("leased cancellation did not release work: %+v", cancelled)
+	}
+	if _, err := s.StartScanRun(ctx, leased.ID, "coordinator", leased.LeaseEpoch); !errors.Is(err, ErrConflict) {
+		t.Fatalf("cancelled leased run was startable: %v", err)
+	}
+
+	running, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "cancel-running", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err = s.LeaseScanRun(ctx, running.ID, "coordinator", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err = s.StartScanRun(ctx, running.ID, "coordinator", running.LeaseEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err = s.RequestScanCancellation(ctx, running.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running.State != ScanRunRunning || !running.CancellationRequested {
+		t.Fatalf("running cancellation changed execution state: %+v", running)
+	}
+	if _, err := s.BeginScanUpload(ctx, running.ID, "coordinator", running.LeaseEpoch); !errors.Is(err, ErrConflict) {
+		t.Fatalf("cancelled running scan entered upload: %v", err)
+	}
+
+	uploading := scanRunFixture(scope, policy, "cancel-uploading", now)
+	uploading.ScannerID = "upload-coordinator"
+	uploading, err = s.CreateScanRun(ctx, uploading)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploading, err = s.LeaseScanRun(ctx, uploading.ID, "upload-coordinator", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploading, err = s.StartScanRun(ctx, uploading.ID, "upload-coordinator", uploading.LeaseEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploading, err = s.BeginScanUpload(ctx, uploading.ID, "upload-coordinator", uploading.LeaseEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploading, err = s.RequestScanCancellation(ctx, uploading.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uploading.State != ScanRunUploading || !uploading.CancellationRequested {
+		t.Fatalf("uploading cancellation changed execution state: %+v", uploading)
+	}
+	if _, _, err := s.AcceptScanResultPage(ctx, ScanResultReceipt{RunID: uploading.ID, PageOrdinal: 0, ContentHash: "cancelled-page", ResultCount: 0}, nil); !errors.Is(err, ErrConflict) {
+		t.Fatalf("cancelled upload accepted a result page: %v", err)
+	}
+}
+
 func TestScanResultPagesAreIdempotentAndTerminalStateIsFenced(t *testing.T) {
 	ctx := context.Background()
 	s, scope, policy := newScanFixture(t)
@@ -196,6 +288,48 @@ func TestScanResultPagesAreIdempotentAndTerminalStateIsFenced(t *testing.T) {
 	}
 	if _, _, err := s.AcceptScanResultPage(ctx, receipt, []EntryPointObservation{observation}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("page was accepted after terminal transition: %v", err)
+	}
+}
+
+func TestAcknowledgePauseWaitsForAnActiveCancelledScan(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	run, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "pause-ack", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = s.LeaseScanRun(ctx, run.ID, "coordinator", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = s.StartScanRun(ctx, run.ID, "coordinator", run.LeaseEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paused, err := s.SetControlPause(ctx, true, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paused.PausePending || len(paused.ExecutionHolders) != 1 || paused.ExecutionHolders[0] != "coordinator" {
+		t.Fatalf("active scan pause state: %+v", paused)
+	}
+	stillPending, err := s.AcknowledgePause(ctx, "coordinator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stillPending.PausePending || len(stillPending.ExecutionHolders) != 1 {
+		t.Fatalf("active cancelled scan acknowledged too early: %+v", stillPending)
+	}
+	if _, err := s.FinalizeScanRun(ctx, run.ID, "coordinator", run.LeaseEpoch, ScanRunPartial, "cancelled", ""); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := s.AcknowledgePause(ctx, "coordinator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.PausePending || len(cleared.ExecutionHolders) != 0 {
+		t.Fatalf("pause did not clear after scan finished: %+v", cleared)
 	}
 }
 

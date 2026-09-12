@@ -289,7 +289,14 @@ func (s *Store) ClaimWorkerJob(ctx context.Context, worker WorkerIdentity) (Job,
 
 func (s *Store) AcknowledgePause(ctx context.Context, holder string) (WorkspaceState, error) {
 	var result WorkspaceState
-	err := s.mutate(ctx, func(state *State) error {
+	if strings.TrimSpace(holder) == "" {
+		return result, ErrInvalid
+	}
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		if state.Workspace.DiscoveryPaused && activeScanHeldBy(state, holder) {
+			result = state.Workspace
+			return nil
+		}
 		remaining := state.Workspace.ExecutionHolders[:0]
 		for _, item := range state.Workspace.ExecutionHolders {
 			if item != holder {
@@ -304,18 +311,46 @@ func (s *Store) AcknowledgePause(ctx context.Context, holder string) (WorkspaceS
 	return result, err
 }
 
+func activeScanHeldBy(state *State, holder string) bool {
+	for _, run := range state.ScanRuns {
+		if run.LeaseOwner == holder && !scanRunTerminalStates[run.State] {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) SetControlPause(ctx context.Context, discovery, enrollment, updates bool) (WorkspaceState, error) {
 	var result WorkspaceState
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		now := s.now().UTC()
 		state.Workspace.DiscoveryPaused = discovery
 		state.Workspace.EnrollmentPaused = enrollment
 		state.Workspace.UpdatesPaused = updates
 		state.Workspace.PauseRequested = discovery || enrollment || updates
 		state.Workspace.ExecutionHolders = state.Workspace.ExecutionHolders[:0]
+		holders := map[string]bool{}
 		for _, job := range state.Jobs {
 			if isActiveJob(job.State) && job.LeaseOwner != "" && jobPaused(state.Workspace, job.Kind) {
-				state.Workspace.ExecutionHolders = append(state.Workspace.ExecutionHolders, job.LeaseOwner)
+				holders[job.LeaseOwner] = true
 			}
+		}
+		if discovery {
+			for id, run := range state.ScanRuns {
+				if scanRunTerminalStates[run.State] {
+					continue
+				}
+				run = markScanRunCancellation(run, now)
+				if scanRunTerminalStates[run.State] {
+					delete(state.ScanRunLeases, id)
+				} else if run.LeaseOwner != "" {
+					holders[run.LeaseOwner] = true
+				}
+				state.ScanRuns[id] = run
+			}
+		}
+		for holder := range holders {
+			state.Workspace.ExecutionHolders = append(state.Workspace.ExecutionHolders, holder)
 		}
 		sort.Strings(state.Workspace.ExecutionHolders)
 		state.Workspace.PausePending = len(state.Workspace.ExecutionHolders) > 0

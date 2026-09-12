@@ -91,6 +91,13 @@ func (c *Coordinator) ScheduleDue(ctx context.Context) ([]store.ScanRun, error) 
 	if c == nil || c.Store == nil {
 		return nil, store.ErrInvalid
 	}
+	workspace, err := c.Store.Workspace(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.RecoveryMode || workspace.DiscoveryPaused {
+		return []store.ScanRun{}, nil
+	}
 	scopes, err := c.Store.ListScopes(ctx)
 	if err != nil {
 		return nil, err

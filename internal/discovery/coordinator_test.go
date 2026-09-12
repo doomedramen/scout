@@ -138,6 +138,29 @@ func TestCoordinatorRequiresServerOptInAndKeepsOneActiveRun(t *testing.T) {
 	}
 }
 
+func TestCoordinatorDoesNotScheduleWhileDiscoveryIsPaused(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, _ := coordinatorFixture(t)
+	if _, err := repository.SetControlPause(ctx, true, false, false); err != nil {
+		t.Fatal(err)
+	}
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{})
+	runs, err := coordinator.ScheduleDue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 {
+		t.Fatalf("discovery pause still materialized scan runs: %+v", runs)
+	}
+	page, err := repository.ListScanRuns(ctx, store.ScanRunQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 0 {
+		t.Fatalf("discovery pause left queued runs behind: %+v", page.Items)
+	}
+}
+
 func TestCoordinatorReleasesExpiredLeaseAfterRestart(t *testing.T) {
 	ctx := context.Background()
 	repository, _, _, now := coordinatorFixture(t)

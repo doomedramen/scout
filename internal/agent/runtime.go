@@ -73,6 +73,8 @@ type Runtime struct {
 	scanRunID    string
 	scanEpoch    int64
 	scanRevision int64
+	pauseAckMu   sync.Mutex
+	pauseAck     bool
 	scanExecutor func(context.Context, ScanAssignment) error
 	startedAt    time.Time
 }

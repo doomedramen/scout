@@ -237,11 +237,16 @@ func (s *Store) UpdateScanPolicy(ctx context.Context, scopeID string, expected i
 		if err := validateScanPolicy(next, scope); err != nil {
 			return err
 		}
+		if err := validateAssignedAgents(state, scope, next.AgentIDs, s.now().UTC()); err != nil {
+			return err
+		}
 		state.ScanPolicies[scopeID] = next
 		for id, run := range state.ScanRuns {
 			if run.ScopeID == scopeID && !scanRunTerminalStates[run.State] && run.ScopeRevision < next.Revision {
-				run.CancellationRequested = true
-				state.ScanRuns[id] = run
+				state.ScanRuns[id] = markScanRunCancellation(run, s.now().UTC())
+				if scanRunTerminalStates[state.ScanRuns[id].State] {
+					delete(state.ScanRunLeases, id)
+				}
 			}
 		}
 		result = cloneScanPolicy(next)
@@ -289,6 +294,9 @@ func (s *Store) CreateScanRun(ctx context.Context, run ScanRun) (ScanRun, error)
 		}
 		if run.ScannerKind != "server" && run.ScannerKind != "agent" || strings.TrimSpace(run.ScannerID) == "" {
 			return ErrInvalid
+		}
+		if run.ScannerKind == "agent" && !assignedAgentEligible(state, scope, policy, run.ScannerID, s.now().UTC()) {
+			return ErrForbidden
 		}
 		if run.Trigger == "" {
 			run.Trigger = "owner"
@@ -378,6 +386,44 @@ func scanRunPlanLimit(snapshot ScanPolicySnapshot) (int, error) {
 		limit = maxScanRunAttempts
 	}
 	return limit, nil
+}
+
+func validateAssignedAgents(state *State, scope Scope, agentIDs []string, now time.Time) error {
+	for _, agentID := range agentIDs {
+		agent, ok := state.Agents[agentID]
+		if !ok || !agentEligibleForScope(state, scope, agent, now) {
+			return ErrConflict
+		}
+	}
+	return nil
+}
+
+func assignedAgentEligible(state *State, scope Scope, policy ScanPolicy, agentID string, now time.Time) bool {
+	if !containsAgentID(policy.AgentIDs, agentID) {
+		return false
+	}
+	agent, ok := state.Agents[agentID]
+	return ok && agentEligibleForScope(state, scope, agent, now)
+}
+
+func containsAgentID(items []string, wanted string) bool {
+	for _, item := range items {
+		if item == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func agentEligibleForScope(state *State, scope Scope, agent AgentIdentity, now time.Time) bool {
+	if agent.ID == "" || agent.DeviceID == "" || agent.RevokedAt != nil || !agent.ExpiresAt.IsZero() && !agent.ExpiresAt.After(now) || !SupportsScanCapabilities(agent.Capabilities) {
+		return false
+	}
+	device, ok := state.Devices[agent.DeviceID]
+	if !ok || device.SiteID != scope.SiteID || device.Excluded || device.DecommissionedAt != nil || device.Lifecycle == "decommissioned" || device.Availability == AvailabilityRevoked {
+		return false
+	}
+	return true
 }
 
 func (s *Store) GetScanRun(ctx context.Context, id string) (ScanRun, error) {
@@ -528,7 +574,7 @@ func (s *Store) transitionScanRun(ctx context.Context, runID, owner string, epoc
 		if !scanLeaseMatches(run, owner, epoch, s.now().UTC()) {
 			return ErrConflict
 		}
-		if nextState == ScanRunRunning && run.State != ScanRunLeased || nextState == ScanRunUploading && run.State != ScanRunRunning {
+		if run.CancellationRequested || nextState == ScanRunRunning && run.State != ScanRunLeased || nextState == ScanRunUploading && run.State != ScanRunRunning {
 			return ErrConflict
 		}
 		run.State = nextState
@@ -558,13 +604,7 @@ func (s *Store) RequestScanCancellation(ctx context.Context, runID string) (Scan
 			result = cloneScanRun(run)
 			return nil
 		}
-		run.CancellationRequested = true
-		run.UpdatedAt = s.now().UTC()
-		if run.State == ScanRunQueued {
-			run.State = ScanRunCancelled
-			now := s.now().UTC()
-			run.FinishedAt = &now
-		}
+		run = markScanRunCancellation(run, s.now().UTC())
 		state.ScanRuns[runID] = run
 		if scanRunTerminalStates[run.State] {
 			delete(state.ScanRunLeases, runID)
@@ -573,6 +613,18 @@ func (s *Store) RequestScanCancellation(ctx context.Context, runID string) (Scan
 		return nil
 	})
 	return result, err
+}
+
+func markScanRunCancellation(run ScanRun, now time.Time) ScanRun {
+	run.CancellationRequested = true
+	run.UpdatedAt = now
+	if run.State == ScanRunQueued || run.State == ScanRunLeased {
+		run.State = ScanRunCancelled
+		run.FinishedAt = &now
+		run.LeaseOwner = ""
+		run.LeaseExpiresAt = nil
+	}
+	return run
 }
 
 func (s *Store) FinalizeScanRun(ctx context.Context, runID, owner string, epoch int64, terminalState, partialReason, errorCode string) (ScanRun, error) {
@@ -626,6 +678,9 @@ func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultRece
 			result = existing
 			duplicate = true
 			return nil
+		}
+		if run.CancellationRequested {
+			return ErrConflict
 		}
 		if receipt.PageOrdinal < 0 || receipt.PageOrdinal > 16383 || len(observations) > 1000 || receipt.ResultCount != len(observations) || receipt.ContentHash == "" {
 			return ErrInvalid

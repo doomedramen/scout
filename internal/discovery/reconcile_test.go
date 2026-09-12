@@ -50,7 +50,7 @@ func newScanIngestionFixtureWithEntryPoints(t *testing.T, entryPoints []store.Sc
 		t.Fatal(err)
 	}
 	scanner := policy.ScanVantage{Kind: "agent", ID: "agent-scan-1", DeviceID: device.ID}
-	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: scanner.ID, DeviceID: device.ID, AuthTokenHash: store.HashToken("scan-token"), ExpiresAt: now.Add(24 * time.Hour), InstalledVersion: "0.1.0"}); err != nil {
+	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: scanner.ID, DeviceID: device.ID, AuthTokenHash: store.HashToken("scan-token"), ExpiresAt: now.Add(24 * time.Hour), InstalledVersion: "0.1.0", Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
 		t.Fatal(err)
 	}
 	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)

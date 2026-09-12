@@ -126,6 +126,14 @@ Agent heartbeat adds a bounded capability declaration:
 
 Older agents may omit this object and are treated as scan-unsupported. Capability declaration grants no scope.
 
+## Pause acknowledgement
+
+`POST /api/v1/agent/v1/pause-ack` uses the authenticated agent identity and an
+empty JSON object. The server keeps the agent in `ExecutionHolders` while a
+leased scan is still active, even when cancellation has been requested. The
+agent acknowledges only after its scan executor has stopped; a pending
+acknowledgement returns the current pause state with HTTP 202.
+
 ## Isolation requirements
 
 - Scan execution and result retry MUST NOT hold the host telemetry collection lock.

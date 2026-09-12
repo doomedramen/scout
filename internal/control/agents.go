@@ -25,10 +25,28 @@ func (a *App) registerAgentRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST "+prefix+"/renew", a.agentRenew)
 		mux.HandleFunc("POST "+prefix+"/batches", a.agentBatch)
 		mux.HandleFunc("POST "+prefix+"/heartbeat", a.agentHeartbeat)
+		mux.HandleFunc("POST "+prefix+"/pause-ack", a.agentPauseAcknowledgement)
 		mux.HandleFunc("GET "+prefix+"/desired-state", a.agentDesiredState)
 		mux.HandleFunc("POST "+prefix+"/scan-results", a.agentScanResults)
 		mux.HandleFunc("POST "+prefix+"/update-results", a.agentUpdateResult)
 	}
+}
+
+func (a *App) agentPauseAcknowledgement(w http.ResponseWriter, r *http.Request) {
+	agent, ok := a.requireAgent(w, r)
+	if !ok {
+		return
+	}
+	state, err := a.Store.AcknowledgePause(r.Context(), agent.ID)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if state.PausePending {
+		status = http.StatusAccepted
+	}
+	writeJSON(w, status, state)
 }
 
 func (a *App) agentEnroll(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +174,13 @@ func (a *App) scanAssignmentForAgent(ctx context.Context, agent store.AgentIdent
 	if !supportsScanCapabilities(agent.Capabilities) {
 		return nil, nil
 	}
+	workspace, err := a.Store.Workspace(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.RecoveryMode || workspace.DiscoveryPaused {
+		return nil, nil
+	}
 	page, err := a.Store.ListScanRuns(ctx, store.ScanRunQuery{ScannerID: agent.ID, Limit: 500})
 	if err != nil {
 		return nil, err
@@ -192,21 +217,7 @@ func (a *App) scanAssignmentForAgent(ctx context.Context, agent store.AgentIdent
 }
 
 func supportsScanCapabilities(capabilities store.ScanCapabilities) bool {
-	hasVersion := false
-	for _, version := range capabilities.ScanProtocolVersions {
-		if version == 1 {
-			hasVersion = true
-			break
-		}
-	}
-	hasTransport := false
-	for _, transport := range capabilities.ScanTransports {
-		if transport == store.ScanTransportTCP {
-			hasTransport = true
-			break
-		}
-	}
-	return hasVersion && hasTransport
+	return store.SupportsScanCapabilities(capabilities)
 }
 
 func (a *App) agentScanResults(w http.ResponseWriter, r *http.Request) {

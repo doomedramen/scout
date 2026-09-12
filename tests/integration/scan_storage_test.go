@@ -153,7 +153,7 @@ func newSQLScanAgentFixture(t *testing.T, db *sql.DB, id string) sqlScanAgentFix
 		t.Fatal(err)
 	}
 	scanner := policy.ScanVantage{Kind: "agent", ID: "sql-scan-agent-" + id, DeviceID: device.ID}
-	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: scanner.ID, DeviceID: device.ID, ExpiresAt: clock.Add(time.Hour)}); err != nil {
+	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: scanner.ID, DeviceID: device.ID, ExpiresAt: clock.Add(time.Hour), Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
 		t.Fatal(err)
 	}
 	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)

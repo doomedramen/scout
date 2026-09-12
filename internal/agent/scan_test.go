@@ -274,3 +274,62 @@ func TestReportOnceKeepsTelemetryAheadOfScanExecution(t *testing.T) {
 	}
 	close(release)
 }
+
+func TestCancelledScanAcknowledgesPauseAfterExecutionStops(t *testing.T) {
+	var desiredCalls int
+	acknowledged := make(chan struct{})
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	now := time.Now().UTC()
+	assignment := validScanAssignment(now)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/agent/v1/desired-state":
+			desiredCalls++
+			if desiredCalls == 1 {
+				_ = json.NewEncoder(w).Encode(map[string]any{"scanAssignment": assignment})
+			} else {
+				_ = json.NewEncoder(w).Encode(map[string]any{"scanAssignment": nil})
+			}
+		case "/api/v1/agent/v1/pause-ack":
+			close(acknowledged)
+			_ = json.NewEncoder(w).Encode(map[string]any{"pausePending": false})
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir(), Root: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.identity.AgentID = "agent-1"
+	runtime.identity.AgentToken = "scan-token"
+	runtime.scanExecutor = func(ctx context.Context, _ ScanAssignment) error {
+		close(started)
+		<-ctx.Done()
+		close(cancelled)
+		return ctx.Err()
+	}
+	if err := runtime.ReportOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("scan did not start")
+	}
+	if err := runtime.ReportOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("scan did not stop after desired state was cleared")
+	}
+	select {
+	case <-acknowledged:
+	case <-time.After(time.Second):
+		t.Fatal("agent did not acknowledge pause after the scan stopped")
+	}
+}

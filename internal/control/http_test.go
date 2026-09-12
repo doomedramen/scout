@@ -219,6 +219,84 @@ func TestDevelopmentNotificationResumeUsesRevisionFenceWithoutMFA(t *testing.T) 
 	}
 }
 
+func TestAgentDesiredStateRejectsVantageAfterItsDeviceMovesSites(t *testing.T) {
+	ctx := context.Background()
+	repository := store.NewMemory()
+	now := time.Date(2026, 9, 12, 18, 0, 0, 0, time.UTC)
+	repository.SetClock(func() time.Time { return now })
+	siteA, err := repository.CreateSite(ctx, store.Site{Name: "desired-site-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	siteB, err := repository.CreateSite(ctx, store.Site{Name: "desired-site-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := repository.CreateScope(ctx, store.Scope{SiteID: siteA.ID, Ranges: []string{"192.0.2.10"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := repository.CreateDevice(ctx, store.Device{SiteID: siteA.ID, DisplayName: "moved-agent", Platform: "linux", Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const agentID = "moved-agent-1"
+	const agentToken = "moved-agent-token"
+	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: agentID, DeviceID: device.ID, AuthTokenHash: store.HashToken(agentToken), ExpiresAt: now.Add(time.Hour), Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := repository.RecordHeartbeat(ctx, agentID, store.Heartbeat{BootID: "boot-moved", Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy.AgentIDs = []string{agentID}
+	scanPolicy, err = repository.UpdateScanPolicy(ctx, scope.ID, scanPolicy.Revision, scanPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := repository.CreateScanRun(ctx, store.ScanRun{ID: "moved-agent-run", ScopeID: scope.ID, ScopeRevision: scanPolicy.Revision, ScannerKind: "agent", ScannerID: agentID, ScheduledAt: now, AssignmentExpiresAt: now.Add(time.Minute), PolicySnapshot: store.ScanPolicySnapshot{Ranges: scope.Ranges, Exclusions: scope.Exclusions, EntryPoints: scanPolicy.EntryPoints, Limits: scanPolicy.Limits}, TargetsPlanned: 1, AttemptsPlanned: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := repository.LeaseScanRun(ctx, run.ID, agentID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartScanRun(ctx, run.ID, agentID, leased.LeaseEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.UpdateDevice(ctx, device.ID, func(item *store.Device) error {
+		item.SiteID = siteB.ID
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	application, err := NewApp(repository, nil, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/agent/v1/desired-state", nil)
+	request.Header.Set("Authorization", "Bearer "+agentToken)
+	response := httptest.NewRecorder()
+	application.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("desired state response: %d %s", response.Code, response.Body)
+	}
+	var desired struct {
+		ScanAssignment json.RawMessage `json:"scanAssignment"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &desired); err != nil {
+		t.Fatal(err)
+	}
+	if string(desired.ScanAssignment) != "null" {
+		t.Fatalf("cross-site scan assignment leaked after device move: %s", response.Body)
+	}
+}
+
 func TestAgentBootstrapArtifactsArePublicAndArchitectureBound(t *testing.T) {
 	directory := t.TempDir()
 	agent := []byte("linux-agent-amd64")

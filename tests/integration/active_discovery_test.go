@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -17,12 +18,138 @@ import (
 	"scout.local/scout/internal/agent"
 	"scout.local/scout/internal/control"
 	"scout.local/scout/internal/discovery"
+	"scout.local/scout/internal/policy"
 	"scout.local/scout/internal/store"
 )
 
 func TestServerAndAgentScansUseControlledListenersAndHonorExclusions(t *testing.T) {
 	t.Run("server vantage", testServerVantageScan)
 	t.Run("agent vantage", testAgentVantageScan)
+}
+
+func TestDiscoveryPauseFencesActiveAgentRunsAndRejectsLateResults(t *testing.T) {
+	ctx := context.Background()
+	repository, _, scanPolicy, scanner, run := activeAgentRunFixture(t)
+
+	paused, err := repository.SetControlPause(ctx, true, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paused.PausePending || !containsIntegrationString(paused.ExecutionHolders, scanner.ID) {
+		t.Fatalf("active agent scan was not included in pause acknowledgement: %+v", paused)
+	}
+	current, err := repository.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.CancellationRequested {
+		t.Fatalf("pause did not request cancellation for active agent run: %+v", current)
+	}
+
+	page := discovery.ScanResultPage{
+		ProtocolVersion: 1,
+		RunID:           run.ID,
+		LeaseEpoch:      run.LeaseEpoch,
+		ScopeRevision:   scanPolicy.Revision,
+		PageOrdinal:     0,
+		ObservedFrom:    repository.Now().Add(-time.Second),
+		ObservedTo:      repository.Now(),
+		Final:           true,
+		Results: []discovery.ScanResult{{
+			Address: "192.0.2.10", EntryPointID: scanPolicy.EntryPoints[0].ID, Transport: store.ScanTransportTCP,
+			Port: 22, Outcome: "open", ObservedAt: repository.Now(),
+		}},
+		Summary: &discovery.ScanResultSummary{TargetsPlanned: 1, AttemptsPlanned: 1, AttemptsCompleted: 1},
+	}
+	service := &discovery.Service{Store: repository, Policy: &policy.Engine{Store: repository}}
+	if _, _, err := service.IngestScanResultPage(ctx, policy.ScanVantage{Kind: "agent", ID: scanner.ID, DeviceID: scanner.DeviceID}, page); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("late result crossed a paused-run fence: %v", err)
+	}
+}
+
+func TestRevokingAgentFencesItsActiveScanRun(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, scanner, run := activeAgentRunFixture(t)
+	if err := repository.RevokeAgent(ctx, scanner.ID); err != nil {
+		t.Fatal(err)
+	}
+	current, err := repository.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.CancellationRequested {
+		t.Fatalf("agent revocation left active scan runnable: %+v", current)
+	}
+}
+
+func TestDecommissioningAgentDeviceFencesItsActiveScanRun(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, scanner, run := activeAgentRunFixture(t)
+	if _, err := repository.DecommissionDevice(ctx, scanner.DeviceID, "retired scanner host"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := repository.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.CancellationRequested {
+		t.Fatalf("device decommission left active scan runnable: %+v", current)
+	}
+}
+
+func activeAgentRunFixture(t *testing.T) (*store.Store, store.Scope, store.ScanPolicy, policy.ScanVantage, store.ScanRun) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC)
+	repository := store.NewMemory()
+	repository.SetClock(func() time.Time { return now })
+	site, err := repository.CreateSite(ctx, store.Site{Name: "active-agent-fence"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := repository.CreateDevice(ctx, store.Device{SiteID: site.ID, DisplayName: "active-agent-fence", Platform: "linux", Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner := policy.ScanVantage{Kind: "agent", ID: "active-agent-fence-1", DeviceID: device.ID}
+	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: scanner.ID, DeviceID: device.ID, AuthTokenHash: store.HashToken("active-agent-fence-token"), ExpiresAt: now.Add(time.Hour), Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := repository.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"192.0.2.10"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy.AgentIDs = []string{scanner.ID}
+	scanPolicy, err = repository.UpdateScanPolicy(ctx, scope.ID, scanPolicy.Revision, scanPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := repository.CreateScanRun(ctx, store.ScanRun{ID: "active-agent-fence-run", ScopeID: scope.ID, ScopeRevision: scanPolicy.Revision, ScannerKind: scanner.Kind, ScannerID: scanner.ID, Trigger: "owner", ScheduledAt: now, AssignmentExpiresAt: now.Add(time.Minute), PolicySnapshot: store.ScanPolicySnapshot{Ranges: scope.Ranges, Exclusions: scope.Exclusions, EntryPoints: scanPolicy.EntryPoints, Limits: scanPolicy.Limits}, TargetsPlanned: 1, AttemptsPlanned: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := repository.LeaseScanRun(ctx, run.ID, scanner.ID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err = repository.StartScanRun(ctx, run.ID, scanner.ID, leased.LeaseEpoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository, scope, scanPolicy, scanner, run
+}
+
+func containsIntegrationString(items []string, wanted string) bool {
+	for _, item := range items {
+		if item == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func testServerVantageScan(t *testing.T) {

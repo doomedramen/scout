@@ -407,6 +407,12 @@ paths:
       tags: [agents]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/heartbeat.json" } } } }
       responses: { "200": { description: Current server policy revision } }
+  /agent/v1/pause-ack:
+    post:
+      tags: [agents]
+      responses:
+        "200": { description: Pause acknowledgement accepted }
+        "202": { description: Scan is still stopping; acknowledgement remains pending }
   /agent/v1/desired-state:
     get: { tags: [agents], responses: { "200": { description: Bounded desired state } } }
   /agent/v1/scan-results:

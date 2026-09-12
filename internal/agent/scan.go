@@ -286,9 +286,11 @@ func (r *Runtime) startScan(ctx context.Context, assignment ScanAssignment) bool
 		defer r.scanMu.Unlock()
 		if r.scanExecutor != nil {
 			_ = r.scanExecutor(scanContext, assignment)
+			_ = r.acknowledgePauseIfRequested()
 			return
 		}
 		_ = r.executeScan(scanContext, assignment)
+		_ = r.acknowledgePauseIfRequested()
 	}()
 	return true
 }
@@ -316,11 +318,46 @@ func (r *Runtime) syncScan(ctx context.Context) error {
 		return err
 	}
 	if desired.ScanAssignment != nil {
+		r.setPauseAck(false)
 		r.startScan(ctx, *desired.ScanAssignment)
 	} else {
+		r.setPauseAck(true)
 		r.cancelScan()
+		if !r.scanActive() {
+			return r.acknowledgePause(ctx)
+		}
 	}
 	return nil
+}
+
+func (r *Runtime) scanActive() bool {
+	r.scanStateMu.Lock()
+	defer r.scanStateMu.Unlock()
+	return r.scanCancel != nil
+}
+
+func (r *Runtime) setPauseAck(value bool) {
+	r.pauseAckMu.Lock()
+	r.pauseAck = value
+	r.pauseAckMu.Unlock()
+}
+
+func (r *Runtime) acknowledgePauseIfRequested() error {
+	r.pauseAckMu.Lock()
+	pending := r.pauseAck
+	r.pauseAckMu.Unlock()
+	if !pending {
+		return nil
+	}
+	return r.acknowledgePause(context.Background())
+}
+
+func (r *Runtime) acknowledgePause(ctx context.Context) error {
+	_, err := r.postResponse(ctx, "/api/v1/agent/v1/pause-ack", []byte("{}"), r.identity.AgentToken)
+	if err == nil {
+		r.setPauseAck(false)
+	}
+	return err
 }
 
 func (r *Runtime) executeScan(ctx context.Context, assignment ScanAssignment) error {
