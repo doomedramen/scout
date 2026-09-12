@@ -1,0 +1,19 @@
+{
+  "id": "3f9c1a1b-6f4f-4bc2-8cf5-0bc70a2b5b11",
+  "siteId": "5b7a3c2b-e1d2-4f02-8a9d-4e3ec3c2a0a1",
+  "scopeId": "7e2d11d4-b8b8-4d05-ae54-f05c5c86be75",
+  "address": "192.0.2.10",
+  "displayName": "lab-ssh",
+  "state": "needs_credentials",
+  "coverageState": "current",
+  "entryPointCount": 1,
+  "provenance": [
+    {
+      "scanner": { "kind": "server", "id": "control-server-1" },
+      "lastObservedAt": "2026-09-12T14:20:01Z",
+      "outcome": "open"
+    }
+  ],
+  "lastScannedAt": "2026-09-12T14:20:01Z",
+  "action": { "kind": "assign_credentials", "label": "Assign SSH credentials", "href": "/access" }
+}

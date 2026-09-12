@@ -72,3 +72,26 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: T003 must add executable positive/negative scan fixtures
   and reference validation; runtime routes, persistence, agent execution,
   policy enforcement, and UI remain unimplemented.
+
+## T003 — active scanning contract fixtures
+
+- Requirements: FR-001, FR-004–FR-008, FR-015, FR-018.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Added positive fixtures for policy, assignment, result page, candidate, and
+  run creation plus negative fixtures for unknown fields, bound overflow,
+  unsupported UDP transport, remote identity injection, excluded targets, and
+  stale revisions. Paired replay fixtures share a run/page identity but have
+  different content hashes.
+- `tests/contracts/discovery_contract_test.go` now resolves local JSON Schema
+  references and validates the exercised strict shapes, pins every configured
+  rate/concurrency/target/attempt/timeout/deadline/page bound, applies an
+  exclusion decision, and checks wrong-scanner, stale-revision, and conflicting
+  replay semantics. The fixture validator deliberately treats remote identity
+  as transport-authenticated and rejects it from the body.
+- Exact verification commands and outcomes: `gofmt -w
+  tests/contracts/discovery_contract_test.go`; `npx prettier --write
+  tests/contracts/fixtures/scan-*.json`; `go test ./tests/contracts -count=1`;
+  and `git diff --check` passed. No scanner, route handler, real network, or
+  credential was used.
+- Remaining limits: schema/reference tests are contract-level checks; T004+
+  must enforce the same bounds and fencing in durable stores and handlers.
