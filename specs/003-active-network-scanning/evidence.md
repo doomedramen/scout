@@ -25,7 +25,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## T001 — 001 prerequisite gate
 
 - Requirements: FR-003, FR-004, FR-013, FR-014, FR-022.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: 8cd137a.
 - Baseline: repository was clean at commit `1fc68ec` with the configured
   `origin` remote `https://github.com/doomedramen/scout.git`. The 001 handoff,
   evidence ledger, and task ledger were inspected before this gate.
