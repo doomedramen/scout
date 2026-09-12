@@ -22,7 +22,7 @@ repository has run the named fixture or an owner-authorized live lab.
 | Release updater | Ed25519, Linux artifact fixtures | Fixture verified | Signature, digest, platform, generation, resume, journal, readiness, and one rollback are covered. |
 | Updater power loss | Disposable Linux VM required | Open | No process termination or power-cut lab was run. |
 | Automatic enrollment | In-memory, scope-bound fixtures | Boundary verified | Duplicate sightings, exclusions, grants, leases, and revision fencing are covered. Live second-vantage placement is open. |
-| 100-device / 24-hour capacity | Synthetic 100-device, 24-hour sample shape | Synthetic only | The test ingests 2,400 fixture samples and exercises bounded querying; it is not a live capacity or retention-sizing claim. |
+| 100-device / 24-hour capacity | Synthetic 100-device, 24-hour sample shape | Synthetic only | T040 exercises 40 numeric series and 50 service states per device: 96,000 samples and 120,000 observations. The in-memory result is not a live PostgreSQL capacity or retention-sizing claim. |
 
 ## Required permissions
 

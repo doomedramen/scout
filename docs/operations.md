@@ -5,6 +5,9 @@ in this repository. Run the live paths only against an owner-authorized
 disposable environment. The default fixture scripts do not contact devices,
 provider endpoints, or production databases.
 
+For the Spec 2 monitoring behavior, verification evidence, and explicit live
+acceptance gates, see the [advanced monitoring release guide](advanced-monitoring.md).
+
 ## Local development
 
 Requirements are Node.js 22.14 or newer (24.14.0 was used for the current

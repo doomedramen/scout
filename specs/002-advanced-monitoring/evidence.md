@@ -1175,3 +1175,28 @@ For future results append: task and requirement IDs, commit, date, exact command
   repeatability; live PostgreSQL/MFA and physical systemd/storage permission
   acceptance remains covered by the separate integration and owner-authorized
   lab gates.
+
+## T042 — operations guidance and reconciled release gates
+
+- Requirements: FR-024, FR-033, FR-034, FR-035; SC-008, SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Added `docs/advanced-monitoring.md` with the verified behavior boundary,
+  fixture-first verification commands, operational semantics, backup/restore
+  fence, troubleshooting guidance, and explicit gates for live receivers,
+  PostgreSQL capacity, restore, systemd, storage, hardware, and agent delivery.
+- Reconciled `acceptance-matrix.md` so each requirement and success criterion
+  distinguishes automated fixture/SQL/browser evidence from owner-authorized
+  live acceptance. No untested hardware, production capacity, or live-device
+  compatibility claim is made.
+- Updated `docs/support-matrix.md` to identify the 100-device workload as
+  synthetic-only and to preserve the measured T040 result without presenting
+  it as PostgreSQL sizing evidence. Added links from the README and operations
+  runbook.
+- Exact verification commands and outcomes: `go test ./... -count=1`; `go vet
+  ./...`; `npm run check`; `npm run build`; `npm run lint`; `npm run
+  format:check`; `npx playwright test`; and `git diff --check` passed before
+  this documentation-only change. No production database, credential, real
+  device, or deployment was used.
+- Remaining limits: live ntfy delivery, protected clean-destination restore,
+  PostgreSQL capacity/retention sizing, systemd/storage/GPU/sensor hardware,
+  and optional collector transport remain owner-authorized release gates.

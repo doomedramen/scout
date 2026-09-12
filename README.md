@@ -253,6 +253,7 @@ The Linux-first MVP is the selected direction. It includes server-delivered agen
 - [Agent updates](docs/agent-updates.md)
 - [Service-aware collectors](docs/service-collectors.md)
 - [Operations runbook](docs/operations.md)
+- [Advanced monitoring release guide](docs/advanced-monitoring.md)
 - [Support and verification matrix](docs/support-matrix.md)
 - [Roadmap and acceptance criteria](docs/roadmap.md)
 
