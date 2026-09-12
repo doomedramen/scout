@@ -407,9 +407,8 @@ Never attach credential values, private keys, host-key private material, banners
   disposable PostgreSQL integration suite); `go vet ./...`; and `git diff
   --check` passed. No real device, network, or credential was contacted.
 - Remaining limits: the projection is intentionally credential-free and does
-  not create a device or enrollment job; full per-vantage current projections,
-  credential/trust re-evaluation, and owner-facing candidate APIs remain open
-  in T023–T028.
+  not create a device or enrollment job; broader browser coverage remains open
+  in T028.
 
 ## T017 — configurable agent scan capabilities and service wiring
 
@@ -491,9 +490,8 @@ Never attach credential values, private keys, host-key private material, banners
   that a sighting should create an address-only device/job. All fixtures use
   process-local state and injected verifier outcomes; no real device, network,
   or credential was contacted.
-- Remaining limits: complete candidate projection/freshness, release and
-  reachability fencing, owner candidate endpoints/UI, and browser journey
-  remain T023–T028.
+- Remaining limits: broader browser coverage, live worker installation, and
+  segmented lab evidence remain open in T028–T043.
 
 ## T020 — controlled server and agent scan acceptance
 
@@ -523,3 +521,63 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: the fixture proves local server/agent behavior, not the
   segmented Linux lab, 256-address performance target, or full credential and
   enrollment journey; those remain T022–T043.
+
+## T023–T027 — actionable scan candidate flow
+
+- Requirements: FR-008–FR-015, FR-019–FR-021; SC-003–SC-005, SC-009.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: e3419e8.
+- T023 retains one conservative candidate per scoped address, preserves
+  scanner provenance, records per-vantage current observations and
+  contradictions, and keeps one access-request key per candidate/method/
+  endpoint. Candidate detail returns current evidence only, so an older open
+  observation cannot make a later closed result look actionable.
+- T024–T025 reuse the existing bounded access re-evaluation boundary after
+  credential/trust changes. It validates current scope revision, exclusion,
+  SSH entry point, target-bound credential version, explicit host trust,
+  destination, and server reachability before queuing work; repeated
+  re-evaluation returns the same active enrollment job.
+- T026 adds owner-authenticated candidate list, detail, current entry-point,
+  and re-evaluate routes with bounded filters/cursors, safe action descriptors,
+  scanner provenance, and no secret/banner fields. The candidate response now
+  includes the current scope revision needed for optimistic mutation fencing.
+- T027 adds the Network found-device list and filters, evidence/detail view,
+  specific prerequisite states, and a prefilled Access route for the observed
+  SSH endpoint. Credential and trust forms remain write-only and automatically
+  re-evaluate the selected candidate.
+- Tests were written before the missing candidate route/detail behavior and
+  initially failed because raw candidate responses omitted the actionable
+  summary fields. Exact verification commands and outcomes: `go test
+  ./internal/control ./internal/store ./tests/integration -run
+  'Test(CandidateRoutesExposeActionableSafeDetail|CurrentEntryPointFilterKeepsNewestVantageEvidenceAndContradiction|CredentialAndTrustMutationsReevaluateScanCandidate|ScanCandidateAccessReevaluationClassifiesFailuresAndQueuesOnce)'
+  -count=1`; `go test ./tests/contracts -count=1`; `go test ./... -count=1`;
+  `go vet ./...`; `npm run lint`; `npm run check`; `npm run format:check`; and
+  `git diff --check` all passed. The controlled Playwright journey
+  `npm run test:e2e:browser -- --grep 'owner can configure a bounded scan'`
+  passed and covers scope setup, local SSH evidence, keyboard-addressable
+  candidate/detail/access controls, credential storage, explicit trust, and
+  one queued enrollment job. Only process-local loopback listeners, RFC 5737
+  addresses, and redacted fixture credentials were used; no real device,
+  production network, or production credential was contacted.
+- Remaining limits: T028 still needs the broader duplicate/unsupported/error
+  and viewport/accessibility matrix; the worker install on a real Linux host
+  and segmented packet-boundary evidence remain intentionally unperformed.
+
+## Served installer origin fix
+
+- Requirements: 001 agent bootstrap usability and deployment correctness.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: 9ed1891.
+- The compact `SCOUT_OTI=... bash -c "$(curl -fsSL .../install.sh)"`
+  invocation is valid when Scout serves the rendered installer. The server
+  now honors a validated `Forwarded: proto=` or `X-Forwarded-Proto` value
+  before falling back to the direct request transport, so TLS-terminated
+  reverse proxies render an HTTPS server URL. A raw/old template now fails
+  with an explicit stale-installer message rather than the misleading
+  `--server ... is required` error.
+- Exact verification commands and outcomes: `go test ./internal/control
+  -run TestAgentInstallerEmbedsRequestOrigin -count=1`; `bash -n
+  scripts/install-agent.sh`; and `git diff --check` passed. The regression
+  test verifies both direct and forwarded HTTPS origins. No installer was
+  run against a real device.
+- Remaining limit: the already-running public deployment must be rebuilt and
+  restarted from the pushed image before its endpoint can serve this fix; no
+  production deployment or device installation was performed from this task.
