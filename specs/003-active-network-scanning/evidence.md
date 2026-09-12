@@ -76,7 +76,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## T003 — active scanning contract fixtures
 
 - Requirements: FR-001, FR-004–FR-008, FR-015, FR-018.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: 9dc4f79.
 - Added positive fixtures for policy, assignment, result page, candidate, and
   run creation plus negative fixtures for unknown fields, bound overflow,
   unsupported UDP transport, remote identity injection, excluded targets, and
