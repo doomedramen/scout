@@ -7,7 +7,23 @@
     "installedVersion": { "type": "string", "maxLength": 64 },
     "uptimeSeconds": { "type": "integer", "minimum": 0 },
     "collectorStates": { "type": "array", "items": { "type": "object" } },
-    "updateState": { "type": "object" }
+    "updateState": { "type": "object" },
+    "capabilities": {
+      "type": ["object", "null"],
+      "properties": {
+        "scanProtocolVersions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "integer", "minimum": 1, "maximum": 16 }
+        },
+        "scanTransports": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "minLength": 1, "maxLength": 16 }
+        }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

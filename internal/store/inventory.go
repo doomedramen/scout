@@ -477,6 +477,7 @@ func (s *Store) ConsumeInvitation(ctx context.Context, tokenHash string) (Bootst
 }
 
 func (s *Store) CreateAgentIdentity(ctx context.Context, agent AgentIdentity) error {
+	agent.Capabilities = cloneScanCapabilities(agent.Capabilities)
 	return s.mutate(ctx, func(state *State) error {
 		if _, ok := state.Devices[agent.DeviceID]; !ok {
 			return ErrNotFound
@@ -508,6 +509,7 @@ func (s *Store) Agent(ctx context.Context, id string) (AgentIdentity, error) {
 			return ErrNotFound
 		}
 		result = item
+		result.Capabilities = cloneScanCapabilities(item.Capabilities)
 		return nil
 	})
 	return result, err
@@ -519,6 +521,7 @@ func (s *Store) AgentByTokenHash(ctx context.Context, tokenHash string) (AgentId
 		for _, item := range state.Agents {
 			if item.AuthTokenHash == tokenHash {
 				result = item
+				result.Capabilities = cloneScanCapabilities(item.Capabilities)
 				return nil
 			}
 		}
@@ -533,6 +536,7 @@ func (s *Store) AgentBySerial(ctx context.Context, serial string) (AgentIdentity
 		for _, item := range state.Agents {
 			if item.CertSerial == serial {
 				result = item
+				result.Capabilities = cloneScanCapabilities(item.Capabilities)
 				return nil
 			}
 		}
@@ -567,6 +571,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, update func(*AgentId
 		if err := update(&item); err != nil {
 			return err
 		}
+		item.Capabilities = cloneScanCapabilities(item.Capabilities)
 		state.Agents[id] = item
 		result = item
 		return nil

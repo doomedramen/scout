@@ -93,6 +93,11 @@ type ScanEntryPoint struct {
 	Enabled      bool   `json:"enabled"`
 }
 
+type ScanCapabilities struct {
+	ScanProtocolVersions []int    `json:"scanProtocolVersions,omitempty"`
+	ScanTransports       []string `json:"scanTransports,omitempty"`
+}
+
 type ScanLimits struct {
 	ProbesPerSecond     int `json:"probesPerSecond"`
 	Concurrency         int `json:"concurrency"`
@@ -295,15 +300,16 @@ type Observation struct {
 }
 
 type AgentIdentity struct {
-	ID               string     `json:"id"`
-	DeviceID         string     `json:"deviceId"`
-	PublicKeyHash    string     `json:"publicKeyHash"`
-	CertSerial       string     `json:"certSerial"`
-	AuthTokenHash    string     `json:"authTokenHash,omitempty"`
-	CertificatePEM   string     `json:"certificatePem"`
-	ExpiresAt        time.Time  `json:"expiresAt"`
-	RevokedAt        *time.Time `json:"revokedAt,omitempty"`
-	InstalledVersion string     `json:"installedVersion"`
+	ID               string           `json:"id"`
+	DeviceID         string           `json:"deviceId"`
+	PublicKeyHash    string           `json:"publicKeyHash"`
+	CertSerial       string           `json:"certSerial"`
+	AuthTokenHash    string           `json:"authTokenHash,omitempty"`
+	CertificatePEM   string           `json:"certificatePem"`
+	ExpiresAt        time.Time        `json:"expiresAt"`
+	RevokedAt        *time.Time       `json:"revokedAt,omitempty"`
+	InstalledVersion string           `json:"installedVersion"`
+	Capabilities     ScanCapabilities `json:"capabilities,omitempty"`
 }
 
 type Device struct {

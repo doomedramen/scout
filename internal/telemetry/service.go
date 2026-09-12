@@ -18,6 +18,7 @@ type Heartbeat struct {
 	UptimeSeconds    int64
 	CollectorStates  []store.CollectorDescriptorState
 	UpdateState      map[string]string
+	Capabilities     store.ScanCapabilities
 }
 
 func (s *Service) clock() time.Time {
@@ -57,5 +58,5 @@ func (s *Service) Heartbeat(ctx context.Context, agentID string, heartbeat Heart
 	if heartbeat.BootID == "" || heartbeat.UptimeSeconds < 0 {
 		return time.Time{}, 0, store.ErrInvalid
 	}
-	return s.Store.RecordHeartbeat(ctx, agentID, store.Heartbeat{BootID: heartbeat.BootID, InstalledVersion: heartbeat.InstalledVersion, UptimeSeconds: heartbeat.UptimeSeconds, CollectorStates: heartbeat.CollectorStates, UpdateState: heartbeat.UpdateState})
+	return s.Store.RecordHeartbeat(ctx, agentID, store.Heartbeat{BootID: heartbeat.BootID, InstalledVersion: heartbeat.InstalledVersion, UptimeSeconds: heartbeat.UptimeSeconds, CollectorStates: heartbeat.CollectorStates, UpdateState: heartbeat.UpdateState, Capabilities: heartbeat.Capabilities})
 }

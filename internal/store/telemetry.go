@@ -147,9 +147,35 @@ type Heartbeat struct {
 	UptimeSeconds    int64                      `json:"uptimeSeconds"`
 	CollectorStates  []CollectorDescriptorState `json:"collectorStates"`
 	UpdateState      map[string]string          `json:"updateState"`
+	Capabilities     ScanCapabilities           `json:"capabilities,omitempty"`
+}
+
+func ValidateScanCapabilities(capabilities ScanCapabilities) error {
+	if len(capabilities.ScanProtocolVersions) > 8 || len(capabilities.ScanTransports) > 8 {
+		return ErrInvalid
+	}
+	seenVersions := map[int]bool{}
+	for _, version := range capabilities.ScanProtocolVersions {
+		if version < 1 || version > 16 || seenVersions[version] {
+			return ErrInvalid
+		}
+		seenVersions[version] = true
+	}
+	seenTransports := map[string]bool{}
+	for _, transport := range capabilities.ScanTransports {
+		transport = strings.TrimSpace(transport)
+		if transport == "" || len(transport) > 16 || seenTransports[transport] {
+			return ErrInvalid
+		}
+		seenTransports[transport] = true
+	}
+	return nil
 }
 
 func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, heartbeat Heartbeat) (time.Time, int64, error) {
+	if err := ValidateScanCapabilities(heartbeat.Capabilities); err != nil {
+		return time.Time{}, 0, err
+	}
 	now := s.now().UTC()
 	var revision int64
 	err := s.mutate(ctx, func(state *State) error {
@@ -173,6 +199,7 @@ func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, heartbeat H
 			device.AgentVersion = heartbeat.InstalledVersion
 			agent.InstalledVersion = heartbeat.InstalledVersion
 		}
+		agent.Capabilities = cloneScanCapabilities(heartbeat.Capabilities)
 		device.CollectorStates = append([]CollectorDescriptorState(nil), heartbeat.CollectorStates...)
 		for _, collector := range heartbeat.CollectorStates {
 			if strings.Contains(strings.ToLower(collector.Diagnostic), "truncated") {

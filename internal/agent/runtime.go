@@ -149,7 +149,7 @@ func (r *Runtime) ReportOnce(ctx context.Context) error {
 	if uptime < 0 {
 		uptime = 0
 	}
-	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}})
+	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}, "capabilities": map[string]any{"scanProtocolVersions": []int{1}, "scanTransports": []string{store.ScanTransportTCP}}})
 	_ = r.post(ctx, "/api/v1/agent/v1/heartbeat", heartbeat)
 	_ = r.syncUpdate(ctx)
 	return nil

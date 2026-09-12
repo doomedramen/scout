@@ -504,6 +504,12 @@ func (s *Store) AppendAudit(ctx context.Context, event AuditEvent) error {
 
 func cloneStrings(values []string) []string { return append([]string(nil), values...) }
 func cloneInts(values []int) []int          { return append([]int(nil), values...) }
+
+func cloneScanCapabilities(capabilities ScanCapabilities) ScanCapabilities {
+	capabilities.ScanProtocolVersions = cloneInts(capabilities.ScanProtocolVersions)
+	capabilities.ScanTransports = cloneStrings(capabilities.ScanTransports)
+	return capabilities
+}
 func cloneMap(values map[string]string) map[string]string {
 	result := map[string]string{}
 	for key, value := range values {

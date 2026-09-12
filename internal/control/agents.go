@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -106,12 +107,17 @@ func (a *App) agentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		UptimeSeconds    int64                            `json:"uptimeSeconds"`
 		CollectorStates  []store.CollectorDescriptorState `json:"collectorStates"`
 		UpdateState      map[string]string                `json:"updateState"`
+		Capabilities     *store.ScanCapabilities          `json:"capabilities"`
 	}
 	if err := decodeJSON(r, &request, 64<<10); err != nil {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	serverTime, revision, err := a.Telemetry.Heartbeat(r.Context(), agent.ID, telemetry.Heartbeat{BootID: request.BootID, InstalledVersion: request.InstalledVersion, UptimeSeconds: request.UptimeSeconds, CollectorStates: request.CollectorStates, UpdateState: request.UpdateState})
+	capabilities := store.ScanCapabilities{}
+	if request.Capabilities != nil {
+		capabilities = *request.Capabilities
+	}
+	serverTime, revision, err := a.Telemetry.Heartbeat(r.Context(), agent.ID, telemetry.Heartbeat{BootID: request.BootID, InstalledVersion: request.InstalledVersion, UptimeSeconds: request.UptimeSeconds, CollectorStates: request.CollectorStates, UpdateState: request.UpdateState, Capabilities: capabilities})
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
@@ -129,11 +135,11 @@ func (a *App) agentDesiredState(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
-	visible := make([]store.Scope, 0, len(scopes))
-	for _, scope := range scopes {
-		if scope.Enabled {
-			visible = append(visible, scope)
-		}
+	visible := []store.Scope{}
+	scanAssignment, scanErr := a.scanAssignmentForAgent(r.Context(), agent)
+	if scanErr != nil {
+		writeMappedError(w, r, scanErr)
+		return
 	}
 	assignment, assignmentErr := a.Store.Assignment(r.Context(), agent.DeviceID)
 	update := any(nil)
@@ -143,7 +149,64 @@ func (a *App) agentDesiredState(w http.ResponseWriter, r *http.Request) {
 			update = map[string]any{"assignment": assignment, "release": releaseManifest(release), "artifactPath": "/api/v1/agent/v1/releases/" + release.Digest}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"revision": maxScopeRevision(visible), "expiresAt": time.Now().UTC().Add(5 * time.Minute), "discoveryPolicy": visible, "collectorConfig": []any{}, "updateAssignment": update})
+	writeJSON(w, http.StatusOK, map[string]any{"revision": maxScopeRevision(scopes), "expiresAt": a.Store.Now().Add(5 * time.Minute), "discoveryPolicy": visible, "scanAssignment": scanAssignment, "collectorConfig": []any{}, "updateAssignment": update})
+}
+
+func (a *App) scanAssignmentForAgent(ctx context.Context, agent store.AgentIdentity) (any, error) {
+	if !supportsScanCapabilities(agent.Capabilities) {
+		return nil, nil
+	}
+	page, err := a.Store.ListScanRuns(ctx, store.ScanRunQuery{ScannerID: agent.ID, Limit: 500})
+	if err != nil {
+		return nil, err
+	}
+	now := a.Store.Now()
+	for _, run := range page.Items {
+		if run.ScannerKind != "agent" || run.ScannerID != agent.ID || run.State != store.ScanRunLeased && run.State != store.ScanRunRunning && run.State != store.ScanRunUploading || run.CancellationRequested || run.AssignmentExpiresAt.IsZero() || !now.Before(run.AssignmentExpiresAt) || run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt) {
+			continue
+		}
+		currentPolicy, policyErr := a.Store.ScanPolicy(ctx, run.ScopeID)
+		if policyErr != nil || currentPolicy.Revision != run.ScopeRevision || !currentPolicy.Enabled {
+			continue
+		}
+		decision, decisionErr := a.Policy.ValidateScanVantage(ctx, run.ScopeID, policy.ScanVantage{Kind: "agent", ID: agent.ID, DeviceID: agent.DeviceID})
+		if decisionErr != nil {
+			return nil, decisionErr
+		}
+		if !decision.Allowed {
+			continue
+		}
+		return map[string]any{
+			"runId":               run.ID,
+			"leaseEpoch":          run.LeaseEpoch,
+			"scopeId":             run.ScopeID,
+			"scopeRevision":       run.ScopeRevision,
+			"assignmentExpiresAt": run.AssignmentExpiresAt,
+			"ranges":              run.PolicySnapshot.Ranges,
+			"exclusions":          run.PolicySnapshot.Exclusions,
+			"entryPoints":         run.PolicySnapshot.EntryPoints,
+			"limits":              run.PolicySnapshot.Limits,
+		}, nil
+	}
+	return nil, nil
+}
+
+func supportsScanCapabilities(capabilities store.ScanCapabilities) bool {
+	hasVersion := false
+	for _, version := range capabilities.ScanProtocolVersions {
+		if version == 1 {
+			hasVersion = true
+			break
+		}
+	}
+	hasTransport := false
+	for _, transport := range capabilities.ScanTransports {
+		if transport == store.ScanTransportTCP {
+			hasTransport = true
+			break
+		}
+	}
+	return hasVersion && hasTransport
 }
 
 func (a *App) agentScanResults(w http.ResponseWriter, r *http.Request) {
