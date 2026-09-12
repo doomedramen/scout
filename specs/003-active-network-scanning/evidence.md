@@ -254,9 +254,8 @@ Never attach credential values, private keys, host-key private material, banners
   passed. The only active listener was a process-local loopback test fixture;
   RFC 5737 targets used an injected dialer. No real device, network, or
   credential was contacted.
-- Remaining limits: these are scanner-level tests. Coordinator scheduling,
-  server/agent execution, result paging, and end-to-end packet-boundary
-  evidence remain open in T011–T020.
+- Remaining limits: these are scanner-level tests. Full segmented lab packet
+  capture and reference-scale performance evidence remain open in T034/T043.
 
 ## T013 — bounded cancellable TCP scanner
 
@@ -277,9 +276,9 @@ Never attach credential values, private keys, host-key private material, banners
   integration run completed in 54.959 seconds. No scan was enabled and no
   real device, network, or credential was contacted.
 - Remaining limits: server coordinator execution and authenticated result
-  paging are covered by T014; agent packaging and assigned-agent scheduling
-  remain open in T017 and T031, while end-to-end packet-boundary evidence
-  remains open in T020 and T043.
+  paging are covered by T014/T020; assigned-agent scheduling and packaging
+  remain open in T031, while segmented packet-boundary evidence remains open
+  in T034/T043.
 
 ## T011 — coordinator failure-first tests
 
@@ -341,8 +340,8 @@ Never attach credential values, private keys, host-key private material, banners
   -count=1`; `go vet ./...`; and `git diff --check` passed. No real device,
   network, or credential was contacted.
 - Remaining limits: process-level lifecycle behavior will be included in the
-  disposable Compose and end-to-end gates; agent packaging and assigned-agent
-  scheduling remain T017 and T031.
+  disposable Compose and final end-to-end gates; assigned-agent scheduling
+  remains T031.
 
 ## T012 — agent scan failure-first tests
 
@@ -470,4 +469,33 @@ Never attach credential values, private keys, host-key private material, banners
   format:check` passed, along with the backend suite and vet checks recorded
   under T018. No real device, network, or credential was contacted.
 - Remaining limits: candidate discovery presentation and credential actions
-  remain open in T023–T031; Playwright acceptance remains T020.
+  remain open in T023–T031.
+
+## T020 — controlled server and agent scan acceptance
+
+- Requirements: FR-001–FR-009, FR-014–FR-018; SC-001–SC-003, SC-006–SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: fa13da5.
+- Added a controlled integration journey for both vantages. The server test
+  authenticates an owner through setup, login, CSRF-protected scope/policy
+  creation, and on-demand run creation before executing the coordinator. The
+  agent test enrolls a disposable Linux identity, persists heartbeat scan
+  capabilities, receives an authenticated desired-state assignment, performs
+  a real TCP handshake, uploads results, and projects a needs-credentials SSH
+  candidate while ordinary telemetry continues. Both tests use a process-local
+  loopback listener and a dial recorder to assert that the excluded RFC 5737
+  address receives zero attempts and that no application bytes are sent.
+  The Playwright test exercises the same owner-facing scope review, enablement,
+  server-scan opt-in, on-demand action, and eventual needs-credentials state
+  against the disposable local server port.
+- Exact verification commands and outcomes: the first integration run exposed
+  an unsupported secondary loopback bind; the fixture was changed to the
+  injected dial seam. It then exposed an attempt-budget clamp bug in server
+  execution and a browser crash caused by empty `agentIds` serializing as
+  `null`; both were fixed. `go test ./tests/integration -run
+  TestServerAndAgentScansUseControlledListenersAndHonorExclusions -count=1`,
+  `go vet ./...`, `npm run check`, `npm run build`, `npm run format:check`, and
+  `npm run test:e2e:browser` passed. The browser suite completed with 8 tests
+  passed. No real device, network, or credential was contacted.
+- Remaining limits: the fixture proves local server/agent behavior, not the
+  segmented Linux lab, 256-address performance target, or full credential and
+  enrollment journey; those remain T022–T043.
