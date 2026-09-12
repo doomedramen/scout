@@ -839,5 +839,36 @@ For future results append: task and requirement IDs, commit, date, exact command
   `npm run test:e2e:browser` (5/5 tests passed); and `git diff --check` all
   passed. No production database, real device, production credential, or
   deployment was used.
-- T030 is now the next unchecked task. Live hardware support, 100-device/year
+- T032 is now the next unchecked task. Live hardware support, 100-device/year
   capacity, and production deployment remain unclaimed evidence gates.
+
+## T030/T031 — SMART storage fixtures and bounded collector
+
+- Requirements: FR-025, FR-027, FR-028, FR-032; SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: `ad33cba`.
+- Added deterministic, secret-free smartctl JSON fixtures for SATA/ATA health
+  failure, SAS, NVMe, standby, and permission denial, including process exit
+  bitmask cases and absent attributes. Tests cover host-scoped identity that
+  survives a path change, separates replacement media, and marks repeated
+  serials as ambiguous instead of merging them.
+- Implemented the SMART adapter through the shared collector contract. It uses
+  a fixed `smartctl --scan -j` discovery call and fixed per-device
+  `-j -n standby,0 -d <allowlisted-type> -- <path>` reads, with no shell or
+  arbitrary utility arguments. Output is capped at 1 MiB, each device has a
+  10-second deadline, the full collection has a 60-second bound, and the
+  inventory is capped at 64 devices. Temperature, wear, and error fields are
+  emitted with explicit unavailable values when absent; health exit bits and
+  SMART/NVMe fault state remain visible without discarding valid readings.
+  Standby, denied access, malformed output, missing smartctl, truncation, and
+  per-device failures remain bounded diagnostics, while other disks continue.
+  The descriptor declares SMART/block-device read permissions and is listed in
+  the shared registry.
+- Exact verification commands and outcomes: `go test
+  ./internal/collector/... -count=1`; `go vet ./internal/collector/...`;
+  `go test ./... -count=1`; `go vet ./...`; `npm run lint`; `npm run
+  format:check`; `npm run check`; `npm run build`; `scripts/test-integration.sh`
+  against disposable PostgreSQL 17; `npm run test:e2e:browser` (5/5 passed);
+  and `git diff --check` all passed.
+- The development host does not have smartmontools or representative SATA,
+  SAS, or NVMe hardware available, so no live family support claim is made.
+  T032 is next; ZFS live evidence remains a later T034/release gate.

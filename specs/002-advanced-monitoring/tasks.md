@@ -59,8 +59,8 @@ Independent gate: Year-range queries retain extrema/coverage after restart withi
 
 Independent gate: Each required family handles faults, missing permission and identity changes.
 
-- [ ] T030 [US6] Add SATA/SAS/NVMe JSON/exit-bitmask/standby/permission fixtures and stable identity cases in internal/collector/smart/collector_test.go (FR-025, FR-027, FR-028, FR-032; SC-009, SC-011).
-- [ ] T031 [US6] Implement bounded non-waking SMART adapter in internal/collector/smart/collector.go and capability/fault translation without arbitrary arguments (FR-025, FR-027, FR-028, FR-032; SC-009).
+- [X] T030 [US6] Add SATA/SAS/NVMe JSON/exit-bitmask/standby/permission fixtures and stable identity cases in internal/collector/smart/collector_test.go (FR-025, FR-027, FR-028, FR-032; SC-009, SC-011).
+- [X] T031 [US6] Implement bounded non-waking SMART adapter in internal/collector/smart/collector.go and capability/fault translation without arbitrary arguments (FR-025, FR-027, FR-028, FR-032; SC-009).
 - [ ] T032 [US6] Implement fixed-query ZFS pool/dataset GUID, capacity, rate and scrub parser with reset/partial/permission fixtures in internal/collector/zfs/collector.go and internal/collector/zfs/collector_test.go (FR-026, FR-027, FR-028, FR-032; SC-009, SC-011).
 - [ ] T033 [US6] Add typed storage-fault evaluation and per-entity storage views in internal/alerts/storage.go and apps/web/src/views/storage.tsx; prevent physical/usable double-counting (FR-001, FR-025, FR-026, FR-027, FR-028, FR-019; SC-009, SC-010).
 - [ ] T034 [US6] Create scripts/test-storage-health.sh and record SMART family and disposable-ZFS live evidence in specs/002-advanced-monitoring/evidence.md including grants and replacement behavior (FR-025, FR-026, FR-027, FR-028, FR-034; SC-009).
