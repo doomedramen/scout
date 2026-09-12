@@ -236,7 +236,7 @@ func TestCoordinatorExecutesControlledServerTCPScanAndPersistsEvidence(t *testin
 		t.Fatalf("controlled scan state: %+v", runs[0])
 	}
 	observations, err := repository.ListEntryPointObservations(ctx, store.EntryPointObservationQuery{RunID: runs[0].ID, Limit: 10})
-	if err != nil || len(observations.Items) != 1 || observations.Items[0].Outcome != "open" || observations.Items[0].Actionable {
+	if err != nil || len(observations.Items) != 1 || observations.Items[0].Outcome != "open" || !observations.Items[0].Actionable {
 		t.Fatalf("controlled scan evidence: %+v err=%v", observations.Items, err)
 	}
 }

@@ -639,16 +639,23 @@ type TrustRecord struct {
 }
 
 type AccessRequest struct {
-	ID           string            `json:"id"`
-	DeviceID     string            `json:"deviceId"`
-	ScopeID      string            `json:"scopeId,omitempty"`
-	CandidateID  string            `json:"candidateId,omitempty"`
-	AccessMethod string            `json:"accessMethod,omitempty"`
-	Endpoint     string            `json:"endpoint,omitempty"`
-	ReasonCode   string            `json:"reasonCode"`
-	SafeDetails  map[string]string `json:"safeDetails"`
-	State        string            `json:"state"`
-	LastAttempt  time.Time         `json:"lastAttempt"`
+	ID                      string            `json:"id"`
+	DeviceID                string            `json:"deviceId"`
+	ScopeID                 string            `json:"scopeId,omitempty"`
+	CandidateID             string            `json:"candidateId,omitempty"`
+	AccessMethod            string            `json:"accessMethod,omitempty"`
+	Endpoint                string            `json:"endpoint,omitempty"`
+	EntryPointObservationID string            `json:"entryPointObservationId,omitempty"`
+	ReasonCode              string            `json:"reasonCode"`
+	SafeDetails             map[string]string `json:"safeDetails"`
+	State                   string            `json:"state"`
+	LastAttempt             time.Time         `json:"lastAttempt"`
+}
+
+type ScanCandidateUpdate struct {
+	Candidate     Candidate
+	Extension     ScanCandidateExtension
+	AccessRequest *AccessRequest
 }
 
 type Candidate struct {

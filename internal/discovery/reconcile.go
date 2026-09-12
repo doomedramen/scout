@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,8 +85,8 @@ var safeScanPartialReasons = map[string]bool{
 }
 
 // IngestScanResultPage validates authenticated scanner output against the
-// immutable run snapshot, then atomically stores evidence. It never creates a
-// candidate, access request, credential grant, or enrollment job.
+// immutable run snapshot, atomically stores evidence, and projects accepted
+// evidence into the conservative candidate/access view.
 func (s *Service) IngestScanResultPage(ctx context.Context, scanner policy.ScanVantage, page ScanResultPage) (store.ScanResultReceipt, bool, error) {
 	if s == nil || s.Store == nil || s.Policy == nil {
 		return store.ScanResultReceipt{}, false, store.ErrInvalid
@@ -145,7 +147,13 @@ func (s *Service) IngestScanResultPage(ctx context.Context, scanner policy.ScanV
 	receipt := store.ScanResultReceipt{RunID: page.RunID, PageOrdinal: page.PageOrdinal, ContentHash: contentHash, AcceptedAt: now, ResultCount: len(observations), IsFinal: page.Final}
 	accepted, duplicate, err := s.Store.AcceptScanResultPage(ctx, receipt, observations)
 	if err != nil || duplicate || !page.Final {
+		if err == nil && !duplicate && len(observations) > 0 {
+			_, err = s.ReconcileScanObservations(ctx, observations)
+		}
 		return accepted, duplicate, err
+	}
+	if _, err := s.ReconcileScanObservations(ctx, observations); err != nil {
+		return store.ScanResultReceipt{}, false, err
 	}
 	terminalState := store.ScanRunCompleted
 	partialReason := ""
@@ -159,6 +167,198 @@ func (s *Service) IngestScanResultPage(ctx context.Context, scanner policy.ScanV
 	}
 	_ = finalized
 	return accepted, false, nil
+}
+
+// ReconcileScanObservations projects accepted, credential-free scan evidence
+// into one scope/address candidate. It deliberately does not infer a device
+// identity from an address and does not create enrollment work.
+func (s *Service) ReconcileScanObservations(ctx context.Context, observations []store.EntryPointObservation) ([]store.Candidate, error) {
+	if s == nil || s.Store == nil || s.Policy == nil {
+		return nil, store.ErrInvalid
+	}
+	result := make([]store.Candidate, 0, len(observations))
+	resultIndex := map[string]int{}
+	for _, observation := range observations {
+		candidate, projected, err := s.reconcileScanObservation(ctx, observation)
+		if err != nil {
+			return nil, err
+		}
+		if projected {
+			if index, exists := resultIndex[candidate.ID]; exists {
+				result[index] = candidate
+			} else {
+				resultIndex[candidate.ID] = len(result)
+				result = append(result, candidate)
+			}
+		}
+	}
+	return result, nil
+}
+
+func (s *Service) reconcileScanObservation(ctx context.Context, observation store.EntryPointObservation) (store.Candidate, bool, error) {
+	if observation.ScopeID == "" || observation.ScannerID == "" || observation.Address == "" || observation.EntryPointID == "" {
+		return store.Candidate{}, false, nil
+	}
+	scope, err := s.Store.GetScope(ctx, observation.ScopeID)
+	if err != nil {
+		return store.Candidate{}, false, err
+	}
+	currentPolicy, err := s.Store.ScanPolicy(ctx, observation.ScopeID)
+	if err != nil {
+		return store.Candidate{}, false, err
+	}
+	if !scope.Enabled || !currentPolicy.Enabled || currentPolicy.Revision != observation.ScopeRevision || scopeExcludesAddress(scope, observation.Address) {
+		return store.Candidate{}, false, nil
+	}
+	entryPoint, found := scanEntryPoint(currentPolicy.EntryPoints, observation.EntryPointID, observation.Transport, observation.Port)
+	if !found || !entryPoint.Enabled {
+		return store.Candidate{}, false, nil
+	}
+	if observation.Outcome != "open" {
+		candidate, candidateErr := s.Store.CandidateByScopeAddress(ctx, observation.ScopeID, observation.Address)
+		if candidateErr == store.ErrNotFound {
+			return store.Candidate{}, false, nil
+		}
+		if candidateErr != nil {
+			return store.Candidate{}, false, candidateErr
+		}
+		state := "stale"
+		if observation.Outcome == "unreachable" {
+			state = "unreachable"
+		}
+		return s.applyScanProjection(ctx, observation, entryPoint, candidate, state, "contradicted", nil)
+	}
+
+	state := "unsupported"
+	preferredMethod := ""
+	var request *store.AccessRequest
+	if entryPoint.AccessMethod == store.ScanAccessSSH {
+		preferredMethod = store.ScanAccessSSH
+		state, request, err = s.scanAccessState(ctx, scope, observation)
+		if err != nil {
+			return store.Candidate{}, false, err
+		}
+	}
+	candidate, candidateErr := s.Store.CandidateByScopeAddress(ctx, observation.ScopeID, observation.Address)
+	if candidateErr != nil && candidateErr != store.ErrNotFound {
+		return store.Candidate{}, false, candidateErr
+	}
+	return s.applyScanProjection(ctx, observation, entryPoint, candidate, state, "current", requestWithMethod(request, preferredMethod))
+}
+
+func (s *Service) scanAccessState(ctx context.Context, scope store.Scope, observation store.EntryPointObservation) (string, *store.AccessRequest, error) {
+	endpoint := net.JoinHostPort(observation.Address, strconv.Itoa(observation.Port))
+	request := &store.AccessRequest{
+		ScopeID:                 scope.ID,
+		AccessMethod:            store.ScanAccessSSH,
+		Endpoint:                endpoint,
+		EntryPointObservationID: observation.ID,
+		ReasonCode:              "missing_credentials",
+		SafeDetails:             map[string]string{"target": endpoint, "method": store.ScanAccessSSH},
+		State:                   "open",
+	}
+	if scope.CredentialRef == "" {
+		return "needs_credentials", request, nil
+	}
+	credential, err := s.Store.Credential(ctx, scope.CredentialRef)
+	if err != nil || credential.RevokedAt != nil {
+		request.ReasonCode = "invalid_credentials"
+		return "invalid_credentials", request, nil
+	}
+	if scope.TrustRef != "" {
+		trusted, trustErr := s.Store.ScopeTrust(ctx, scope.ID, endpoint, "")
+		if trustErr != nil {
+			return "needs_host_trust", nil, trustErr
+		}
+		if !trusted {
+			request.ReasonCode = "host_trust_required"
+			return "needs_host_trust", request, nil
+		}
+	}
+	return "discovered", nil, nil
+}
+
+func (s *Service) applyScanProjection(ctx context.Context, observation store.EntryPointObservation, entryPoint store.ScanEntryPoint, existing store.Candidate, state, coverage string, request *store.AccessRequest) (store.Candidate, bool, error) {
+	lastScanned := observation.ObservedAt
+	if lastScanned.IsZero() {
+		lastScanned = s.clock()
+	}
+	candidate := existing
+	candidate.ScopeID = observation.ScopeID
+	candidate.Address = observation.Address
+	candidate.Source = "active-scan"
+	candidate.State = state
+	candidate.CoverageState = coverage
+	candidate.LastSeen = lastScanned
+	candidate.ExpiresAt = observation.ExpiresAt
+	candidate.ScopeRevision = observation.ScopeRevision
+	candidate.EvidenceIDs = []string{observation.ID}
+	entryPointIDs := []string{entryPoint.ID}
+	preferred := ""
+	if entryPoint.AccessMethod == store.ScanAccessSSH {
+		preferred = store.ScanAccessSSH
+	}
+	projection := store.ScanCandidateUpdate{
+		Candidate: candidate,
+		Extension: store.ScanCandidateExtension{
+			CandidateID:           existing.ID,
+			CoverageState:         coverage,
+			EntryPointIDs:         entryPointIDs,
+			PreferredAccessMethod: preferred,
+			LastScannedAt:         &lastScanned,
+			Provenance: []store.ScanVantageEvidence{{
+				ScannerKind:    observation.ScannerKind,
+				ScannerID:      observation.ScannerID,
+				LastObservedAt: lastScanned,
+				Outcome:        observation.Outcome,
+			}},
+			UpdatedAt: s.clock(),
+		},
+		AccessRequest: request,
+	}
+	result, _, err := s.Store.ApplyScanCandidate(ctx, projection)
+	if err != nil {
+		return store.Candidate{}, false, err
+	}
+	if observation.ID != "" && entryPoint.AccessMethod == store.ScanAccessSSH && observation.Outcome == "open" {
+		if err := s.Store.MarkScanObservationActionable(ctx, observation.ID, true); err != nil && err != store.ErrNotFound {
+			return store.Candidate{}, false, err
+		}
+	}
+	return result, true, nil
+}
+
+func requestWithMethod(request *store.AccessRequest, method string) *store.AccessRequest {
+	if request == nil || method == "" {
+		return request
+	}
+	request.AccessMethod = method
+	return request
+}
+
+func scanEntryPoint(entryPoints []store.ScanEntryPoint, id, transport string, port int) (store.ScanEntryPoint, bool) {
+	for _, entryPoint := range entryPoints {
+		if entryPoint.ID == id && entryPoint.Transport == transport && entryPoint.Port == port {
+			return entryPoint, true
+		}
+	}
+	return store.ScanEntryPoint{}, false
+}
+
+func scopeExcludesAddress(scope store.Scope, rawAddress string) bool {
+	address, err := netip.ParseAddr(rawAddress)
+	if err != nil {
+		return true
+	}
+	for _, raw := range scope.Exclusions {
+		if excluded, parseErr := netip.ParseAddr(strings.TrimSpace(raw)); parseErr == nil && excluded == address {
+			return true
+		}
+		if prefix, parseErr := netip.ParsePrefix(strings.TrimSpace(raw)); parseErr == nil && prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func scanVantageError(reason string) error {

@@ -770,6 +770,178 @@ func (s *Store) ScanResultReceipt(ctx context.Context, runID string, pageOrdinal
 	return result, err
 }
 
+func (s *Store) ApplyScanCandidate(ctx context.Context, update ScanCandidateUpdate) (Candidate, *AccessRequest, error) {
+	address, err := normalizeAddress(update.Candidate.Address)
+	if err != nil || update.Candidate.ScopeID == "" {
+		return Candidate{}, nil, ErrInvalid
+	}
+	var result Candidate
+	var requestResult *AccessRequest
+	err = s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		scope, ok := state.Scopes[update.Candidate.ScopeID]
+		if !ok {
+			return ErrNotFound
+		}
+		candidate := cloneCandidate(update.Candidate)
+		candidate.Address = address
+		candidate.SiteID = scope.SiteID
+		if candidate.Source == "" {
+			candidate.Source = "active-scan"
+		}
+		now := s.now().UTC()
+		if candidate.LastSeen.IsZero() {
+			candidate.LastSeen = now
+		}
+		if candidate.FirstSeen.IsZero() {
+			candidate.FirstSeen = candidate.LastSeen
+		}
+		if candidate.ExpiresAt.IsZero() {
+			candidate.ExpiresAt = candidate.LastSeen.Add(15 * time.Minute)
+		}
+		key := candidateKey(candidate.ScopeID, candidate.Address)
+		if old, exists := state.Candidates[key]; exists {
+			candidate.ID = old.ID
+			candidate.FirstSeen = old.FirstSeen
+			candidate.EvidenceIDs = appendUniqueStrings(old.EvidenceIDs, candidate.EvidenceIDs...)
+			candidate.Excluded = old.Excluded || candidate.Excluded
+			if old.State == "queued" || old.State == "enrolling" || old.State == "enrolled" {
+				candidate.State = old.State
+			}
+		}
+		if candidate.ID == "" {
+			candidate.ID = NewID()
+		}
+		if candidate.Excluded || scopeExcludes(scope, candidate.Address) {
+			candidate.Excluded = true
+			candidate.State = "excluded"
+		}
+		extension := mergeScanCandidateExtension(state.ScanCandidateExtensions[candidate.ID], update.Extension, candidate.ID, now)
+		candidate.CoverageState = extension.CoverageState
+		candidate.EntryPointIDs = append([]string(nil), extension.EntryPointIDs...)
+		candidate.PreferredAccessMethod = extension.PreferredAccessMethod
+		candidate.LastScannedAt = cloneTimePointer(extension.LastScannedAt)
+		candidate.Provenance = cloneScanVantageEvidence(extension.Provenance)
+		if candidate.ScopeRevision == 0 {
+			candidate.ScopeRevision = scope.Revision
+		}
+		state.Candidates[key] = candidate
+		state.ScanCandidateExtensions[candidate.ID] = extension
+		result = cloneCandidate(candidate)
+		if update.AccessRequest != nil {
+			request := *update.AccessRequest
+			if request.CandidateID == "" {
+				request.CandidateID = candidate.ID
+			}
+			if request.DeviceID == "" {
+				request.DeviceID = candidate.ID
+			}
+			request, requestErr := upsertAccessRequestState(state, request, now)
+			if requestErr != nil {
+				return requestErr
+			}
+			requestResult = &request
+		}
+		return nil
+	})
+	return result, requestResult, err
+}
+
+func (s *Store) CandidateByScopeAddress(ctx context.Context, scopeID, rawAddress string) (Candidate, error) {
+	address, err := normalizeAddress(rawAddress)
+	if err != nil || scopeID == "" {
+		return Candidate{}, ErrInvalid
+	}
+	var result Candidate
+	err = s.read(ctx, func(state *State) error {
+		candidate, ok := state.Candidates[candidateKey(scopeID, address)]
+		if !ok {
+			return ErrNotFound
+		}
+		result = cloneCandidate(candidate)
+		return nil
+	})
+	return result, err
+}
+
+func mergeScanCandidateExtension(existing, incoming ScanCandidateExtension, candidateID string, now time.Time) ScanCandidateExtension {
+	merged := existing
+	merged.CandidateID = candidateID
+	if incoming.CoverageState != "" {
+		merged.CoverageState = incoming.CoverageState
+	}
+	if merged.CoverageState == "" {
+		merged.CoverageState = "current"
+	}
+	merged.EntryPointIDs = appendUniqueStrings(merged.EntryPointIDs, incoming.EntryPointIDs...)
+	if len(merged.EntryPointIDs) > 64 {
+		merged.EntryPointIDs = merged.EntryPointIDs[:64]
+	}
+	if incoming.PreferredAccessMethod != "" {
+		merged.PreferredAccessMethod = incoming.PreferredAccessMethod
+	}
+	if incoming.LastScannedAt != nil && (merged.LastScannedAt == nil || incoming.LastScannedAt.After(*merged.LastScannedAt)) {
+		value := *incoming.LastScannedAt
+		merged.LastScannedAt = &value
+	}
+	merged.Provenance = mergeScanVantageEvidence(merged.Provenance, incoming.Provenance)
+	merged.UpdatedAt = now
+	return merged
+}
+
+func mergeScanVantageEvidence(existing, incoming []ScanVantageEvidence) []ScanVantageEvidence {
+	merged := cloneScanVantageEvidence(existing)
+	for _, item := range incoming {
+		found := false
+		for index := range merged {
+			if merged[index].ScannerKind == item.ScannerKind && merged[index].ScannerID == item.ScannerID {
+				if item.LastObservedAt.After(merged[index].LastObservedAt) {
+					merged[index] = item
+				}
+				found = true
+				break
+			}
+		}
+		if !found && len(merged) < 16 {
+			merged = append(merged, item)
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].ScannerKind == merged[j].ScannerKind {
+			return merged[i].ScannerID < merged[j].ScannerID
+		}
+		return merged[i].ScannerKind < merged[j].ScannerKind
+	})
+	return merged
+}
+
+func cloneScanVantageEvidence(items []ScanVantageEvidence) []ScanVantageEvidence {
+	return append([]ScanVantageEvidence(nil), items...)
+}
+
+func cloneTimePointer(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
+func appendUniqueStrings(existing []string, additions ...string) []string {
+	result := append([]string(nil), existing...)
+	seen := make(map[string]bool, len(result)+len(additions))
+	for _, value := range result {
+		seen[value] = true
+	}
+	for _, value := range additions {
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
 func (s *Store) ListEntryPointObservations(ctx context.Context, query EntryPointObservationQuery) (EntryPointObservationPage, error) {
 	var result EntryPointObservationPage
 	err := s.read(ctx, func(state *State) error {
@@ -822,4 +994,19 @@ func (s *Store) GetEntryPointObservation(ctx context.Context, id string) (EntryP
 		return nil
 	})
 	return result, err
+}
+
+func (s *Store) MarkScanObservationActionable(ctx context.Context, id string, actionable bool) error {
+	if strings.TrimSpace(id) == "" {
+		return ErrInvalid
+	}
+	return s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		observation, ok := state.EntryPointObservations[id]
+		if !ok {
+			return ErrNotFound
+		}
+		observation.Actionable = actionable
+		state.EntryPointObservations[id] = observation
+		return nil
+	})
 }

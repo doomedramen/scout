@@ -222,14 +222,33 @@ func (s *Store) UpsertAccessRequest(ctx context.Context, request AccessRequest) 
 		return AccessRequest{}, ErrInvalid
 	}
 	var result AccessRequest
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		var err error
+		result, err = upsertAccessRequestState(state, request, s.now().UTC())
+		return err
+	})
+	return result, err
+}
+
+func upsertAccessRequestState(state *State, request AccessRequest, now time.Time) (AccessRequest, error) {
+	if request.DeviceID == "" || request.ReasonCode == "" {
+		return AccessRequest{}, ErrInvalid
+	}
+	if request.CandidateID != "" || request.AccessMethod != "" || request.Endpoint != "" {
+		if request.CandidateID == "" || request.AccessMethod == "" || request.Endpoint == "" {
+			return AccessRequest{}, ErrInvalid
+		}
+		request.DeviceID = request.CandidateID
+		dedupeKey := scanAccessRequestDedupeKey(request.CandidateID, request.AccessMethod, request.Endpoint)
+		if key, ok := state.ScanAccessRequestKeys[dedupeKey]; ok {
+			if existing, exists := state.AccessRequests[key.AccessRequestID]; exists && accessRequestIsOpen(existing) {
+				return updateAccessRequestState(state, existing, request, key, dedupeKey, now), nil
+			}
+		}
 		for id, existing := range state.AccessRequests {
-			if existing.DeviceID == request.DeviceID && existing.ReasonCode == request.ReasonCode && existing.State == "open" {
-				existing.SafeDetails = cloneMap(request.SafeDetails)
-				existing.LastAttempt = s.now().UTC()
-				state.AccessRequests[id] = existing
-				result = existing
-				return nil
+			if existing.CandidateID == request.CandidateID && existing.AccessMethod == request.AccessMethod && existing.Endpoint == request.Endpoint && accessRequestIsOpen(existing) {
+				key := ScanAccessRequestKey{DedupeKey: dedupeKey, CandidateID: request.CandidateID, AccessMethod: request.AccessMethod, Endpoint: request.Endpoint, AccessRequestID: id, State: existing.State, UpdatedAt: now}
+				return updateAccessRequestState(state, existing, request, key, dedupeKey, now), nil
 			}
 		}
 		if request.ID == "" {
@@ -239,14 +258,62 @@ func (s *Store) UpsertAccessRequest(ctx context.Context, request AccessRequest) 
 			request.State = "open"
 		}
 		if request.LastAttempt.IsZero() {
-			request.LastAttempt = s.now().UTC()
+			request.LastAttempt = now
 		}
 		request.SafeDetails = cloneMap(request.SafeDetails)
 		state.AccessRequests[request.ID] = request
-		result = request
-		return nil
-	})
-	return result, err
+		state.ScanAccessRequestKeys[dedupeKey] = ScanAccessRequestKey{DedupeKey: dedupeKey, CandidateID: request.CandidateID, AccessMethod: request.AccessMethod, Endpoint: request.Endpoint, AccessRequestID: request.ID, State: request.State, UpdatedAt: now}
+		return request, nil
+	}
+	for id, existing := range state.AccessRequests {
+		if existing.DeviceID == request.DeviceID && existing.ReasonCode == request.ReasonCode && existing.State == "open" {
+			existing.SafeDetails = cloneMap(request.SafeDetails)
+			existing.LastAttempt = now
+			state.AccessRequests[id] = existing
+			return existing, nil
+		}
+	}
+	if request.ID == "" {
+		request.ID = NewID()
+	}
+	if request.State == "" {
+		request.State = "open"
+	}
+	if request.LastAttempt.IsZero() {
+		request.LastAttempt = now
+	}
+	request.SafeDetails = cloneMap(request.SafeDetails)
+	state.AccessRequests[request.ID] = request
+	return request, nil
+}
+
+func accessRequestIsOpen(request AccessRequest) bool {
+	return request.State == "open" || request.State == "reevaluating"
+}
+
+func updateAccessRequestState(state *State, existing, requested AccessRequest, key ScanAccessRequestKey, dedupeKey string, now time.Time) AccessRequest {
+	existing.ScopeID = requested.ScopeID
+	existing.CandidateID = requested.CandidateID
+	existing.AccessMethod = requested.AccessMethod
+	existing.Endpoint = requested.Endpoint
+	existing.EntryPointObservationID = requested.EntryPointObservationID
+	existing.ReasonCode = requested.ReasonCode
+	existing.SafeDetails = cloneMap(requested.SafeDetails)
+	existing.LastAttempt = now
+	state.AccessRequests[existing.ID] = existing
+	key.DedupeKey = dedupeKey
+	key.CandidateID = existing.CandidateID
+	key.AccessMethod = existing.AccessMethod
+	key.Endpoint = existing.Endpoint
+	key.AccessRequestID = existing.ID
+	key.State = existing.State
+	key.UpdatedAt = now
+	state.ScanAccessRequestKeys[dedupeKey] = key
+	return existing
+}
+
+func scanAccessRequestDedupeKey(candidateID, accessMethod, endpoint string) string {
+	return candidateID + "\x00" + accessMethod + "\x00" + endpoint
 }
 
 func (s *Store) ListAccessRequests(ctx context.Context, stateFilter, reason string) ([]AccessRequest, error) {
@@ -269,15 +336,41 @@ func (s *Store) ListAccessRequests(ctx context.Context, stateFilter, reason stri
 }
 
 func (s *Store) ResolveAccessRequest(ctx context.Context, id string) error {
-	return s.mutate(ctx, func(state *State) error {
+	return s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		item, ok := state.AccessRequests[id]
 		if !ok {
 			return ErrNotFound
 		}
 		item.State = "resolved"
 		state.AccessRequests[id] = item
+		for key, value := range state.ScanAccessRequestKeys {
+			if value.AccessRequestID == id {
+				value.State = item.State
+				value.UpdatedAt = s.now().UTC()
+				state.ScanAccessRequestKeys[key] = value
+			}
+		}
 		return nil
 	})
+}
+
+func (s *Store) ListAccessRequestsForCandidate(ctx context.Context, candidateID string) ([]AccessRequest, error) {
+	if strings.TrimSpace(candidateID) == "" {
+		return nil, ErrInvalid
+	}
+	result := []AccessRequest{}
+	err := s.read(ctx, func(state *State) error {
+		for _, item := range state.AccessRequests {
+			if item.CandidateID != candidateID && item.DeviceID != candidateID {
+				continue
+			}
+			item.SafeDetails = cloneMap(item.SafeDetails)
+			result = append(result, item)
+		}
+		sort.Slice(result, func(i, j int) bool { return result[i].LastAttempt.After(result[j].LastAttempt) })
+		return nil
+	})
+	return result, err
 }
 
 func (s *Store) CreateJob(ctx context.Context, job Job) (Job, error) {

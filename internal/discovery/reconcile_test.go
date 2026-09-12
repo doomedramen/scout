@@ -21,6 +21,10 @@ type scanIngestionFixture struct {
 }
 
 func newScanIngestionFixture(t *testing.T) scanIngestionFixture {
+	return newScanIngestionFixtureWithEntryPoints(t, nil)
+}
+
+func newScanIngestionFixtureWithEntryPoints(t *testing.T, entryPoints []store.ScanEntryPoint) scanIngestionFixture {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Date(2026, 9, 12, 15, 0, 0, 0, time.UTC)
@@ -52,6 +56,9 @@ func newScanIngestionFixture(t *testing.T) scanIngestionFixture {
 	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(entryPoints) > 0 {
+		scanPolicy.EntryPoints = entryPoints
 	}
 	scanPolicy.AgentIDs = []string{scanner.ID}
 	scanPolicy, err = repository.UpdateScanPolicy(ctx, scope.ID, scanPolicy.Revision, scanPolicy)
@@ -112,7 +119,7 @@ func validScanResultPage(fixture scanIngestionFixture) ScanResultPage {
 	}
 }
 
-func TestIngestScanResultPageAcceptsAuthenticatedBoundedResultWithoutAction(t *testing.T) {
+func TestIngestScanResultPageProjectsOpenSSHAsNeedsCredentials(t *testing.T) {
 	ctx := context.Background()
 	fixture := newScanIngestionFixture(t)
 	receipt, duplicate, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, validScanResultPage(fixture))
@@ -124,20 +131,105 @@ func TestIngestScanResultPageAcceptsAuthenticatedBoundedResultWithoutAction(t *t
 		t.Fatalf("run was not completed: %+v err=%v", run, err)
 	}
 	observations, err := fixture.store.ListEntryPointObservations(ctx, store.EntryPointObservationQuery{RunID: fixture.run.ID})
-	if err != nil || len(observations.Items) != 1 || observations.Items[0].Actionable {
+	if err != nil || len(observations.Items) != 1 || !observations.Items[0].Actionable {
 		t.Fatalf("unexpected stored observation: %+v err=%v", observations, err)
 	}
 	candidates, err := fixture.store.ListCandidates(ctx, fixture.scope.ID, "")
-	if err != nil || len(candidates) != 0 {
-		t.Fatalf("result ingestion created candidate action: %+v err=%v", candidates, err)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("open SSH evidence was not projected to one candidate: %+v err=%v", candidates, err)
+	}
+	candidate := candidates[0]
+	if candidate.State != "needs_credentials" || candidate.CoverageState != "current" || len(candidate.EntryPointIDs) != 1 || candidate.EntryPointIDs[0] != fixture.policy.EntryPoints[0].ID || len(candidate.Provenance) != 1 || candidate.Provenance[0].ScannerID != fixture.scanner.ID {
+		t.Fatalf("unexpected candidate projection: %+v", candidate)
 	}
 	requests, err := fixture.store.ListAccessRequests(ctx, "", "")
-	if err != nil || len(requests) != 0 {
-		t.Fatalf("result ingestion created access request: %+v err=%v", requests, err)
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("missing-credentials request was not deduplicated: %+v err=%v", requests, err)
+	}
+	if requests[0].CandidateID != candidate.ID || requests[0].AccessMethod != store.ScanAccessSSH || requests[0].Endpoint != "192.0.2.10:22" || requests[0].ReasonCode != "missing_credentials" || requests[0].State != "open" {
+		t.Fatalf("unexpected access request: %+v", requests[0])
 	}
 	jobs, err := fixture.store.ListJobs(ctx, "", "", "")
 	if err != nil || len(jobs) != 0 {
 		t.Fatalf("result ingestion created job: %+v err=%v", jobs, err)
+	}
+}
+
+func TestIngestScanResultPageDoesNotRequestCredentialsForObservationOnlyPort(t *testing.T) {
+	ctx := context.Background()
+	fixture := newScanIngestionFixtureWithEntryPoints(t, []store.ScanEntryPoint{
+		{ID: "ssh-default", Name: "SSH", Transport: store.ScanTransportTCP, Port: 22, AccessMethod: store.ScanAccessSSH, Enabled: true},
+		{ID: "web-alt", Name: "Web", Transport: store.ScanTransportTCP, Port: 8080, Enabled: true},
+	})
+	page := validScanResultPage(fixture)
+	page.Results[0].EntryPointID = "web-alt"
+	page.Results[0].Port = 8080
+	if _, _, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, page); err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := fixture.store.ListCandidates(ctx, fixture.scope.ID, "")
+	if err != nil || len(candidates) != 1 || candidates[0].State != "unsupported" {
+		t.Fatalf("observation-only entry point projection: %+v err=%v", candidates, err)
+	}
+	requests, err := fixture.store.ListAccessRequests(ctx, "", "")
+	if err != nil || len(requests) != 0 {
+		t.Fatalf("observation-only entry point requested credentials: %+v err=%v", requests, err)
+	}
+}
+
+func TestReconcileScanObservationsMergesVantagesAndDeduplicatesAccess(t *testing.T) {
+	ctx := context.Background()
+	fixture := newScanIngestionFixture(t)
+	observations := []store.EntryPointObservation{
+		{
+			ID: "observation-agent-1", ScopeID: fixture.scope.ID, ScopeRevision: fixture.policy.Revision,
+			ScannerKind: "agent", ScannerID: "agent-scan-1", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
+			Port: 22, EntryPointID: fixture.policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: fixture.now,
+		},
+		{
+			ID: "observation-agent-2", ScopeID: fixture.scope.ID, ScopeRevision: fixture.policy.Revision,
+			ScannerKind: "agent", ScannerID: "agent-scan-2", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
+			Port: 22, EntryPointID: fixture.policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: fixture.now.Add(time.Second),
+		},
+	}
+	candidates, err := fixture.service.ReconcileScanObservations(ctx, observations)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("multi-vantage candidate projection: %+v err=%v", candidates, err)
+	}
+	if len(candidates[0].Provenance) != 2 {
+		t.Fatalf("vantage provenance was collapsed: %+v", candidates[0])
+	}
+	requests, err := fixture.store.ListAccessRequests(ctx, "", "")
+	if err != nil || len(requests) != 1 {
+		t.Fatalf("multi-vantage access request was not deduplicated: %+v err=%v", requests, err)
+	}
+}
+
+func TestReconcileScanObservationKeepsCandidateWhenLaterProbeContradictsIt(t *testing.T) {
+	ctx := context.Background()
+	fixture := newScanIngestionFixture(t)
+	base := store.EntryPointObservation{
+		ScopeID: fixture.scope.ID, ScopeRevision: fixture.policy.Revision, ScannerKind: "agent", ScannerID: fixture.scanner.ID,
+		Address: "192.0.2.10", Transport: store.ScanTransportTCP, Port: 22, EntryPointID: fixture.policy.EntryPoints[0].ID,
+		ObservedAt: fixture.now, Outcome: "open",
+	}
+	base.ID = "open-evidence"
+	if _, err := fixture.service.ReconcileScanObservations(ctx, []store.EntryPointObservation{base}); err != nil {
+		t.Fatal(err)
+	}
+	base.ID = "closed-evidence"
+	base.ObservedAt = fixture.now.Add(time.Minute)
+	base.Outcome = "closed"
+	candidates, err := fixture.service.ReconcileScanObservations(ctx, []store.EntryPointObservation{base})
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("contradictory evidence projection: %+v err=%v", candidates, err)
+	}
+	if candidates[0].State != "stale" || candidates[0].CoverageState != "contradicted" {
+		t.Fatalf("contradictory evidence was treated as absence: %+v", candidates[0])
+	}
+	requests, err := fixture.store.ListAccessRequests(ctx, "", "")
+	if err != nil || len(requests) != 1 || requests[0].State != "open" {
+		t.Fatalf("contradiction deleted or duplicated access request: %+v err=%v", requests, err)
 	}
 }
 
