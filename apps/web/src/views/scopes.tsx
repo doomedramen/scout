@@ -3,7 +3,7 @@ import { Globe2, Plus, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APIError, api, type Scope, type Site } from "@/lib/api";
+import { APIError, api, type Device, type Scope, type Site } from "@/lib/api";
 
 function values(value: string) {
   return value
@@ -15,20 +15,25 @@ function values(value: string) {
 export function ScopesView() {
   const [sites, setSites] = useState<Site[]>([]);
   const [scopes, setScopes] = useState<Scope[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [siteName, setSiteName] = useState("");
   const [siteId, setSiteId] = useState("");
   const [ranges, setRanges] = useState("");
   const [exclusions, setExclusions] = useState("");
   const [ports, setPorts] = useState("22");
   const [methods, setMethods] = useState("tcp");
+  const [scheduleMinutes, setScheduleMinutes] = useState("5");
+  const [targetBudget, setTargetBudget] = useState("256");
+  const [agentIds, setAgentIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   async function refresh() {
-    const [siteList, scopeList] = await Promise.all([api.sites(), api.scopes()]);
+    const [siteList, scopeList, deviceList] = await Promise.all([api.sites(), api.scopes(), api.devices()]);
     setSites(siteList.items);
     setScopes(scopeList.items);
+    setDevices(deviceList.items);
     if (!siteId && siteList.items[0]) setSiteId(siteList.items[0].id);
   }
 
@@ -58,6 +63,11 @@ export function ScopesView() {
     setError("");
     setMessage("");
     try {
+      const scanPorts = values(ports)
+        .map(Number)
+        .filter((port) => Number.isInteger(port) && port > 0 && port <= 65535);
+      const configuredPorts = scanPorts.length ? scanPorts : [22];
+      const boundedTargetBudget = Math.max(1, Math.min(4096, Number(targetBudget) || 256));
       await api.createScope({
         siteId,
         ranges: values(ranges),
@@ -66,6 +76,28 @@ export function ScopesView() {
         ports: values(ports).map(Number),
         enabled: false,
         limits: { probesPerSecond: 10, concurrency: 16, targetBudget: 256 },
+        scanPolicy: {
+          serverEnabled: false,
+          agentIds,
+          scheduleSeconds: Math.max(60, (Number(scheduleMinutes) || 5) * 60),
+          entryPoints: configuredPorts.map((port) => ({
+            id: `ssh-${port}`,
+            name: `SSH ${port}`,
+            transport: "tcp" as const,
+            port,
+            accessMethod: "ssh" as const,
+            enabled: true,
+          })),
+          limits: {
+            probesPerSecond: 10,
+            concurrency: 16,
+            targetBudget: boundedTargetBudget,
+            attemptBudget: boundedTargetBudget * configuredPorts.length,
+            timeoutMilliseconds: 2000,
+            runDeadlineSeconds: 600,
+            resultPageSize: 1000,
+          },
+        },
       });
       setMessage("Scope saved disabled. Enable it only after reviewing access and exclusions.");
       setRanges("");
@@ -101,6 +133,49 @@ export function ScopesView() {
     }
   }
 
+  async function toggleServerScan(scope: Scope) {
+    if (!scope.scanPolicy) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.updateScope(scope.id, {
+        expectedRevision: scope.revision,
+        scanPolicy: {
+          expectedRevision: scope.scanPolicy.revision,
+          serverEnabled: !scope.scanPolicy.serverEnabled,
+        },
+      });
+      setMessage(scope.scanPolicy.serverEnabled ? "Server scanning paused." : "Server scanning enabled.");
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "Scan policy changed elsewhere; refresh and retry");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function scanNow(scope: Scope) {
+    if (!scope.scanPolicy) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.startScan(
+        scope.id,
+        scope.scanPolicy.revision,
+        { kind: "server", id: "control-server" },
+        crypto.randomUUID(),
+      );
+      setMessage("Scan queued. Results and discovered SSH services will appear here shortly.");
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof APIError ? caught.message : "Scan could not be queued");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="workspace-grid scopes-view">
       <div className="section-heading">
@@ -111,8 +186,8 @@ export function ScopesView() {
           </Badge>
           <h2>Sites and scopes</h2>
           <p>
-            Enabling a scope authorizes bounded discovery and enrollment. Exclusions always win and changes fence queued
-            work.
+            Scope boundaries and exclusions are always enforced. Enable the scope first, then opt into server scanning
+            after reviewing the targets.
           </p>
         </div>
       </div>
@@ -178,6 +253,42 @@ export function ScopesView() {
             Ports
             <Input value={ports} onChange={(event) => setPorts(event.target.value)} />
           </label>
+          <label>
+            Scan schedule <span className="label-hint">minutes between runs</span>
+            <Input
+              inputMode="numeric"
+              min={1}
+              value={scheduleMinutes}
+              onChange={(event) => setScheduleMinutes(event.target.value)}
+            />
+          </label>
+          <label>
+            Scan target budget
+            <Input
+              inputMode="numeric"
+              min={1}
+              value={targetBudget}
+              onChange={(event) => setTargetBudget(event.target.value)}
+            />
+          </label>
+          <label>
+            Assigned scan agents <span className="label-hint">optional; enrolled devices only</span>
+            <select
+              multiple
+              size={Math.min(4, Math.max(2, devices.filter((device) => device.agentId).length))}
+              value={agentIds}
+              onChange={(event) => setAgentIds(Array.from(event.target.selectedOptions, (option) => option.value))}
+            >
+              {devices
+                .filter((device) => device.agentId)
+                .map((device) => (
+                  <option key={device.agentId} value={device.agentId}>
+                    {device.displayName} · {device.addresses?.[0] ?? "address unavailable"}
+                  </option>
+                ))}
+            </select>
+            {!devices.some((device) => device.agentId) && <span className="label-hint">No enrolled agents yet.</span>}
+          </label>
           <Button type="submit" disabled={busy || !siteId}>
             Save disabled scope
           </Button>
@@ -201,6 +312,11 @@ export function ScopesView() {
                     {scope.ports.join(", ") || "observations only"} · {scope.allowedMethods.join(", ")} · revision{" "}
                     {scope.revision}
                   </small>
+                  <small>
+                    Server scan {scope.scanPolicy?.serverEnabled ? "enabled" : "disabled"} · every{" "}
+                    {Math.round((scope.scanPolicy?.scheduleSeconds ?? 300) / 60)} min
+                  </small>
+                  <small>{scope.scanPolicy?.agentIds.length ?? 0} assigned scan agent(s)</small>
                 </div>
                 <div>
                   <Badge variant="outline" className={scope.enabled ? "enabled-label" : "access-label"}>
@@ -208,6 +324,21 @@ export function ScopesView() {
                   </Badge>
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => toggle(scope)}>
                     {scope.enabled ? "Pause scope" : "Enable scope"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy || !scope.enabled || !scope.scanPolicy}
+                    onClick={() => toggleServerScan(scope)}
+                  >
+                    {scope.scanPolicy?.serverEnabled ? "Pause server scan" : "Enable server scan"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy || !scope.enabled || !scope.scanPolicy?.serverEnabled}
+                    onClick={() => scanNow(scope)}
+                  >
+                    Scan now
                   </Button>
                 </div>
               </div>

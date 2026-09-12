@@ -136,6 +136,101 @@ export type Scope = {
     concurrency: number;
     targetBudget: number;
   };
+  scanPolicy: ScanPolicy;
+};
+
+export type ScanEntryPoint = {
+  id: string;
+  name: string;
+  transport: "tcp";
+  port: number;
+  accessMethod?: "ssh";
+  enabled: boolean;
+};
+
+export type ScanLimits = {
+  probesPerSecond: number;
+  concurrency: number;
+  targetBudget: number;
+  attemptBudget: number;
+  timeoutMilliseconds: number;
+  runDeadlineSeconds: number;
+  resultPageSize?: number;
+};
+
+export type ScanPolicy = {
+  revision: number;
+  enabled: boolean;
+  serverEnabled: boolean;
+  agentIds: string[];
+  scheduleSeconds: number;
+  entryPoints: ScanEntryPoint[];
+  limits: ScanLimits;
+};
+
+export type ScanScanner = {
+  kind: "server" | "agent";
+  id: string;
+  deviceId?: string;
+};
+
+export type ScanRun = {
+  id: string;
+  scopeId: string;
+  scopeRevision: number;
+  scanner: ScanScanner;
+  trigger: "schedule" | "owner";
+  state:
+    | "queued"
+    | "leased"
+    | "running"
+    | "uploading"
+    | "completed"
+    | "partial"
+    | "failed"
+    | "cancelled"
+    | "rejected"
+    | "expired";
+  scheduledAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  assignmentExpiresAt: string;
+  targetsPlanned: number;
+  attemptsPlanned: number;
+  attemptsCompleted: number;
+  outcomeCounts: {
+    open: number;
+    closed: number;
+    filtered: number;
+    unreachable: number;
+    skipped: number;
+    scannerError: number;
+  };
+  partialReason: string | null;
+  errorCode: string | null;
+  pageCount: number;
+  finalPageOrdinal?: number | null;
+};
+
+export type ScanStatus = {
+  scopeId: string;
+  policyRevision: number;
+  enabled: boolean;
+  lastCompletedAt: string | null;
+  nextScheduledAt: string | null;
+  activeRun: ScanRun | null;
+  vantages: Array<{
+    scanner: ScanScanner;
+    state: "available" | "stale" | "revoked" | "decommissioned" | "unsupported";
+    assigned: boolean;
+    capabilities: string[];
+    lastSeen: string | null;
+  }>;
+  coverageState: "current" | "partial" | "stale" | "contradicted" | "unknown";
+  partialReason: string | null;
+  candidateOutcomeCounts: Record<string, number>;
+  retention: { evidenceBefore: string; runsBefore: string; lagSeconds: number; blocked: boolean };
+  queue: { activeRuns: number; pendingPages: number; backpressure: boolean };
 };
 
 export type NumericAlertCondition = {
@@ -629,6 +724,7 @@ export const api = {
   sites: () => request<ListResponse<Site>>("/sites"),
   createSite: (name: string) => request<Site>("/sites", { method: "POST", body: JSON.stringify({ name }) }),
   scopes: () => request<ListResponse<Scope>>("/scopes"),
+  scope: (id: string) => request<Scope>(`/scopes/${encodeURIComponent(id)}`),
   createScope: (value: {
     siteId: string;
     ranges: string[];
@@ -639,21 +735,50 @@ export const api = {
     trustRef?: string;
     limits?: { probesPerSecond: number; concurrency: number; targetBudget: number };
     enabled: boolean;
+    scanPolicy?: {
+      serverEnabled: boolean;
+      agentIds: string[];
+      scheduleSeconds: number;
+      entryPoints: ScanEntryPoint[];
+      limits: ScanLimits;
+    };
   }) => request<Scope>("/scopes", { method: "POST", body: JSON.stringify(value) }),
   updateScope: (
     id: string,
     value: {
       expectedRevision: number;
-      ranges: string[];
-      exclusions: string[];
-      methods: string[];
-      ports: number[];
+      ranges?: string[];
+      exclusions?: string[];
+      methods?: string[];
+      ports?: number[];
       credentialRef?: string;
       trustRef?: string;
       limits?: { probesPerSecond: number; concurrency: number; targetBudget: number };
-      enabled: boolean;
+      enabled?: boolean;
+      scanPolicy?: {
+        expectedRevision: number;
+        serverEnabled?: boolean;
+        agentIds?: string[];
+        scheduleSeconds?: number;
+        entryPoints?: ScanEntryPoint[];
+        limits?: ScanLimits;
+      };
     },
   ) => request<Scope>(`/scopes/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
+  startScan: (scopeId: string, expectedRevision: number, scanner: ScanScanner, idempotencyKey?: string) =>
+    request<ScanRun>(`/scopes/${encodeURIComponent(scopeId)}/scan-runs`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify({ expectedRevision, scanner }),
+    }),
+  scanStatus: (scopeId: string) => request<ScanStatus>(`/scopes/${encodeURIComponent(scopeId)}/scan-status`),
+  scanRuns: (query = "") => request<ListResponse<ScanRun>>(`/scan-runs${query}`),
+  scanRun: (id: string) => request<ScanRun>(`/scan-runs/${encodeURIComponent(id)}`),
+  cancelScan: (id: string, expectedRevision: number) =>
+    request<ScanRun>(`/scan-runs/${encodeURIComponent(id)}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
   alertRules: (query = "") => request<ListResponse<AlertRule>>(`/alert-rules${query}`),
   createAlertRule: (value: AlertRuleInput) =>
     request<AlertRule>("/alert-rules", { method: "POST", body: JSON.stringify(value) }),

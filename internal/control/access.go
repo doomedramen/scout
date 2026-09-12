@@ -14,6 +14,7 @@ func (a *App) registerAccessRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/sites", a.createSite)
 	mux.HandleFunc("GET /api/v1/scopes", a.listScopes)
 	mux.HandleFunc("POST /api/v1/scopes", a.createScope)
+	mux.HandleFunc("GET /api/v1/scopes/{scopeId}", a.getScope)
 	mux.HandleFunc("PATCH /api/v1/scopes/{scopeId}", a.updateScope)
 	mux.HandleFunc("GET /api/v1/credentials", a.listCredentials)
 	mux.HandleFunc("POST /api/v1/credentials", a.createCredential)
@@ -70,7 +71,16 @@ func (a *App) listScopes(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": nil})
+	views := make([]scopeResponse, 0, len(items))
+	for _, item := range items {
+		view, viewErr := a.scopeView(r.Context(), item)
+		if viewErr != nil {
+			writeMappedError(w, r, viewErr)
+			return
+		}
+		views = append(views, view)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": views, "nextCursor": nil})
 }
 func (a *App) createScope(w http.ResponseWriter, r *http.Request) {
 	_, ok := a.requireSensitive(w, r)
@@ -82,13 +92,47 @@ func (a *App) createScope(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	scope, err := a.Store.CreateScope(r.Context(), req.scope())
+	scopeInput := req.scope()
+	var scope store.Scope
+	var err error
+	if req.ScanPolicy != nil {
+		scopeInput.ID = store.NewID()
+		normalized, policyErr := a.normalizeOwnerScanPolicy(r.Context(), scopeInput, req.ScanPolicy.policy(scopeInput.ID))
+		if policyErr != nil {
+			writeScanError(w, r, policyErr)
+			return
+		}
+		scope, err = a.Store.CreateScopeWithScanPolicy(r.Context(), scopeInput, normalized)
+	} else {
+		scope, err = a.Store.CreateScope(r.Context(), scopeInput)
+	}
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
 	a.recordOwnerAudit(r, "scope.create", scope.ID, map[string]any{"enabled": scope.Enabled})
-	writeJSON(w, http.StatusCreated, scope)
+	view, err := a.scopeView(r.Context(), scope)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, view)
+}
+func (a *App) getScope(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireOwner(w, r, false); !ok {
+		return
+	}
+	scope, err := a.Store.GetScope(r.Context(), r.PathValue("scopeId"))
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	view, err := a.scopeView(r.Context(), scope)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 func (a *App) updateScope(w http.ResponseWriter, r *http.Request) {
 	_, ok := a.requireSensitive(w, r)
@@ -105,14 +149,54 @@ func (a *App) updateScope(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
+	if req.ExpectedRevision != current.Revision {
+		writeScanError(w, r, scanConflictError("scope revision is superseded"))
+		return
+	}
 	updated := req.scope(current)
-	scope, err := a.Store.UpdateScope(r.Context(), current.ID, req.ExpectedRevision, updated)
+	var nextPolicy *store.ScanPolicy
+	if req.ScanPolicy != nil {
+		currentPolicy, policyErr := a.Store.ScanPolicy(r.Context(), current.ID)
+		if policyErr != nil {
+			writeMappedError(w, r, policyErr)
+			return
+		}
+		if req.ScanPolicy.ExpectedRevision != currentPolicy.Revision {
+			writeScanError(w, r, scanConflictError("scan policy revision is superseded"))
+			return
+		}
+		normalized, policyErr := a.normalizeOwnerScanPolicy(r.Context(), updated, req.ScanPolicy.apply(currentPolicy))
+		if policyErr != nil {
+			writeScanError(w, r, policyErr)
+			return
+		}
+		nextPolicy = &normalized
+	}
+	scope := current
+	if req.hasBaseFields() {
+		scope, err = a.Store.UpdateScope(r.Context(), current.ID, req.ExpectedRevision, updated)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
+	if nextPolicy != nil {
+		if _, err := a.Store.UpdateScanPolicy(r.Context(), current.ID, req.ScanPolicy.ExpectedRevision, *nextPolicy); err != nil {
+			if err == store.ErrConflict {
+				writeScanError(w, r, scanConflictError("scan policy revision is superseded"))
+			} else {
+				writeScanError(w, r, scanPolicyStoreError(err))
+			}
+			return
+		}
+	}
+	a.recordOwnerAudit(r, "scope.update", scope.ID, map[string]any{"revision": scope.Revision})
+	view, err := a.scopeView(r.Context(), scope)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
-	a.recordOwnerAudit(r, "scope.update", scope.ID, map[string]any{"revision": scope.Revision})
-	writeJSON(w, http.StatusOK, scope)
+	writeJSON(w, http.StatusOK, view)
 }
 
 type scopeRequest struct {
@@ -125,6 +209,7 @@ type scopeRequest struct {
 	TrustRef       string            `json:"trustRef"`
 	Limits         store.ScopeLimits `json:"limits"`
 	Enabled        bool              `json:"enabled"`
+	ScanPolicy     *scanPolicyInput  `json:"scanPolicy"`
 }
 
 func (r scopeRequest) scope() store.Scope {
@@ -132,28 +217,49 @@ func (r scopeRequest) scope() store.Scope {
 }
 
 type scopePatch struct {
-	ExpectedRevision int64             `json:"expectedRevision"`
-	Ranges           []string          `json:"ranges"`
-	Exclusions       []string          `json:"exclusions"`
-	AllowedMethods   []string          `json:"methods"`
-	Ports            []int             `json:"ports"`
-	CredentialRef    string            `json:"credentialRef"`
-	TrustRef         string            `json:"trustRef"`
-	Limits           store.ScopeLimits `json:"limits"`
-	Enabled          bool              `json:"enabled"`
+	ExpectedRevision int64              `json:"expectedRevision"`
+	Ranges           *[]string          `json:"ranges"`
+	Exclusions       *[]string          `json:"exclusions"`
+	AllowedMethods   *[]string          `json:"methods"`
+	Ports            *[]int             `json:"ports"`
+	CredentialRef    *string            `json:"credentialRef"`
+	TrustRef         *string            `json:"trustRef"`
+	Limits           *store.ScopeLimits `json:"limits"`
+	Enabled          *bool              `json:"enabled"`
+	ScanPolicy       *scanPolicyPatch   `json:"scanPolicy"`
 }
 
 func (r scopePatch) scope(current store.Scope) store.Scope {
 	updated := current
-	updated.Ranges = r.Ranges
-	updated.Exclusions = r.Exclusions
-	updated.AllowedMethods = r.AllowedMethods
-	updated.Ports = r.Ports
-	updated.CredentialRef = r.CredentialRef
-	updated.TrustRef = r.TrustRef
-	updated.Limits = r.Limits
-	updated.Enabled = r.Enabled
+	if r.Ranges != nil {
+		updated.Ranges = *r.Ranges
+	}
+	if r.Exclusions != nil {
+		updated.Exclusions = *r.Exclusions
+	}
+	if r.AllowedMethods != nil {
+		updated.AllowedMethods = *r.AllowedMethods
+	}
+	if r.Ports != nil {
+		updated.Ports = *r.Ports
+	}
+	if r.CredentialRef != nil {
+		updated.CredentialRef = *r.CredentialRef
+	}
+	if r.TrustRef != nil {
+		updated.TrustRef = *r.TrustRef
+	}
+	if r.Limits != nil {
+		updated.Limits = *r.Limits
+	}
+	if r.Enabled != nil {
+		updated.Enabled = *r.Enabled
+	}
 	return updated
+}
+
+func (r scopePatch) hasBaseFields() bool {
+	return r.Ranges != nil || r.Exclusions != nil || r.AllowedMethods != nil || r.Ports != nil || r.CredentialRef != nil || r.TrustRef != nil || r.Limits != nil || r.Enabled != nil
 }
 
 func (a *App) listCredentials(w http.ResponseWriter, r *http.Request) {

@@ -92,11 +92,22 @@ func ValidateScope(scope Scope) error {
 }
 
 func (s *Store) CreateScope(ctx context.Context, scope Scope) (Scope, error) {
+	return s.createScope(ctx, scope, nil)
+}
+
+// CreateScopeWithScanPolicy persists a scope and its first scan policy in one
+// transaction. The control API uses this to avoid exposing a partially
+// configured scope when an owner creates a policy-enabled scope.
+func (s *Store) CreateScopeWithScanPolicy(ctx context.Context, scope Scope, scanPolicy ScanPolicy) (Scope, error) {
+	return s.createScope(ctx, scope, &scanPolicy)
+}
+
+func (s *Store) createScope(ctx context.Context, scope Scope, requestedPolicy *ScanPolicy) (Scope, error) {
 	if err := ValidateScope(scope); err != nil {
 		return Scope{}, err
 	}
 	var result Scope
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		if _, ok := state.Sites[scope.SiteID]; !ok {
 			return ErrNotFound
 		}
@@ -106,8 +117,9 @@ func (s *Store) CreateScope(ctx context.Context, scope Scope) (Scope, error) {
 		if scope.Revision == 0 {
 			scope.Revision = 1
 		}
+		now := s.now().UTC()
 		if scope.CreatedAt.IsZero() {
-			scope.CreatedAt = s.now().UTC()
+			scope.CreatedAt = now
 		}
 		if scope.UpdatedAt.IsZero() {
 			scope.UpdatedAt = scope.CreatedAt
@@ -126,6 +138,19 @@ func (s *Store) CreateScope(ctx context.Context, scope Scope) (Scope, error) {
 		scope.Ports = cloneInts(scope.Ports)
 		scope.AllowedMethods = cloneStrings(scope.AllowedMethods)
 		state.Scopes[scope.ID] = scope
+		initialPolicy := defaultScanPolicy(scope, now)
+		if requestedPolicy != nil {
+			initialPolicy = cloneScanPolicy(*requestedPolicy)
+			initialPolicy.ScopeID = scope.ID
+			initialPolicy.Revision = 1
+			initialPolicy.Enabled = scope.Enabled
+			initialPolicy.UpdatedAt = now
+		}
+		if err := validateScanPolicy(initialPolicy, scope); err != nil {
+			delete(state.Scopes, scope.ID)
+			return err
+		}
+		state.ScanPolicies[scope.ID] = initialPolicy
 		result = scope
 		return nil
 	})
@@ -170,7 +195,7 @@ func (s *Store) UpdateScope(ctx context.Context, id string, expected int64, upda
 		return Scope{}, err
 	}
 	var result Scope
-	err := s.mutate(ctx, func(state *State) error {
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
 		current, ok := state.Scopes[id]
 		if !ok {
 			return ErrNotFound
@@ -192,6 +217,19 @@ func (s *Store) UpdateScope(ctx context.Context, id string, expected int64, upda
 			update.Limits.TargetBudget = 256
 		}
 		state.Scopes[id] = update
+		if scanPolicy, exists := state.ScanPolicies[id]; exists {
+			scanPolicy.Enabled = update.Enabled
+			scanPolicy.UpdatedAt = s.now().UTC()
+			state.ScanPolicies[id] = scanPolicy
+			if !update.Enabled {
+				for runID, run := range state.ScanRuns {
+					if run.ScopeID == id && !scanRunTerminalStates[run.State] {
+						run.CancellationRequested = true
+						state.ScanRuns[runID] = run
+					}
+				}
+			}
+		}
 		result = update
 		return nil
 	})

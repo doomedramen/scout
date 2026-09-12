@@ -215,6 +215,7 @@ func (a *App) Handler() http.Handler {
 	a.registerNotificationRoutes(mux)
 	a.registerSuppressionRoutes(mux)
 	a.registerAgentRoutes(mux)
+	a.registerScanRoutes(mux)
 	a.registerOperationsRoutes(mux)
 	a.registerEnrollmentRoutes(mux)
 	a.registerTopologyRoutes(mux)
