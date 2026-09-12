@@ -166,3 +166,12 @@ This file records executed verification only. Planned targets from the specifica
   repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`; no registry
   credential was used here, and no GitHub-hosted publish run has been claimed
   as local evidence.
+- SSH access regression: the disposable stale image served the pre-password UI
+  bundle (`index-BI0yMiFd.js`), and the minimized Playwright test failed before
+  finding `Resolve prerequisites`. A fresh `docker build` from the checked-in
+  source served the new bundle (`index-DPE7xq5j.js`); the same test passed in
+  1.2s and confirmed default `SSH username`, `SSH password`, and no generic
+  `Secret` field. Compose now uses `pull_policy: always`, and the documented
+  startup command uses `--pull always`, so a running deployment must be
+  recreated with that command once to receive the current image. No production
+  endpoint or credential was used.
