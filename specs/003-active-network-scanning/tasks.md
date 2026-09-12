@@ -51,14 +51,14 @@
 ### Tests for User Story 1
 
 - [X] T010 [P] [US1] Add failing unit tests for target expansion, exact exclusion precedence, attempt-budget truncation, TCP outcome classification, cancellation, timeout, and no application payload in internal/discovery/discovery_test.go (FR-004–FR-008, FR-018; SC-002, SC-006, SC-007).
-- [ ] T011 [P] [US1] Add failing coordinator tests for due-run jitter, server-vantage opt-in, one active scope/vantage run, restart re-lease, deadline, and partial states in internal/discovery/coordinator_test.go (FR-002, FR-004, FR-016–FR-019; SC-001, SC-007, SC-008).
+- [X] T011 [P] [US1] Add failing coordinator tests for due-run jitter, server-vantage opt-in, one active scope/vantage run, restart re-lease, deadline, and partial states in internal/discovery/coordinator_test.go (FR-002, FR-004, FR-016–FR-019; SC-001, SC-007, SC-008).
 - [ ] T012 [P] [US1] Add failing agent tests for assignment validation, expiry, separate execution context, one active scan, result paging/retry, 16 MiB spool, and telemetry priority in internal/agent/scan_test.go and internal/agent/runtime_test.go (FR-003–FR-008, FR-014, FR-017, FR-018, FR-022; SC-007, SC-008).
 
 ### Implementation for User Story 1
 
 - [X] T013 [US1] Refactor internal/discovery/discovery.go behind a cancellable scanner interface and implement bounded target/attempt scheduling plus explicit open/closed/filtered/unreachable/skipped/scanner_error outcomes without banners or payloads (FR-004–FR-008, FR-017, FR-018; SC-001, SC-002, SC-006, SC-007).
-- [ ] T014 [US1] Implement durable due-run scheduling, deterministic jitter, server-vantage leases, progress, deadline, cancellation boundaries, final/partial summaries, and restart recovery in internal/discovery/coordinator.go (FR-002, FR-004, FR-016–FR-019, FR-022; SC-001, SC-007, SC-008).
-- [ ] T015 [US1] Start and stop the coordinator with server context and graceful shutdown, without scanning until owner-enabled policy exists, in apps/server/main.go and internal/control/http.go (FR-002, FR-016, FR-017, FR-022).
+- [X] T014 [US1] Implement durable due-run scheduling, deterministic jitter, server-vantage leases, progress, deadline, cancellation boundaries, final/partial summaries, and restart recovery in internal/discovery/coordinator.go (FR-002, FR-004, FR-016–FR-019, FR-022; SC-001, SC-007, SC-008).
+- [X] T015 [US1] Start and stop the coordinator with server context and graceful shutdown, without scanning until owner-enabled policy exists, in apps/server/main.go and internal/control/http.go (FR-002, FR-016, FR-017, FR-022).
 - [ ] T016 [US1] Implement credential-free agent scan execution, desired-state handoff, local cancellation/revision fencing, bounded result pages, separate scan-result spool, and telemetry/update priority in internal/agent/scan.go and internal/agent/runtime.go (FR-003–FR-008, FR-014, FR-017, FR-018, FR-022; SC-001, SC-002, SC-007, SC-008).
 - [ ] T017 [US1] Wire agent scan configuration and capability reporting through apps/agent/main.go, packaging/linux/agent.service, and internal/control/agents.go while preserving older-agent compatibility (FR-003, FR-007, FR-014, FR-022).
 - [ ] T018 [US1] Implement protected scope scan-policy mutations and on-demand run creation with validation, idempotency, audit, and safe errors in internal/control/discovery.go and internal/control/http.go (FR-001, FR-002, FR-016, FR-018, FR-020).

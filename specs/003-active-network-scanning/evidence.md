@@ -276,6 +276,67 @@ Never attach credential values, private keys, host-key private material, banners
   integration suite); `go vet ./...`; and `git diff --check` passed. The
   integration run completed in 54.959 seconds. No scan was enabled and no
   real device, network, or credential was contacted.
-- Remaining limits: the scanner is not yet called by a durable coordinator or
-  agent runtime, and its results are not yet paged into authenticated scan
-  runs. Those runtime and API tasks remain open.
+- Remaining limits: the scanner is not yet called by an agent runtime; server
+  coordinator execution and authenticated result paging are covered by
+  T014, while agent work remains open in T012 and T016–T017.
+
+## T011 — coordinator failure-first tests
+
+- Requirements: FR-002, FR-004, FR-016–FR-019; SC-001, SC-007, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commits: d687bfa,
+  8cea933.
+- Tests were written before the coordinator existed. The focused command
+  `go test ./internal/discovery -run '^TestCoordinator' -count=1` first
+  failed for the intended missing coordinator, server-vantage, and jitter
+  symbols. The completed tests cover immediate first scheduling, stable
+  interval-plus-jitter scheduling, explicit server opt-in, one active run per
+  scope/vantage, expired-lease re-acquisition after restart, deadline and
+  scanner-failure partial states, policy-revision fencing, and a controlled
+  loopback server scan.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/discovery/coordinator.go internal/discovery/coordinator_test.go
+  internal/store/scanning.go`; `go test ./internal/discovery -run
+  '^TestCoordinator' -count=1`; `go test ./internal/discovery -count=1`;
+  `go vet ./...`; and `git diff --check` passed. No real device, network,
+  or credential was contacted.
+- Remaining limits: agent scheduling/execution, owner on-demand routes, and
+  browser coverage remain open.
+
+## T014 — durable server-vantage coordinator
+
+- Requirements: FR-002, FR-004, FR-016–FR-019, FR-022; SC-001, SC-007,
+  SC-008.
+- Date: 2026-09-12 (Europe/London); implementation commits: d687bfa,
+  8cea933.
+- Added durable schedule materialization from enabled server policies, stable
+  identity-derived jitter, active-run uniqueness, lease and epoch recovery,
+  deadline-bounded server execution through the shared TCP scanner, paged
+  authenticated result ingestion, final/partial summaries, and a fence
+  watcher for cancellation, pause, scope disablement, policy revision, lease
+  expiry, and recovery mode. Policy-fenced work is finalized partial and is
+  never uploaded as current evidence; expired leases are re-leased under a
+  higher epoch.
+- Exact verification commands and outcomes: `go test ./internal/discovery
+  ./internal/store ./internal/control ./internal/agent -count=1`; `go vet
+  ./...`; and `git diff --check` passed. The controlled loopback listener
+  produced one persisted non-actionable `open` observation and a completed
+  run. No real device, network, or credential was contacted.
+- Remaining limits: result-page ingestion is still evidence-only by design;
+  candidate reconciliation and credential/enrollment handoff remain T021+.
+
+## T015 — server coordinator lifecycle
+
+- Requirements: FR-002, FR-016, FR-017, FR-022.
+- Date: 2026-09-12 (Europe/London); implementation commit: 5af3fc6.
+- `NewApp` now constructs the coordinator without starting work. The server
+  binds its coordinator context to the existing signal context, starts it
+  independently from HTTP serving and telemetry, and stops it on SIGINT or
+  SIGTERM. Scheduling remains disabled until the owner-enabled scan policy
+  explicitly opts into the server vantage.
+- Exact verification commands and outcomes: `gofmt -w apps/server/main.go
+  internal/control/http.go`; `go test ./internal/control ./apps/server
+  -count=1`; `go vet ./...`; and `git diff --check` passed. No real device,
+  network, or credential was contacted.
+- Remaining limits: process-level lifecycle behavior will be included in the
+  disposable Compose and end-to-end gates; agent execution remains T012 and
+  T016–T017.
