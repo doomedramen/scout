@@ -100,7 +100,7 @@ Never attach credential values, private keys, host-key private material, banners
 
 - Requirements: FR-001, FR-002, FR-003, FR-007, FR-009, FR-010, FR-015,
   FR-019, FR-022.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: c04bb7e.
 - Added versioned migration 11 with disabled-by-default scan policies,
   explicit server/agent vantage assignments, bounded run state and active
   uniqueness, lease fencing, paged result receipts, append-only TCP entry-point
