@@ -22,9 +22,10 @@ type Sight struct {
 }
 
 type Service struct {
-	Store  *store.Store
-	Policy *policy.Engine
-	Now    func() time.Time
+	Store      *store.Store
+	Policy     *policy.Engine
+	Enrollment *enrollment.Access
+	Now        func() time.Time
 }
 
 func (s *Service) clock() time.Time {
@@ -62,7 +63,11 @@ func (s *Service) ReconcileSightings(ctx context.Context, scopeID string, sighti
 			continue
 		}
 		seen[key] = true
-		candidate, candidateErr := s.Store.UpsertCandidate(ctx, store.Candidate{SiteID: scope.SiteID, ScopeID: scope.ID, Address: address.String(), Hostname: strings.TrimSpace(sighting.Hostname), Source: sighting.Source, LastSeen: s.clock(), ExpiresAt: s.clock().Add(15 * time.Minute)})
+		candidateState := "unreachable"
+		if sighting.Reachable {
+			candidateState = "needs_credentials"
+		}
+		candidate, candidateErr := s.Store.UpsertCandidate(ctx, store.Candidate{SiteID: scope.SiteID, ScopeID: scope.ID, Address: address.String(), Hostname: strings.TrimSpace(sighting.Hostname), Source: sighting.Source, State: candidateState, PreferredAccessMethod: store.ScanAccessSSH, EntryPointIDs: []string{"ssh-default"}, LastSeen: s.clock(), ExpiresAt: s.clock().Add(15 * time.Minute)})
 		if candidateErr != nil {
 			return nil, candidateErr
 		}
@@ -70,17 +75,29 @@ func (s *Service) ReconcileSightings(ctx context.Context, scopeID string, sighti
 		if candidate.Excluded {
 			continue
 		}
+		endpoint := net.JoinHostPort(address.String(), strconvPort(port))
 		if !sighting.Reachable {
-			_, _ = s.Store.UpsertAccessRequest(ctx, store.AccessRequest{DeviceID: candidate.ID, ScopeID: scope.ID, ReasonCode: string(enrollment.ReasonConnectivity), SafeDetails: map[string]string{"target": net.JoinHostPort(address.String(), strconvPort(port))}, State: "open", LastAttempt: s.clock()})
+			candidate.State = "unreachable"
+			_, requestErr := s.Store.UpsertAccessRequest(ctx, store.AccessRequest{DeviceID: candidate.ID, CandidateID: candidate.ID, ScopeID: scope.ID, AccessMethod: store.ScanAccessSSH, Endpoint: endpoint, ReasonCode: string(enrollment.ReasonConnectivity), SafeDetails: map[string]string{"target": endpoint, "method": store.ScanAccessSSH}, State: "open", LastAttempt: s.clock()})
+			if requestErr != nil {
+				return nil, requestErr
+			}
+			result[len(result)-1] = candidate
 			continue
 		}
-		deviceID, deviceErr := s.ensureCandidateDevice(ctx, candidate)
-		if deviceErr != nil {
-			return nil, deviceErr
+		candidate.State = "needs_credentials"
+		candidate.PreferredAccessMethod = store.ScanAccessSSH
+		if _, requestErr := s.Store.UpsertAccessRequest(ctx, store.AccessRequest{DeviceID: candidate.ID, CandidateID: candidate.ID, ScopeID: scope.ID, AccessMethod: store.ScanAccessSSH, Endpoint: endpoint, ReasonCode: string(enrollment.ReasonMissingCredentials), SafeDetails: map[string]string{"target": endpoint, "method": store.ScanAccessSSH}, State: "open", LastAttempt: s.clock()}); requestErr != nil {
+			return nil, requestErr
 		}
-		if _, evaluateErr := (&enrollment.Access{Policy: s.Policy, Store: s.Store}).Evaluate(ctx, scope.ID, address.String(), "tcp", port, deviceID); evaluateErr != nil {
-			return nil, evaluateErr
+		if s.Enrollment != nil {
+			evaluated, evaluateErr := s.Enrollment.ReevaluateCandidate(ctx, candidate.ID)
+			if evaluateErr != nil {
+				return nil, evaluateErr
+			}
+			candidate = evaluated.Candidate
 		}
+		result[len(result)-1] = candidate
 	}
 	return result, nil
 }
@@ -113,32 +130,6 @@ func (s *Service) DiscoverScope(ctx context.Context, scopeID, source string, pro
 		sightings = append(sightings, Sight{Address: address, Source: source, Port: 22, Reachable: byAddress[address]})
 	}
 	return s.ReconcileSightings(ctx, scopeID, sightings)
-}
-
-func (s *Service) ensureCandidateDevice(ctx context.Context, candidate store.Candidate) (string, error) {
-	devices, err := s.Store.ListDevices(ctx, store.DeviceFilter{SiteID: candidate.SiteID, Query: candidate.Address})
-	if err != nil {
-		return "", err
-	}
-	for _, device := range devices {
-		for _, address := range device.Addresses {
-			if strings.TrimSpace(address) == candidate.Address {
-				return device.ID, nil
-			}
-		}
-	}
-	device, err := s.Store.CreateDevice(ctx, store.Device{DisplayName: candidateName(candidate), SiteID: candidate.SiteID, Platform: "linux", Architecture: "unknown", Addresses: []string{candidate.Address}})
-	if err != nil {
-		return "", err
-	}
-	return device.ID, nil
-}
-
-func candidateName(candidate store.Candidate) string {
-	if candidate.Hostname != "" {
-		return candidate.Hostname
-	}
-	return candidate.Address
 }
 
 func strconvPort(port int) string {

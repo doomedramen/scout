@@ -40,7 +40,7 @@ func (s *Store) UpsertCandidate(ctx context.Context, candidate Candidate) (Candi
 			candidate.Source = "local-observation"
 		}
 		if candidate.State == "" {
-			candidate.State = "candidate"
+			candidate.State = "discovered"
 		}
 		now := s.now().UTC()
 		if candidate.LastSeen.IsZero() {

@@ -863,6 +863,185 @@ func (s *Store) CandidateByScopeAddress(ctx context.Context, scopeID, rawAddress
 	return result, err
 }
 
+func (s *Store) CandidateByDeviceID(ctx context.Context, deviceID string) (Candidate, error) {
+	if strings.TrimSpace(deviceID) == "" {
+		return Candidate{}, ErrInvalid
+	}
+	var result Candidate
+	err := s.read(ctx, func(state *State) error {
+		for _, candidate := range state.Candidates {
+			if candidate.DeviceID == deviceID {
+				result = cloneCandidate(candidate)
+				return nil
+			}
+		}
+		return ErrNotFound
+	})
+	return result, err
+}
+
+// UpdateCandidateState changes only the derived access/enrollment state. The
+// candidate remains the same conservatively reconciled identity and no device
+// is created by this operation.
+func (s *Store) UpdateCandidateState(ctx context.Context, candidateID, nextState string) (Candidate, error) {
+	if strings.TrimSpace(candidateID) == "" || !validCandidateState(nextState) {
+		return Candidate{}, ErrInvalid
+	}
+	var result Candidate
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		for key, candidate := range state.Candidates {
+			if candidate.ID != candidateID {
+				continue
+			}
+			candidate.State = nextState
+			state.Candidates[key] = candidate
+			result = cloneCandidate(candidate)
+			return nil
+		}
+		return ErrNotFound
+	})
+	return result, err
+}
+
+// QueueCandidateEnrollment is the only path that turns a scan candidate into
+// a device identity. It performs that adoption and the one-active-job check
+// under the same workspace lock, after the caller has completed all current
+// scope, access, trust, and reachability checks.
+func (s *Store) QueueCandidateEnrollment(ctx context.Context, candidateID string, job Job) (Candidate, Job, error) {
+	if strings.TrimSpace(candidateID) == "" || job.Kind != "enrollment" || job.ScopeID == "" || job.Destination == "" {
+		return Candidate{}, Job{}, ErrInvalid
+	}
+	var candidateResult Candidate
+	var jobResult Job
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		var candidateKey string
+		var candidate Candidate
+		for key, item := range state.Candidates {
+			if item.ID == candidateID {
+				candidateKey = key
+				candidate = item
+				break
+			}
+		}
+		if candidateKey == "" {
+			return ErrNotFound
+		}
+		if candidate.ScopeID != job.ScopeID || candidate.Excluded || candidate.State == "expired" {
+			return ErrForbidden
+		}
+		scope, ok := state.Scopes[candidate.ScopeID]
+		if !ok {
+			return ErrNotFound
+		}
+		if !scope.Enabled {
+			return ErrConflict
+		}
+
+		deviceID := candidate.DeviceID
+		if deviceID == "" {
+			deviceID = NewID()
+			device := Device{
+				ID:              deviceID,
+				SiteID:          candidate.SiteID,
+				DisplayName:     candidate.Hostname,
+				Platform:        "linux",
+				Architecture:    "unknown",
+				Lifecycle:       "candidate",
+				Availability:    AvailabilityConnecting,
+				Addresses:       []string{candidate.Address},
+				MetricFreshness: map[string]Freshness{},
+				CurrentMetrics:  map[string]MetricSample{},
+				CreatedAt:       s.now().UTC(),
+			}
+			if strings.TrimSpace(device.DisplayName) == "" {
+				device.DisplayName = candidate.Address
+			}
+			state.Devices[deviceID] = device
+		}
+		if _, ok := state.Devices[deviceID]; !ok {
+			return ErrNotFound
+		}
+		job.DeviceID = deviceID
+
+		for id, existing := range state.Jobs {
+			if existing.Kind != "enrollment" || existing.DeviceID != deviceID {
+				continue
+			}
+			if isActiveJob(existing.State) {
+				jobResult = existing
+				return ErrDuplicate
+			}
+			if existing.State == "retry" && existing.ScopeID == job.ScopeID && existing.Destination == job.Destination {
+				existing.State = "queued"
+				existing.NextAttempt = s.now().UTC()
+				existing.ScopeRevision = job.ScopeRevision
+				existing.CredentialVersion = job.CredentialVersion
+				existing.TrustRef = job.TrustRef
+				existing.Result = map[string]string{}
+				state.Jobs[id] = existing
+				candidate.DeviceID = deviceID
+				candidate.State = "queued"
+				state.Candidates[candidateKey] = candidate
+				candidateResult = cloneCandidate(candidate)
+				jobResult = existing
+				resolveCandidateAccessRequests(state, candidate.ID)
+				return nil
+			}
+		}
+
+		if job.ID == "" {
+			job.ID = NewID()
+		}
+		if job.State == "" {
+			job.State = "queued"
+		}
+		if job.State != "queued" {
+			return ErrInvalid
+		}
+		if job.NextAttempt.IsZero() {
+			job.NextAttempt = s.now().UTC()
+		}
+		if job.Result == nil {
+			job.Result = map[string]string{}
+		}
+		state.Jobs[job.ID] = job
+		candidate.DeviceID = deviceID
+		candidate.State = "queued"
+		state.Candidates[candidateKey] = candidate
+		resolveCandidateAccessRequests(state, candidate.ID)
+		candidateResult = cloneCandidate(candidate)
+		jobResult = job
+		return nil
+	})
+	return candidateResult, jobResult, err
+}
+
+func resolveCandidateAccessRequests(state *State, candidateID string) {
+	for id, request := range state.AccessRequests {
+		if request.CandidateID != candidateID || !accessRequestIsOpen(request) {
+			continue
+		}
+		request.State = "resolved"
+		state.AccessRequests[id] = request
+		for key, value := range state.ScanAccessRequestKeys {
+			if value.AccessRequestID == id {
+				value.State = request.State
+				value.UpdatedAt = request.LastAttempt
+				state.ScanAccessRequestKeys[key] = value
+			}
+		}
+	}
+}
+
+func validCandidateState(value string) bool {
+	switch value {
+	case "discovered", "needs_credentials", "invalid_credentials", "needs_privilege", "needs_host_trust", "needs_server_connectivity", "queued", "enrolling", "enrolled", "unsupported", "unreachable", "excluded", "stale", "expired":
+		return true
+	default:
+		return false
+	}
+}
+
 func mergeScanCandidateExtension(existing, incoming ScanCandidateExtension, candidateID string, now time.Time) ScanCandidateExtension {
 	merged := existing
 	merged.CandidateID = candidateID

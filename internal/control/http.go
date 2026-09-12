@@ -18,6 +18,7 @@ import (
 	"scout.local/scout/internal/audit"
 	"scout.local/scout/internal/auth"
 	"scout.local/scout/internal/discovery"
+	"scout.local/scout/internal/enrollment"
 	"scout.local/scout/internal/identity"
 	"scout.local/scout/internal/jobs"
 	"scout.local/scout/internal/notifications/ntfy"
@@ -58,6 +59,7 @@ type App struct {
 	Audit       *audit.Logger
 	Policy      *policy.Engine
 	Discovery   *discovery.Service
+	Enrollment  *enrollment.Access
 	Coordinator *discovery.Coordinator
 	Jobs        jobs.Queue
 	Telemetry   *telemetry.Service
@@ -126,7 +128,8 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	app.Identity = &identity.Service{Store: repository, Authority: authority}
 	app.Audit = audit.NewLogger(repository)
 	app.Policy = &policy.Engine{Store: repository}
-	app.Discovery = &discovery.Service{Store: repository, Policy: app.Policy, Now: repository.Now}
+	app.Enrollment = &enrollment.Access{Policy: app.Policy, Store: repository, Now: repository.Now}
+	app.Discovery = &discovery.Service{Store: repository, Policy: app.Policy, Enrollment: app.Enrollment, Now: repository.Now}
 	app.Coordinator = discovery.NewCoordinator(repository, app.Policy, discovery.TCPScanner{})
 	app.Jobs = jobs.Queue{Store: repository}
 	app.Telemetry = &telemetry.Service{Store: repository}

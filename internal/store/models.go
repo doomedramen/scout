@@ -662,6 +662,7 @@ type Candidate struct {
 	ID                    string                `json:"id"`
 	SiteID                string                `json:"siteId"`
 	ScopeID               string                `json:"scopeId"`
+	DeviceID              string                `json:"deviceId,omitempty"`
 	Address               string                `json:"address"`
 	Hostname              string                `json:"hostname,omitempty"`
 	Source                string                `json:"source"`

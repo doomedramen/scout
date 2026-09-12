@@ -8,7 +8,7 @@ import (
 	"scout.local/scout/internal/store"
 )
 
-func TestReconcileSightingsQueuesOnlyEligibleTargets(t *testing.T) {
+func TestReconcileSightingsProjectsCandidatesWithoutAddressOnlyEnrollment(t *testing.T) {
 	ctx := context.Background()
 	repository := store.NewMemory()
 	site, _ := repository.CreateSite(ctx, store.Site{Name: "sightings"})
@@ -28,8 +28,12 @@ func TestReconcileSightingsQueuesOnlyEligibleTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("expected one eligible job, got %d", len(jobs))
+	if len(jobs) != 0 {
+		t.Fatalf("sighting projection created an enrollment job before explicit access checks: %d", len(jobs))
+	}
+	devices, err := repository.ListDevices(ctx, store.DeviceFilter{SiteID: site.ID})
+	if err != nil || len(devices) != 0 {
+		t.Fatalf("sighting projection created address-only devices: %+v err=%v", devices, err)
 	}
 	requests, err := repository.ListAccessRequests(ctx, "open", "no_connectivity")
 	if err != nil || len(requests) != 1 {

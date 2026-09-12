@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"scout.local/scout/internal/policy"
+	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
 )
 
@@ -243,7 +245,18 @@ func (s *Service) reconcileScanObservation(ctx context.Context, observation stor
 	if candidateErr != nil && candidateErr != store.ErrNotFound {
 		return store.Candidate{}, false, candidateErr
 	}
-	return s.applyScanProjection(ctx, observation, entryPoint, candidate, state, "current", requestWithMethod(request, preferredMethod))
+	projected, _, err := s.applyScanProjection(ctx, observation, entryPoint, candidate, state, "current", requestWithMethod(request, preferredMethod))
+	if err != nil {
+		return store.Candidate{}, false, err
+	}
+	if s.Enrollment != nil && entryPoint.AccessMethod == store.ScanAccessSSH {
+		evaluated, evaluateErr := s.Enrollment.ReevaluateCandidate(ctx, projected.ID)
+		if evaluateErr != nil {
+			return store.Candidate{}, false, evaluateErr
+		}
+		projected = evaluated.Candidate
+	}
+	return projected, true, nil
 }
 
 func (s *Service) scanAccessState(ctx context.Context, scope store.Scope, observation store.EntryPointObservation) (string, *store.AccessRequest, error) {
@@ -261,19 +274,15 @@ func (s *Service) scanAccessState(ctx context.Context, scope store.Scope, observ
 		return "needs_credentials", request, nil
 	}
 	credential, err := s.Store.Credential(ctx, scope.CredentialRef)
-	if err != nil || credential.RevokedAt != nil {
+	if err != nil || credential.RevokedAt != nil || credential.Kind != "ssh" || !containsString(credential.AllowedUse, "enrollment") || !secrets.TargetAllowed(credential.Targets, endpoint) {
 		request.ReasonCode = "invalid_credentials"
 		return "invalid_credentials", request, nil
 	}
-	if scope.TrustRef != "" {
-		trusted, trustErr := s.Store.ScopeTrust(ctx, scope.ID, endpoint, "")
-		if trustErr != nil {
-			return "needs_host_trust", nil, trustErr
-		}
-		if !trusted {
-			request.ReasonCode = "host_trust_required"
-			return "needs_host_trust", request, nil
-		}
+	if _, trustErr := s.Store.ScopeTrustRecord(ctx, scope.ID, endpoint); errors.Is(trustErr, store.ErrNotFound) {
+		request.ReasonCode = "host_trust_required"
+		return "needs_host_trust", request, nil
+	} else if trustErr != nil {
+		return "needs_host_trust", nil, trustErr
 	}
 	return "discovered", nil, nil
 }
@@ -326,6 +335,15 @@ func (s *Service) applyScanProjection(ctx context.Context, observation store.Ent
 		}
 	}
 	return result, true, nil
+}
+
+func containsString(items []string, wanted string) bool {
+	for _, item := range items {
+		if item == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func requestWithMethod(request *store.AccessRequest, method string) *store.AccessRequest {

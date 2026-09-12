@@ -645,3 +645,67 @@ func (s *Store) ScopeTrust(ctx context.Context, scopeID string, endpoint string,
 	})
 	return matched, err
 }
+
+// ScopeTrustRecord returns the active owner-established trust record for an
+// endpoint. It intentionally does not expose or infer a host key from scan
+// evidence; callers use it only to prove that an explicit trust decision
+// exists before handing work to the privileged enrollment boundary.
+func (s *Store) ScopeTrustRecord(ctx context.Context, scopeID, endpoint string) (TrustRecord, error) {
+	if strings.TrimSpace(scopeID) == "" || strings.TrimSpace(endpoint) == "" {
+		return TrustRecord{}, ErrInvalid
+	}
+	var result TrustRecord
+	err := s.read(ctx, func(state *State) error {
+		scope, ok := state.Scopes[scopeID]
+		if !ok {
+			return ErrNotFound
+		}
+		if scope.TrustRef != "" {
+			trust, trustOK := state.Trust[scope.TrustRef]
+			if !trustOK || trust.RevokedAt != nil || !strings.EqualFold(trust.Endpoint, endpoint) {
+				return ErrNotFound
+			}
+			result = trust
+			return nil
+		}
+		for _, trust := range state.Trust {
+			if trust.ScopeID == scopeID && trust.RevokedAt == nil && strings.EqualFold(trust.Endpoint, endpoint) {
+				result = trust
+				return nil
+			}
+		}
+		return ErrNotFound
+	})
+	return result, err
+}
+
+// ResolveAccessRequestsForCandidate closes open prerequisite requests once a
+// guarded enrollment handoff has been queued. Historical request rows remain
+// available for audit and troubleshooting.
+func (s *Store) ResolveAccessRequestsForCandidate(ctx context.Context, candidateID string) error {
+	if strings.TrimSpace(candidateID) == "" {
+		return ErrInvalid
+	}
+	return s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		found := false
+		for id, request := range state.AccessRequests {
+			if request.CandidateID != candidateID || !accessRequestIsOpen(request) {
+				continue
+			}
+			found = true
+			request.State = "resolved"
+			state.AccessRequests[id] = request
+			for key, value := range state.ScanAccessRequestKeys {
+				if value.AccessRequestID == id {
+					value.State = request.State
+					value.UpdatedAt = s.now().UTC()
+					state.ScanAccessRequestKeys[key] = value
+				}
+			}
+		}
+		if !found {
+			return nil
+		}
+		return nil
+	})
+}

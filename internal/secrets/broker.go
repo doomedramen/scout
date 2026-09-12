@@ -42,6 +42,13 @@ func targetAllowed(targets []string, target string) bool {
 	return false
 }
 
+// TargetAllowed checks a credential's target binding without decrypting its
+// secret. Enrollment re-evaluation uses this to reject unrelated credentials
+// while keeping secret material inside the broker boundary.
+func TargetAllowed(targets []string, target string) bool {
+	return targetAllowed(targets, target)
+}
+
 func normalizeTarget(value string) string {
 	value = strings.TrimSpace(value)
 	if host, port, err := net.SplitHostPort(value); err == nil {

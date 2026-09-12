@@ -9,7 +9,6 @@ import (
 	"scout.local/scout/internal/audit"
 	"scout.local/scout/internal/discovery"
 	"scout.local/scout/internal/enrollment"
-	"scout.local/scout/internal/policy"
 	"scout.local/scout/internal/secrets"
 	"scout.local/scout/internal/store"
 )
@@ -68,7 +67,10 @@ func (a *App) discoverScope(w http.ResponseWriter, r *http.Request) {
 	if request.Source == "" {
 		request.Source = "control-local"
 	}
-	service := &discovery.Service{Store: a.Store, Policy: &policy.Engine{Store: a.Store}}
+	service := a.Discovery
+	if service == nil {
+		service = &discovery.Service{Store: a.Store, Policy: a.Policy, Enrollment: a.Enrollment}
+	}
 	var items []store.Candidate
 	if len(request.Sightings) > 0 {
 		items, err = service.ReconcileSightings(r.Context(), r.PathValue("scopeId"), request.Sightings)
@@ -153,23 +155,11 @@ func (a *App) enqueueCandidate(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrForbidden)
 		return
 	}
-	deviceID := ""
-	devices, listErr := a.Store.ListDevices(r.Context(), store.DeviceFilter{SiteID: candidate.SiteID, Query: candidate.Address})
-	if listErr != nil {
-		writeMappedError(w, r, listErr)
-		return
+	access := a.Enrollment
+	if access == nil {
+		access = &enrollment.Access{Policy: a.Policy, Store: a.Store, Now: a.Store.Now}
 	}
-	if len(devices) > 0 {
-		deviceID = devices[0].ID
-	} else {
-		device, createErr := a.Store.CreateDevice(r.Context(), store.Device{DisplayName: candidate.Address, SiteID: candidate.SiteID, Platform: "linux", Architecture: "unknown", Addresses: []string{candidate.Address}})
-		if createErr != nil {
-			writeMappedError(w, r, createErr)
-			return
-		}
-		deviceID = device.ID
-	}
-	result, err := (&enrollment.Access{Policy: &policy.Engine{Store: a.Store}, Store: a.Store}).Evaluate(r.Context(), candidate.ScopeID, candidate.Address, "tcp", 22, deviceID)
+	result, err := access.ReevaluateCandidate(r.Context(), candidate.ID)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
@@ -314,6 +304,22 @@ func (a *App) workerProgress(w http.ResponseWriter, r *http.Request) {
 	if err := a.Store.ReportJob(r.Context(), job.ID, worker.ID, request.Epoch, request.State, request.Result); err != nil {
 		writeMappedError(w, r, err)
 		return
+	}
+	if candidate, candidateErr := a.Store.CandidateByDeviceID(r.Context(), job.DeviceID); candidateErr == nil {
+		switch request.State {
+		case "connecting", "installing", "verifying":
+			_, _ = a.Store.UpdateCandidateState(r.Context(), candidate.ID, "enrolling")
+		case "enrolled":
+			_, _ = a.Store.UpdateCandidateState(r.Context(), candidate.ID, "enrolled")
+		case "failed":
+			code := "server_connectivity_required"
+			if request.Result != nil && request.Result["code"] != "" {
+				code = request.Result["code"]
+			}
+			if a.Enrollment != nil {
+				_ = a.Enrollment.RecordEnrollmentOutcome(r.Context(), candidate.ID, code)
+			}
+		}
 	}
 	if request.State == "paused" || request.State == "failed" || request.State == "enrolled" {
 		_, _ = a.Store.AcknowledgePause(r.Context(), worker.ID)

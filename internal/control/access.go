@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ func (a *App) registerAccessRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/trust", a.listTrust)
 	mux.HandleFunc("POST /api/v1/trust", a.createTrust)
 	mux.HandleFunc("PATCH /api/v1/trust/{trustId}", a.updateTrust)
+	mux.HandleFunc("DELETE /api/v1/trust/{trustId}", a.revokeTrust)
 	mux.HandleFunc("GET /api/v1/access-requests", a.listAccessRequests)
 	mux.HandleFunc("GET /api/v1/jobs", a.listJobs)
 	mux.HandleFunc("POST /api/v1/bootstrap-invitations", a.createBootstrapInvitation)
@@ -283,11 +285,13 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Kind       string   `json:"kind"`
-		Secret     string   `json:"secret"`
-		AllowedUse []string `json:"allowedUse"`
-		Targets    []string `json:"targets"`
-		Endpoint   string   `json:"endpoint"`
+		Kind                  string   `json:"kind"`
+		Secret                string   `json:"secret"`
+		AllowedUse            []string `json:"allowedUse"`
+		Targets               []string `json:"targets"`
+		Endpoint              string   `json:"endpoint"`
+		ScopeID               string   `json:"scopeId"`
+		ExpectedScopeRevision int64    `json:"expectedScopeRevision"`
 	}
 	if err := decodeJSON(r, &req, 64<<10); err != nil {
 		writeMappedError(w, r, store.ErrInvalid)
@@ -308,8 +312,24 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
+	if req.ScopeID != "" {
+		if err := a.bindCredentialToScope(r.Context(), req.ScopeID, credential.ID, req.ExpectedScopeRevision); err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
+	affected := 0
+	if req.ScopeID != "" && a.Enrollment != nil {
+		affected, err = a.Enrollment.ReevaluateScope(r.Context(), req.ScopeID)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
 	a.recordOwnerAudit(r, "credential.create", id, map[string]any{"kind": req.Kind, "success": true})
-	writeJSON(w, http.StatusCreated, safeCredential(credential))
+	response := safeCredential(credential)
+	response["affectedCandidateCount"] = affected
+	writeJSON(w, http.StatusCreated, response)
 }
 func (a *App) rotateCredential(w http.ResponseWriter, r *http.Request) {
 	_, ok := a.requireSensitive(w, r)
@@ -343,20 +363,44 @@ func (a *App) rotateCredential(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
+	affected := 0
+	if a.Enrollment != nil {
+		affected, err = a.reevaluateCredentialScopes(r.Context(), updated.ID)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
 	a.recordOwnerAudit(r, "credential.rotate", updated.ID, map[string]any{"revision": updated.Revision})
-	writeJSON(w, http.StatusOK, safeCredential(updated))
+	response := safeCredential(updated)
+	response["affectedCandidateCount"] = affected
+	writeJSON(w, http.StatusOK, response)
 }
 func (a *App) revokeCredential(w http.ResponseWriter, r *http.Request) {
 	_, ok := a.requireSensitive(w, r)
 	if !ok {
 		return
 	}
-	if err := a.Store.RevokeCredential(r.Context(), r.PathValue("credentialId")); err != nil {
+	credentialID := r.PathValue("credentialId")
+	if _, err := a.Store.Credential(r.Context(), credentialID); err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
-	a.recordOwnerAudit(r, "credential.revoke", r.PathValue("credentialId"), map[string]any{"success": true})
-	w.WriteHeader(http.StatusNoContent)
+	if err := a.Store.RevokeCredential(r.Context(), credentialID); err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	affected := 0
+	if a.Enrollment != nil {
+		var err error
+		affected, err = a.reevaluateCredentialScopes(r.Context(), credentialID)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
+	a.recordOwnerAudit(r, "credential.revoke", credentialID, map[string]any{"success": true})
+	writeJSON(w, http.StatusOK, map[string]any{"affectedCandidateCount": affected})
 }
 func safeCredential(item store.CredentialRef) map[string]any {
 	return map[string]any{"id": item.ID, "kind": item.Kind, "endpoint": item.Endpoint, "allowedUse": item.AllowedUse, "targets": item.Targets, "metadata": item.Metadata, "revision": item.Revision, "revokedAt": item.RevokedAt}
@@ -397,8 +441,67 @@ func (a *App) createTrust(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, err)
 		return
 	}
+	if req.ScopeID != "" {
+		if err := a.bindTrustToScope(r.Context(), req.ScopeID, trust.ID); err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
+	affected := 0
+	if req.ScopeID != "" && a.Enrollment != nil {
+		affected, err = a.Enrollment.ReevaluateScope(r.Context(), req.ScopeID)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+	}
 	a.recordOwnerAudit(r, "trust.create", trust.ID, map[string]any{"host": trust.Host, "fingerprint": trust.Fingerprint})
-	writeJSON(w, http.StatusCreated, trust)
+	writeJSON(w, http.StatusCreated, map[string]any{"id": trust.ID, "scopeId": trust.ScopeID, "endpoint": trust.Endpoint, "host": trust.Host, "fingerprint": trust.Fingerprint, "publicKey": trust.PublicKey, "revision": trust.Revision, "revokedAt": trust.RevokedAt, "affectedCandidateCount": affected})
+}
+
+func (a *App) bindCredentialToScope(ctx context.Context, scopeID, credentialID string, expectedRevision int64) error {
+	scope, err := a.Store.GetScope(ctx, scopeID)
+	if err != nil {
+		return err
+	}
+	if expectedRevision > 0 && expectedRevision != scope.Revision {
+		return store.ErrConflict
+	}
+	scope.CredentialRef = credentialID
+	_, err = a.Store.UpdateScope(ctx, scope.ID, scope.Revision, scope)
+	return err
+}
+
+func (a *App) bindTrustToScope(ctx context.Context, scopeID, trustID string) error {
+	scope, err := a.Store.GetScope(ctx, scopeID)
+	if err != nil {
+		return err
+	}
+	scope.TrustRef = trustID
+	_, err = a.Store.UpdateScope(ctx, scope.ID, scope.Revision, scope)
+	return err
+}
+
+func (a *App) reevaluateCredentialScopes(ctx context.Context, credentialID string) (int, error) {
+	if a.Enrollment == nil {
+		return 0, nil
+	}
+	scopes, err := a.Store.ListScopes(ctx)
+	if err != nil {
+		return 0, err
+	}
+	affected := 0
+	for _, scope := range scopes {
+		if scope.CredentialRef != credentialID {
+			continue
+		}
+		count, err := a.Enrollment.ReevaluateScope(ctx, scope.ID)
+		if err != nil {
+			return affected, err
+		}
+		affected += count
+	}
+	return affected, nil
 }
 func (a *App) listAccessRequests(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireOwner(w, r, false); !ok {

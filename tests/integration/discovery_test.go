@@ -43,8 +43,12 @@ func TestDiscoveryIntegrationReconcilesVantagesAndNeverQueuesExcludedTargets(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) != 1 {
-		t.Fatalf("excluded target created enrollment work: %+v", jobs)
+	if len(jobs) != 0 {
+		t.Fatalf("sighting projection created enrollment work before access checks: %+v", jobs)
+	}
+	devices, err := repository.ListDevices(ctx, store.DeviceFilter{SiteID: site.ID})
+	if err != nil || len(devices) != 0 {
+		t.Fatalf("sighting projection created address-only devices: %+v %v", devices, err)
 	}
 	candidates, err := repository.ListCandidates(ctx, scope.ID, "excluded")
 	if err != nil || len(candidates) != 1 || !candidates[0].Excluded {
