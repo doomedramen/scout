@@ -95,3 +95,26 @@ Never attach credential values, private keys, host-key private material, banners
   credential was used.
 - Remaining limits: schema/reference tests are contract-level checks; T004+
   must enforce the same bounds and fencing in durable stores and handlers.
+
+## T004 — scan persistence entities and migration
+
+- Requirements: FR-001, FR-002, FR-003, FR-007, FR-009, FR-010, FR-015,
+  FR-019, FR-022.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Added versioned migration 11 with disabled-by-default scan policies,
+  explicit server/agent vantage assignments, bounded run state and active
+  uniqueness, lease fencing, paged result receipts, append-only TCP entry-point
+  observations, per-vantage current projections, candidate extensions, and
+  candidate/method/endpoint access-request dedupe columns and keys. Added
+  corresponding Go entities and backward-compatible in-memory state maps.
+  Existing scope/candidate/access models retain their identity while gaining
+  additive scan fields.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/store/models.go internal/store/store.go internal/store/migrations.go`;
+  `go test ./internal/store -count=1`; `scripts/test-integration.sh` against a
+  disposable PostgreSQL 17 container; and `git diff --check` passed. Running
+  migrations twice remains covered by the integration harness. No scan was
+  enabled and no real device or credential was used.
+- Remaining limits: operations are intentionally not implemented here. T005
+  must add transaction-safe policy/run/lease/receipt/observation operations and
+  test rollback, replay, active uniqueness, and fencing for both stores.

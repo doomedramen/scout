@@ -53,6 +53,7 @@ func migrations() []migration {
 		{version: 8, sql: suppressionMigrationSQL},
 		{version: 9, sql: telemetryIntervalMigrationSQL},
 		{version: 10, sql: monitoringPolicyMigrationSQL},
+		{version: 11, sql: activeScanningMigrationSQL},
 	}
 }
 
@@ -521,4 +522,168 @@ CREATE UNIQUE INDEX IF NOT EXISTS retention_previews_idempotency_uq
   ON retention_previews(idempotency_key)
   WHERE idempotency_key <> '' AND consumed_at IS NULL;
 CREATE INDEX IF NOT EXISTS retention_previews_expiry_idx ON retention_previews(expires_at, consumed_at);
+`
+
+const activeScanningMigrationSQL = `
+CREATE TABLE IF NOT EXISTS scan_policies (
+  scope_id text PRIMARY KEY REFERENCES scopes(id) ON DELETE CASCADE,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  enabled boolean NOT NULL DEFAULT false,
+  server_enabled boolean NOT NULL DEFAULT false,
+  agent_ids jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(agent_ids) = 'array'),
+  schedule_seconds integer NOT NULL DEFAULT 300 CHECK (schedule_seconds >= 60 AND schedule_seconds <= 86400),
+  entry_points jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(entry_points) = 'array'),
+  probes_per_second integer NOT NULL DEFAULT 10 CHECK (probes_per_second >= 1 AND probes_per_second <= 1000),
+  concurrency integer NOT NULL DEFAULT 16 CHECK (concurrency >= 1 AND concurrency <= 16),
+  target_budget integer NOT NULL DEFAULT 256 CHECK (target_budget >= 1 AND target_budget <= 4096),
+  attempt_budget integer NOT NULL DEFAULT 256 CHECK (attempt_budget >= 1 AND attempt_budget <= 16384),
+  timeout_milliseconds integer NOT NULL DEFAULT 2000 CHECK (timeout_milliseconds >= 100 AND timeout_milliseconds <= 10000),
+  run_deadline_seconds integer NOT NULL DEFAULT 600 CHECK (run_deadline_seconds >= 30 AND run_deadline_seconds <= 900),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO scan_policies(scope_id, revision, enabled)
+SELECT id, revision, enabled FROM scopes
+ON CONFLICT (scope_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS scan_vantage_assignments (
+  scope_id text NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+  scanner_kind text NOT NULL CHECK (scanner_kind IN ('server', 'agent')),
+  scanner_id text NOT NULL,
+  device_id text,
+  capabilities jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(capabilities) = 'array'),
+  state text NOT NULL CHECK (state IN ('available', 'stale', 'revoked', 'decommissioned', 'unsupported')),
+  last_seen timestamptz,
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (scope_id, scanner_kind, scanner_id),
+  CHECK ((scanner_kind = 'server' AND device_id IS NULL) OR (scanner_kind = 'agent' AND device_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS scan_vantage_assignments_scanner_idx ON scan_vantage_assignments(scanner_kind, scanner_id, state);
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+  id text PRIMARY KEY,
+  scope_id text NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+  scope_revision bigint NOT NULL CHECK (scope_revision >= 1),
+  scanner_kind text NOT NULL CHECK (scanner_kind IN ('server', 'agent')),
+  scanner_id text NOT NULL,
+  trigger text NOT NULL CHECK (trigger IN ('schedule', 'owner')),
+  state text NOT NULL CHECK (state IN ('queued', 'leased', 'running', 'uploading', 'completed', 'partial', 'failed', 'cancelled', 'rejected', 'expired')),
+  scheduled_at timestamptz NOT NULL,
+  started_at timestamptz,
+  finished_at timestamptz,
+  assignment_expires_at timestamptz NOT NULL,
+  lease_owner text NOT NULL DEFAULT '',
+  lease_epoch bigint NOT NULL DEFAULT 0 CHECK (lease_epoch >= 0),
+  lease_expires_at timestamptz,
+  policy_snapshot jsonb NOT NULL CHECK (jsonb_typeof(policy_snapshot) = 'object'),
+  targets_planned integer NOT NULL DEFAULT 0 CHECK (targets_planned >= 0 AND targets_planned <= 4096),
+  attempts_planned integer NOT NULL DEFAULT 0 CHECK (attempts_planned >= 0 AND attempts_planned <= 16384),
+  attempts_completed integer NOT NULL DEFAULT 0 CHECK (attempts_completed >= 0 AND attempts_completed <= 16384),
+  outcome_counts jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(outcome_counts) = 'object'),
+  partial_reason text NOT NULL DEFAULT '',
+  error_code text NOT NULL DEFAULT '',
+  page_count integer NOT NULL DEFAULT 0 CHECK (page_count >= 0 AND page_count <= 16384),
+  final_page_ordinal integer CHECK (final_page_ordinal IS NULL OR (final_page_ordinal >= 0 AND final_page_ordinal <= 16383)),
+  idempotency_key text NOT NULL DEFAULT '',
+  cancellation_requested boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS active_scan_run_scope_vantage_idx
+  ON scan_runs(scope_id, scanner_kind, scanner_id)
+  WHERE state IN ('queued', 'leased', 'running', 'uploading');
+CREATE UNIQUE INDEX IF NOT EXISTS scan_run_owner_idempotency_idx
+  ON scan_runs(scope_id, idempotency_key)
+  WHERE idempotency_key <> '';
+CREATE INDEX IF NOT EXISTS scan_runs_status_time_idx ON scan_runs(scope_id, state, scheduled_at DESC, id);
+
+CREATE TABLE IF NOT EXISTS scan_run_leases (
+  run_id text PRIMARY KEY REFERENCES scan_runs(id) ON DELETE CASCADE,
+  lease_owner text NOT NULL,
+  lease_epoch bigint NOT NULL CHECK (lease_epoch >= 1),
+  lease_until timestamptz NOT NULL,
+  state text NOT NULL CHECK (state IN ('leased', 'running', 'uploading')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS scan_result_receipts (
+  run_id text NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+  page_ordinal integer NOT NULL CHECK (page_ordinal >= 0 AND page_ordinal <= 16383),
+  content_hash text NOT NULL CHECK (length(content_hash) = 64),
+  accepted_at timestamptz NOT NULL DEFAULT now(),
+  result_count integer NOT NULL CHECK (result_count >= 0 AND result_count <= 1000),
+  is_final boolean NOT NULL DEFAULT false,
+  PRIMARY KEY (run_id, page_ordinal)
+);
+
+CREATE TABLE IF NOT EXISTS scan_entry_point_observations (
+  id text PRIMARY KEY,
+  run_id text NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+  page_ordinal integer NOT NULL CHECK (page_ordinal >= 0 AND page_ordinal <= 16383),
+  scope_id text NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+  scope_revision bigint NOT NULL CHECK (scope_revision >= 1),
+  scanner_kind text NOT NULL CHECK (scanner_kind IN ('server', 'agent')),
+  scanner_id text NOT NULL,
+  address inet NOT NULL,
+  transport text NOT NULL CHECK (transport = 'tcp'),
+  port integer NOT NULL CHECK (port >= 1 AND port <= 65535),
+  entry_point_id text NOT NULL,
+  outcome text NOT NULL CHECK (outcome IN ('open', 'closed', 'filtered', 'unreachable', 'skipped', 'scanner_error')),
+  reason_code text NOT NULL DEFAULT '',
+  latency_milliseconds double precision CHECK (latency_milliseconds IS NULL OR (latency_milliseconds >= 0 AND latency_milliseconds <= 10000)),
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  actionable boolean NOT NULL DEFAULT false,
+  UNIQUE (run_id, page_ordinal, address, transport, port, entry_point_id)
+);
+CREATE INDEX IF NOT EXISTS scan_observations_scope_time_idx ON scan_entry_point_observations(scope_id, observed_at DESC, id);
+CREATE INDEX IF NOT EXISTS scan_observations_candidate_idx ON scan_entry_point_observations(scope_id, address, transport, port, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS scan_entry_point_current (
+  scope_id text NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
+  address inet NOT NULL,
+  transport text NOT NULL CHECK (transport = 'tcp'),
+  port integer NOT NULL CHECK (port >= 1 AND port <= 65535),
+  scanner_kind text NOT NULL CHECK (scanner_kind IN ('server', 'agent')),
+  scanner_id text NOT NULL,
+  observation_id text NOT NULL REFERENCES scan_entry_point_observations(id) ON DELETE CASCADE,
+  outcome text NOT NULL CHECK (outcome IN ('open', 'closed', 'filtered', 'unreachable', 'skipped', 'scanner_error')),
+  freshness text NOT NULL CHECK (freshness IN ('current', 'stale', 'contradicted', 'unknown')),
+  contradicted boolean NOT NULL DEFAULT false,
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  PRIMARY KEY (scope_id, address, transport, port, scanner_kind, scanner_id)
+);
+
+CREATE TABLE IF NOT EXISTS scan_candidate_extensions (
+  candidate_id text PRIMARY KEY,
+  coverage_state text NOT NULL CHECK (coverage_state IN ('current', 'partial', 'stale', 'contradicted', 'unknown')),
+  entry_point_ids jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(entry_point_ids) = 'array'),
+  preferred_access_method text NOT NULL DEFAULT '',
+  last_scanned_at timestamptz,
+  provenance jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(provenance) = 'array'),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS candidate_id text;
+ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS access_method text NOT NULL DEFAULT '';
+ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS endpoint text NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS scan_access_request_dedupe_idx
+  ON access_requests(candidate_id, access_method, endpoint)
+  WHERE candidate_id IS NOT NULL AND candidate_id <> '' AND state IN ('open', 'reevaluating');
+CREATE TABLE IF NOT EXISTS scan_access_request_keys (
+  dedupe_key text PRIMARY KEY,
+  candidate_id text NOT NULL,
+  access_method text NOT NULL,
+  endpoint text NOT NULL,
+  access_request_id text NOT NULL REFERENCES access_requests(id) ON DELETE CASCADE,
+  state text NOT NULL CHECK (state IN ('open', 'reevaluating', 'resolved', 'superseded', 'closed')),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS scan_access_request_candidate_idx ON scan_access_request_keys(candidate_id, state, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS scan_result_receipts_accepted_idx ON scan_result_receipts(accepted_at DESC, run_id);
 `

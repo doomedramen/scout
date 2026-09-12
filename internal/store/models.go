@@ -84,6 +84,177 @@ type Scope struct {
 	UpdatedAt      time.Time   `json:"updatedAt"`
 }
 
+type ScanEntryPoint struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Transport    string `json:"transport"`
+	Port         int    `json:"port"`
+	AccessMethod string `json:"accessMethod,omitempty"`
+	Enabled      bool   `json:"enabled"`
+}
+
+type ScanLimits struct {
+	ProbesPerSecond     int `json:"probesPerSecond"`
+	Concurrency         int `json:"concurrency"`
+	TargetBudget        int `json:"targetBudget"`
+	AttemptBudget       int `json:"attemptBudget"`
+	TimeoutMilliseconds int `json:"timeoutMilliseconds"`
+	RunDeadlineSeconds  int `json:"runDeadlineSeconds"`
+	ResultPageSize      int `json:"resultPageSize,omitempty"`
+}
+
+type ScanPolicy struct {
+	ScopeID         string           `json:"scopeId"`
+	Revision        int64            `json:"revision"`
+	Enabled         bool             `json:"enabled"`
+	ServerEnabled   bool             `json:"serverEnabled"`
+	AgentIDs        []string         `json:"agentIds"`
+	ScheduleSeconds int              `json:"scheduleSeconds"`
+	EntryPoints     []ScanEntryPoint `json:"entryPoints"`
+	Limits          ScanLimits       `json:"limits"`
+	UpdatedAt       time.Time        `json:"updatedAt"`
+}
+
+type ScanPolicySnapshot struct {
+	Ranges      []string         `json:"ranges"`
+	Exclusions  []string         `json:"exclusions"`
+	EntryPoints []ScanEntryPoint `json:"entryPoints"`
+	Limits      ScanLimits       `json:"limits"`
+}
+
+type ScanVantageAssignment struct {
+	ScopeID      string     `json:"scopeId"`
+	ScannerKind  string     `json:"scannerKind"`
+	ScannerID    string     `json:"scannerId"`
+	DeviceID     string     `json:"deviceId,omitempty"`
+	Capabilities []string   `json:"capabilities"`
+	State        string     `json:"state"`
+	LastSeen     *time.Time `json:"lastSeen,omitempty"`
+	Revision     int64      `json:"revision"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
+type ScanOutcomeCounts struct {
+	Open         int `json:"open"`
+	Closed       int `json:"closed"`
+	Filtered     int `json:"filtered"`
+	Unreachable  int `json:"unreachable"`
+	Skipped      int `json:"skipped"`
+	ScannerError int `json:"scannerError"`
+}
+
+type ScanRun struct {
+	ID                    string             `json:"id"`
+	ScopeID               string             `json:"scopeId"`
+	ScopeRevision         int64              `json:"scopeRevision"`
+	ScannerKind           string             `json:"scannerKind"`
+	ScannerID             string             `json:"scannerId"`
+	Trigger               string             `json:"trigger"`
+	State                 string             `json:"state"`
+	ScheduledAt           time.Time          `json:"scheduledAt"`
+	StartedAt             *time.Time         `json:"startedAt,omitempty"`
+	FinishedAt            *time.Time         `json:"finishedAt,omitempty"`
+	AssignmentExpiresAt   time.Time          `json:"assignmentExpiresAt"`
+	LeaseOwner            string             `json:"leaseOwner,omitempty"`
+	LeaseEpoch            int64              `json:"leaseEpoch"`
+	LeaseExpiresAt        *time.Time         `json:"leaseExpiresAt,omitempty"`
+	PolicySnapshot        ScanPolicySnapshot `json:"policySnapshot"`
+	TargetsPlanned        int                `json:"targetsPlanned"`
+	AttemptsPlanned       int                `json:"attemptsPlanned"`
+	AttemptsCompleted     int                `json:"attemptsCompleted"`
+	OutcomeCounts         ScanOutcomeCounts  `json:"outcomeCounts"`
+	PartialReason         string             `json:"partialReason,omitempty"`
+	ErrorCode             string             `json:"errorCode,omitempty"`
+	PageCount             int                `json:"pageCount"`
+	FinalPageOrdinal      *int               `json:"finalPageOrdinal,omitempty"`
+	IdempotencyKey        string             `json:"idempotencyKey,omitempty"`
+	CancellationRequested bool               `json:"cancellationRequested"`
+	CreatedAt             time.Time          `json:"createdAt"`
+	UpdatedAt             time.Time          `json:"updatedAt"`
+}
+
+type ScanRunLease struct {
+	RunID      string    `json:"runId"`
+	LeaseOwner string    `json:"leaseOwner"`
+	LeaseEpoch int64     `json:"leaseEpoch"`
+	LeaseUntil time.Time `json:"leaseUntil"`
+	State      string    `json:"state"`
+}
+
+type ScanResultReceipt struct {
+	RunID       string    `json:"runId"`
+	PageOrdinal int       `json:"pageOrdinal"`
+	ContentHash string    `json:"contentHash"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+	ResultCount int       `json:"resultCount"`
+	IsFinal     bool      `json:"isFinal"`
+}
+
+type EntryPointObservation struct {
+	ID                  string    `json:"id"`
+	RunID               string    `json:"runId"`
+	PageOrdinal         int       `json:"pageOrdinal"`
+	ScopeID             string    `json:"scopeId"`
+	ScopeRevision       int64     `json:"scopeRevision"`
+	ScannerKind         string    `json:"scannerKind"`
+	ScannerID           string    `json:"scannerId"`
+	Address             string    `json:"address"`
+	Transport           string    `json:"transport"`
+	Port                int       `json:"port"`
+	EntryPointID        string    `json:"entryPointId"`
+	Outcome             string    `json:"outcome"`
+	ReasonCode          string    `json:"reasonCode,omitempty"`
+	LatencyMilliseconds *float64  `json:"latencyMilliseconds,omitempty"`
+	ObservedAt          time.Time `json:"observedAt"`
+	ReceivedAt          time.Time `json:"receivedAt"`
+	ExpiresAt           time.Time `json:"expiresAt"`
+	Actionable          bool      `json:"actionable"`
+}
+
+type EntryPointCurrent struct {
+	Key           string    `json:"key"`
+	ScopeID       string    `json:"scopeId"`
+	Address       string    `json:"address"`
+	Transport     string    `json:"transport"`
+	Port          int       `json:"port"`
+	ScannerKind   string    `json:"scannerKind"`
+	ScannerID     string    `json:"scannerId"`
+	ObservationID string    `json:"observationId"`
+	Outcome       string    `json:"outcome"`
+	Freshness     string    `json:"freshness"`
+	Contradicted  bool      `json:"contradicted"`
+	ObservedAt    time.Time `json:"observedAt"`
+	ReceivedAt    time.Time `json:"receivedAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+}
+
+type ScanCandidateExtension struct {
+	CandidateID           string                `json:"candidateId"`
+	CoverageState         string                `json:"coverageState"`
+	EntryPointIDs         []string              `json:"entryPointIds"`
+	PreferredAccessMethod string                `json:"preferredAccessMethod,omitempty"`
+	LastScannedAt         *time.Time            `json:"lastScannedAt,omitempty"`
+	Provenance            []ScanVantageEvidence `json:"provenance"`
+	UpdatedAt             time.Time             `json:"updatedAt"`
+}
+
+type ScanVantageEvidence struct {
+	ScannerKind    string    `json:"scannerKind"`
+	ScannerID      string    `json:"scannerId"`
+	LastObservedAt time.Time `json:"lastObservedAt"`
+	Outcome        string    `json:"outcome"`
+}
+
+type ScanAccessRequestKey struct {
+	DedupeKey       string    `json:"dedupeKey"`
+	CandidateID     string    `json:"candidateId"`
+	AccessMethod    string    `json:"accessMethod"`
+	Endpoint        string    `json:"endpoint"`
+	AccessRequestID string    `json:"accessRequestId"`
+	State           string    `json:"state"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
 type IdentifierEvidence struct {
 	Kind       string    `json:"kind"`
 	Namespace  string    `json:"namespace"`
@@ -462,29 +633,37 @@ type TrustRecord struct {
 }
 
 type AccessRequest struct {
-	ID          string            `json:"id"`
-	DeviceID    string            `json:"deviceId"`
-	ScopeID     string            `json:"scopeId,omitempty"`
-	ReasonCode  string            `json:"reasonCode"`
-	SafeDetails map[string]string `json:"safeDetails"`
-	State       string            `json:"state"`
-	LastAttempt time.Time         `json:"lastAttempt"`
+	ID           string            `json:"id"`
+	DeviceID     string            `json:"deviceId"`
+	ScopeID      string            `json:"scopeId,omitempty"`
+	CandidateID  string            `json:"candidateId,omitempty"`
+	AccessMethod string            `json:"accessMethod,omitempty"`
+	Endpoint     string            `json:"endpoint,omitempty"`
+	ReasonCode   string            `json:"reasonCode"`
+	SafeDetails  map[string]string `json:"safeDetails"`
+	State        string            `json:"state"`
+	LastAttempt  time.Time         `json:"lastAttempt"`
 }
 
 type Candidate struct {
-	ID            string    `json:"id"`
-	SiteID        string    `json:"siteId"`
-	ScopeID       string    `json:"scopeId"`
-	Address       string    `json:"address"`
-	Hostname      string    `json:"hostname,omitempty"`
-	Source        string    `json:"source"`
-	State         string    `json:"state"`
-	ScopeRevision int64     `json:"scopeRevision"`
-	FirstSeen     time.Time `json:"firstSeen"`
-	LastSeen      time.Time `json:"lastSeen"`
-	ExpiresAt     time.Time `json:"expiresAt"`
-	Excluded      bool      `json:"excluded"`
-	EvidenceIDs   []string  `json:"evidenceIds,omitempty"`
+	ID                    string                `json:"id"`
+	SiteID                string                `json:"siteId"`
+	ScopeID               string                `json:"scopeId"`
+	Address               string                `json:"address"`
+	Hostname              string                `json:"hostname,omitempty"`
+	Source                string                `json:"source"`
+	State                 string                `json:"state"`
+	ScopeRevision         int64                 `json:"scopeRevision"`
+	FirstSeen             time.Time             `json:"firstSeen"`
+	LastSeen              time.Time             `json:"lastSeen"`
+	ExpiresAt             time.Time             `json:"expiresAt"`
+	Excluded              bool                  `json:"excluded"`
+	EvidenceIDs           []string              `json:"evidenceIds,omitempty"`
+	CoverageState         string                `json:"coverageState,omitempty"`
+	EntryPointIDs         []string              `json:"entryPointIds,omitempty"`
+	PreferredAccessMethod string                `json:"preferredAccessMethod,omitempty"`
+	LastScannedAt         *time.Time            `json:"lastScannedAt,omitempty"`
+	Provenance            []ScanVantageEvidence `json:"provenance,omitempty"`
 }
 
 type WorkerIdentity struct {
@@ -664,6 +843,15 @@ type State struct {
 	Trust                    map[string]TrustRecord              `json:"trust"`
 	AccessRequests           map[string]AccessRequest            `json:"accessRequests"`
 	Candidates               map[string]Candidate                `json:"candidates"`
+	ScanPolicies             map[string]ScanPolicy               `json:"scanPolicies"`
+	ScanVantageAssignments   map[string]ScanVantageAssignment    `json:"scanVantageAssignments"`
+	ScanRuns                 map[string]ScanRun                  `json:"scanRuns"`
+	ScanRunLeases            map[string]ScanRunLease             `json:"scanRunLeases"`
+	ScanResultReceipts       map[string]ScanResultReceipt        `json:"scanResultReceipts"`
+	EntryPointObservations   map[string]EntryPointObservation    `json:"entryPointObservations"`
+	EntryPointCurrent        map[string]EntryPointCurrent        `json:"entryPointCurrent"`
+	ScanCandidateExtensions  map[string]ScanCandidateExtension   `json:"scanCandidateExtensions"`
+	ScanAccessRequestKeys    map[string]ScanAccessRequestKey     `json:"scanAccessRequestKeys"`
 	Workers                  map[string]WorkerIdentity           `json:"workers"`
 	Jobs                     map[string]Job                      `json:"jobs"`
 	BatchReceipts            map[string]string                   `json:"batchReceipts"`

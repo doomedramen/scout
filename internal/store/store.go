@@ -72,6 +72,7 @@ func newState() State {
 		Version: 1, Sessions: map[string]Session{}, Sites: map[string]Site{}, Scopes: map[string]Scope{},
 		Devices: map[string]Device{}, Invitations: map[string]BootstrapInvitation{}, Agents: map[string]AgentIdentity{},
 		Credentials: map[string]CredentialRef{}, Trust: map[string]TrustRecord{}, AccessRequests: map[string]AccessRequest{}, Candidates: map[string]Candidate{}, Workers: map[string]WorkerIdentity{},
+		ScanPolicies: map[string]ScanPolicy{}, ScanVantageAssignments: map[string]ScanVantageAssignment{}, ScanRuns: map[string]ScanRun{}, ScanRunLeases: map[string]ScanRunLease{}, ScanResultReceipts: map[string]ScanResultReceipt{}, EntryPointObservations: map[string]EntryPointObservation{}, EntryPointCurrent: map[string]EntryPointCurrent{}, ScanCandidateExtensions: map[string]ScanCandidateExtension{}, ScanAccessRequestKeys: map[string]ScanAccessRequestKey{},
 		Jobs: map[string]Job{}, BatchReceipts: map[string]string{}, Samples: []MetricSample{}, Observations: map[string]Observation{},
 		Relationships: map[string]Relationship{}, Collectors: map[string]CollectorDescriptorState{}, AlertRules: map[string]AlertRule{}, AlertOverrides: map[string]AlertOverride{}, NotificationDestinations: map[string]NotificationDestination{}, NotificationDeliveries: map[string]NotificationDelivery{}, SuppressionWindows: map[string]SuppressionWindow{}, SuppressionEpisodes: map[string]SuppressionEpisode{}, AlertEvaluations: map[string]AlertEvaluation{}, Incidents: map[string]Incident{}, IncidentTransitions: map[string]IncidentTransition{}, AlertWork: map[string]AlertWorkItem{}, Releases: map[string]Release{},
 		Assignments: map[string]Assignment{}, UpdatePolicies: map[string]DeviceUpdatePolicy{}, CollectorConfigs: map[string]CollectorConfig{}, ServiceEntities: map[string]ServiceEntity{}, Rollouts: map[string]Rollout{}, RetentionPreviews: map[string]RetentionPreview{}, AuditEvents: []AuditEvent{}, Workspace: WorkspaceState{PolicyRevision: 1, MonitoringRevision: 1, MonitoringDefaultsVersion: MonitoringDefaultsVersion, RetentionRawDays: DefaultRawRetentionDays, RetentionFiveMinuteDays: DefaultFiveMinuteRetentionDays, RetentionHourlyDays: DefaultHourlyRetentionDays, SchemaVersion: 1, RetentionHours: DefaultRetentionHours, TelemetryBudgetBytes: DefaultTelemetryBudgetBytes},
@@ -115,6 +116,33 @@ func ensureStateMaps(state *State) {
 	}
 	if state.Candidates == nil {
 		state.Candidates = map[string]Candidate{}
+	}
+	if state.ScanPolicies == nil {
+		state.ScanPolicies = map[string]ScanPolicy{}
+	}
+	if state.ScanVantageAssignments == nil {
+		state.ScanVantageAssignments = map[string]ScanVantageAssignment{}
+	}
+	if state.ScanRuns == nil {
+		state.ScanRuns = map[string]ScanRun{}
+	}
+	if state.ScanRunLeases == nil {
+		state.ScanRunLeases = map[string]ScanRunLease{}
+	}
+	if state.ScanResultReceipts == nil {
+		state.ScanResultReceipts = map[string]ScanResultReceipt{}
+	}
+	if state.EntryPointObservations == nil {
+		state.EntryPointObservations = map[string]EntryPointObservation{}
+	}
+	if state.EntryPointCurrent == nil {
+		state.EntryPointCurrent = map[string]EntryPointCurrent{}
+	}
+	if state.ScanCandidateExtensions == nil {
+		state.ScanCandidateExtensions = map[string]ScanCandidateExtension{}
+	}
+	if state.ScanAccessRequestKeys == nil {
+		state.ScanAccessRequestKeys = map[string]ScanAccessRequestKey{}
 	}
 	if state.Workers == nil {
 		state.Workers = map[string]WorkerIdentity{}
