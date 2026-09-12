@@ -66,6 +66,8 @@ test("owner can configure ntfy delivery and timezone-aware quiet windows", async
   const topic = `playwright_topic_${Date.now()}`;
   await signIn(page);
   await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.getByText("Notification activity", { exact: true })).toBeVisible();
+  await page.getByRole("menuitem", { name: "View all notifications" }).click();
   await expect(page.getByRole("heading", { name: "Alert delivery" })).toBeVisible();
 
   await page.getByLabel("Destination name").fill(destinationName);

@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Network, Radio, Search, Server } from "lucide-react";
+import {
+  ArrowUpRight,
+  Cpu,
+  HardDrive,
+  MemoryStick,
+  Network,
+  Radio,
+  Search,
+  Server,
+  SlidersHorizontal,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { api, APIError, type Candidate, type Device } from "@/lib/api";
 import { demoDevices, type Device as DemoDevice } from "@/demo";
 
 const candidateAccessStates = new Set([
+  "discovered",
   "needs_credentials",
   "invalid_credentials",
   "needs_host_trust",
@@ -150,6 +162,7 @@ export function SystemsView({
   const [retry, setRetry] = useState(0);
   const [health, setHealth] = useState("");
   const [monitoringState, setMonitoringState] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     if (demo) {
@@ -188,7 +201,9 @@ export function SystemsView({
 
   const devices = useMemo(() => {
     if (demo) return demoDevices.map(demoToLive);
-    const realDevices = items.filter((device) => !isBootstrapPlaceholder(device));
+    // Pending invitation records are useful inventory state. Keep them visible as "Needs access"
+    // so an owner can resume setup after a refresh instead of losing the recovery path.
+    const realDevices = items;
     const provisionalDevices = candidates
       .filter(candidateNeedsAccess)
       .filter((candidate) => {
@@ -224,6 +239,13 @@ export function SystemsView({
     access: devices.filter((device) => stateLabel(device) === "Needs access").length,
   };
   const hasFilters = Boolean(query || health || monitoringState);
+  const secondaryFilterCount = [health, monitoringState].filter(Boolean).length;
+
+  function clearFilters() {
+    onQuery("");
+    setHealth("");
+    setMonitoringState("");
+  }
 
   return (
     <section className="systems-panel">
@@ -253,32 +275,54 @@ export function SystemsView({
             />
           </div>
           {!demo && (
-            <>
-              <label>
-                <span className="sr-only">Health filter</span>
-                <select aria-label="Health filter" value={health} onChange={(event) => setHealth(event.target.value)}>
-                  <option value="">All health</option>
-                  <option value="healthy">Healthy</option>
-                  <option value="degraded">Degraded</option>
-                  <option value="offline">Offline</option>
-                  <option value="needs_access">Needs access</option>
-                  <option value="revoked">Revoked</option>
-                </select>
-              </label>
-              <label>
-                <span className="sr-only">Monitoring filter</span>
-                <select
-                  aria-label="Monitoring filter"
-                  value={monitoringState}
-                  onChange={(event) => setMonitoringState(event.target.value)}
-                >
-                  <option value="">All monitoring</option>
-                  <option value="monitored">Monitored</option>
-                  <option value="unmonitored">Unmonitored</option>
-                  <option value="revoked">Revoked</option>
-                </select>
-              </label>
-            </>
+            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <SheetTrigger asChild>
+                <Button type="button" variant="outline" className="system-filter-trigger">
+                  <SlidersHorizontal size={15} />
+                  Filters{secondaryFilterCount ? ` (${secondaryFilterCount})` : ""}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="filter-sheet">
+                <SheetHeader>
+                  <SheetTitle>System filters</SheetTitle>
+                </SheetHeader>
+                <div className="filter-sheet-fields">
+                  <label>
+                    Health
+                    <select
+                      aria-label="Health filter"
+                      value={health}
+                      onChange={(event) => setHealth(event.target.value)}
+                    >
+                      <option value="">All health</option>
+                      <option value="healthy">Healthy</option>
+                      <option value="degraded">Degraded</option>
+                      <option value="offline">Offline</option>
+                      <option value="needs_access">Needs access</option>
+                      <option value="revoked">Revoked</option>
+                    </select>
+                  </label>
+                  <label>
+                    Monitoring
+                    <select
+                      aria-label="Monitoring filter"
+                      value={monitoringState}
+                      onChange={(event) => setMonitoringState(event.target.value)}
+                    >
+                      <option value="">All monitoring</option>
+                      <option value="monitored">Monitored</option>
+                      <option value="unmonitored">Unmonitored</option>
+                      <option value="revoked">Revoked</option>
+                    </select>
+                  </label>
+                </div>
+                <SheetFooter>
+                  <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>
+                    Clear filters
+                  </Button>
+                </SheetFooter>
+              </SheetContent>
+            </Sheet>
           )}
         </div>
       </div>
@@ -286,7 +330,6 @@ export function SystemsView({
         <div className="empty" role="status">
           <Radio size={30} />
           <h2>Loading systems</h2>
-          <p>Reading authenticated inventory…</p>
         </div>
       ) : error ? (
         <div className="empty" role="alert">
@@ -344,19 +387,13 @@ export function SystemsView({
               <div className="empty-icon">
                 <Radio size={30} />
               </div>
-              <h2>{hasFilters ? "No matching systems" : "Your network starts here"}</h2>
-              <p>
-                {hasFilters
-                  ? "Try a hostname, IP address, status label, or clear the filters."
-                  : "Connect your first Linux agent to start building a picture of your network."}
-              </p>
+              <h2>{hasFilters ? "No matching systems" : "No systems monitored"}</h2>
+              {!hasFilters && <p>Connect a Linux agent to add the first system.</p>}
               <Button
                 variant="outline"
                 onClick={() => {
                   if (hasFilters) {
-                    onQuery("");
-                    setHealth("");
-                    setMonitoringState("");
+                    clearFilters();
                   } else {
                     onSetup();
                   }
@@ -371,7 +408,6 @@ export function SystemsView({
             <span>
               {filtered.length} systems{demo ? " · illustrative data" : ""}
             </span>
-            <span>One agent per device</span>
           </div>
         </>
       )}

@@ -331,10 +331,6 @@ export function NotificationsView() {
             ntfy delivery
           </Badge>
           <h2>Alert delivery</h2>
-          <p>
-            Choose where alerts go, then define quiet windows that silence every severity without losing incident
-            history.
-          </p>
         </div>
         <Button
           variant="ghost"
@@ -362,14 +358,11 @@ export function NotificationsView() {
             <ShieldCheck size={19} />
             <div>
               <h3 id="notification-fence-title">External delivery is paused</h3>
-              <p>
-                Recovery keeps new notifications fenced until the owner finishes review. Resume queues one bounded,
-                current summary instead of replaying old transitions.
-              </p>
+              <p>Resume sends one current summary after review.</p>
             </div>
           </div>
           {recoveryMode ? (
-            <p className="form-help">Reconcile the restored workspace above before resuming notifications.</p>
+            <p className="form-help">Review recovery before resuming.</p>
           ) : (
             <Button onClick={resumeNotifications} disabled={busy === "resume"}>
               {busy === "resume" ? "Resuming…" : "Resume notifications"}
@@ -380,15 +373,15 @@ export function NotificationsView() {
       <div className="notification-summary" aria-label="Notification summary">
         <div>
           <strong>{destinations.filter((destination) => destination.enabled).length}</strong>
-          <span>enabled destinations</span>
+          <span>enabled</span>
         </div>
         <div>
           <strong>{windows.filter((windowItem) => windowItem.enabled).length}</strong>
-          <span>active quiet windows</span>
+          <span>quiet windows</span>
         </div>
         <div>
           <strong>{deliveries.length}</strong>
-          <span>recent delivery records</span>
+          <span>recent deliveries</span>
         </div>
       </div>
       <div className="notification-columns">
@@ -397,9 +390,7 @@ export function NotificationsView() {
             <Send size={17} />
             <h3>Add an ntfy destination</h3>
           </div>
-          <p className="form-help">
-            The server and topic are checked before saving. Tokens are encrypted and never listed.
-          </p>
+          <p className="form-help">Tokens stay write-only.</p>
           <label>
             Destination name
             <Input required value={destinationName} onChange={(event) => setDestinationName(event.target.value)} />
@@ -458,7 +449,7 @@ export function NotificationsView() {
           <div className="section-heading">
             <div>
               <h3 id="destinations-title">Destinations</h3>
-              <p>Paused destinations cannot be tested or receive queued notifications.</p>
+              <p>Paused destinations do not receive alerts.</p>
             </div>
             <Badge variant="outline">{destinations.length}</Badge>
           </div>
@@ -519,7 +510,7 @@ export function NotificationsView() {
               ))}
             </div>
           ) : (
-            <p className="empty-inline">No ntfy destinations yet. Add one to make alert delivery available.</p>
+            <p className="empty-inline">No destinations.</p>
           )}
         </section>
       </div>
@@ -529,10 +520,7 @@ export function NotificationsView() {
             <Clock3 size={17} />
             <h3>Add a quiet window</h3>
           </div>
-          <p className="form-help">
-            Any matching window suppresses all severities. Incident recording continues and active incidents get one
-            release summary.
-          </p>
+          <p className="form-help">Matching windows suppress delivery. Incidents remain.</p>
           <label>
             Window name
             <Input required value={windowName} onChange={(event) => setWindowName(event.target.value)} />
@@ -657,7 +645,6 @@ export function NotificationsView() {
           <div className="section-heading">
             <div>
               <h3 id="quiet-windows-title">Quiet windows</h3>
-              <p>Overlapping windows form a union; resolving a window never rewinds incident history.</p>
             </div>
             <Badge variant="outline">{windows.length}</Badge>
           </div>
@@ -705,7 +692,6 @@ export function NotificationsView() {
         <div className="section-heading">
           <div>
             <h3 id="delivery-history-title">Delivery status</h3>
-            <p>Accepted means the ntfy server accepted the request; it does not confirm subscriber receipt.</p>
           </div>
           <div className="delivery-filter">
             <label>

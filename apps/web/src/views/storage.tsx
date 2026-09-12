@@ -120,11 +120,17 @@ function MetricTile({ name, value, unit }: { name: string; value: number | null;
   );
 }
 
-export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: string) => void }) {
+export function StorageView({
+  onOpenIncident,
+  deviceId,
+}: {
+  onOpenIncident?: (incidentId: string) => void;
+  deviceId?: string;
+}) {
   const [items, setItems] = useState<ServiceEntity[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [filterDeviceId, setFilterDeviceId] = useState("");
+  const [filterDeviceId, setFilterDeviceId] = useState(deviceId ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -152,6 +158,10 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
     const timer = window.setInterval(() => void refresh(), 5_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    setFilterDeviceId(deviceId ?? "");
+  }, [deviceId]);
 
   const visibleItems = useMemo(
     () =>
@@ -287,10 +297,6 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
             Explicit health evidence
           </Badge>
           <h2>Storage health</h2>
-          <p>
-            Faults come from supported SMART or ZFS health predicates. Wear, error counters, and capacity stay visible
-            without silently becoming hardware faults.
-          </p>
         </div>
         <Button
           variant="ghost"
@@ -308,17 +314,19 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
         </p>
       )}
       <div className="filter-row storage-filter-row">
-        <label>
-          Device
-          <select value={filterDeviceId} onChange={(event) => setFilterDeviceId(event.target.value)}>
-            <option value="">All devices</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!deviceId && (
+          <label>
+            Device
+            <select value={filterDeviceId} onChange={(event) => setFilterDeviceId(event.target.value)}>
+              <option value="">All devices</option>
+              {devices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="storage-summary" aria-label="Storage health summary">
           <Badge variant="outline">{visibleItems.length} entities</Badge>
           <Badge
@@ -334,17 +342,13 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
       </div>
       <div className="storage-scope-note" role="note">
         <Database size={16} />
-        <span>
-          Physical pool allocation and usable dataset space are shown in separate sections. Scout never adds them
-          together as one capacity total.
-        </span>
+        <span>Pool and dataset capacity stay separate.</span>
       </div>
       {smartItems.length > 0 && (
         <section className="storage-section" aria-labelledby="smart-storage-title">
           <div className="storage-section-heading">
             <div>
               <h3 id="smart-storage-title">SMART devices</h3>
-              <p>Health, temperature, wear, and counters reported by the device family.</p>
             </div>
             <Badge variant="outline">{smartItems.length}</Badge>
           </div>
@@ -356,7 +360,6 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
           <div className="storage-section-heading">
             <div>
               <h3 id="zfs-pools-title">ZFS pools · physical capacity</h3>
-              <p>Pool allocation is physical storage accounting and is not usable dataset free space.</p>
             </div>
             <Badge variant="outline">{pools.length}</Badge>
           </div>
@@ -368,7 +371,6 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
           <div className="storage-section-heading">
             <div>
               <h3 id="zfs-datasets-title">ZFS datasets · usable space</h3>
-              <p>Dataset used and available values describe usable views inside a pool.</p>
             </div>
             <Badge variant="outline">{datasets.length}</Badge>
           </div>
@@ -379,7 +381,7 @@ export function StorageView({ onOpenIncident }: { onOpenIncident?: (incidentId: 
         <div className="empty">
           <HardDrive size={30} />
           <h2>No storage entities observed</h2>
-          <p>Enable the SMART or ZFS collector on an enrolled Linux device to see storage health here.</p>
+          <p>Enable SMART or ZFS telemetry.</p>
         </div>
       )}
     </section>

@@ -75,10 +75,7 @@ export function EnrollmentView() {
             No routine per-device approval
           </Badge>
           <h2>Discovery and enrollment</h2>
-          <p>
-            Every candidate is bounded by an enabled scope, exclusions, trust, and target-specific credentials. Workers
-            never receive ordinary agent capabilities.
-          </p>
+          <p>Scopes, exclusions, trust, and credentials bound every candidate.</p>
         </div>
         <Button
           variant="ghost"
@@ -133,7 +130,6 @@ export function EnrollmentView() {
         <div className="section-heading">
           <div>
             <h3>Candidate sightings</h3>
-            <p>Duplicate vantages reconcile into one candidate. Excluded targets remain visible but never queue.</p>
           </div>
           <Badge variant="outline">{candidates.length}</Badge>
         </div>
@@ -168,7 +164,6 @@ export function EnrollmentView() {
         <div className="section-heading">
           <div>
             <h3>Enrollment jobs</h3>
-            <p>Leases expire and stale worker reports are rejected.</p>
           </div>
           <Badge variant="outline">{jobs.length}</Badge>
         </div>

@@ -26,10 +26,12 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Access" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Access Credentials/ }).click();
   await expect(page.getByText("Development bypass", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Scopes" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Scopes Sites/ }).click();
   await expect(page.getByRole("heading", { name: "Sites and scopes" })).toBeVisible();
   await page.getByLabel("Site name").fill(siteName);
   await page.getByRole("button", { name: "Add site" }).click();
@@ -71,7 +73,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
 
   await page.getByRole("button", { name: "Close agent setup" }).click();
   await page.reload();
-  await expect(page.getByLabel("System totals")).toContainText("1 needs access");
+  await expect(page.getByLabel("System totals")).toContainText("needs access");
 
   await page.getByRole("button", { name: "Incidents", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Incidents and alert rules" })).toBeVisible();

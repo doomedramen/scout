@@ -82,15 +82,21 @@ function serviceMatchesExactPattern(patterns: string[], serviceName: string): bo
   return patterns.includes(serviceName);
 }
 
-export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId: string) => void }) {
+export function ServicesView({
+  onOpenIncident,
+  deviceId: scopedDeviceId,
+}: {
+  onOpenIncident?: (incidentId: string) => void;
+  deviceId?: string;
+}) {
   const [items, setItems] = useState<ServiceEntity[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [descriptors, setDescriptors] = useState<CollectorDescriptor[]>([]);
   const [configs, setConfigs] = useState<CollectorConfig[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [provider, setProvider] = useState("");
-  const [deviceId, setDeviceId] = useState("");
-  const [filterDeviceId, setFilterDeviceId] = useState("");
+  const [deviceId, setDeviceId] = useState(scopedDeviceId ?? "");
+  const [filterDeviceId, setFilterDeviceId] = useState(scopedDeviceId ?? "");
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [credentialRefs, setCredentialRefs] = useState<Record<string, string>>({});
@@ -107,7 +113,11 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
     const [descriptorList, deviceList] = await Promise.all([api.collectorDescriptors(), api.devices()]);
     setDescriptors(descriptorList.items);
     setDevices(deviceList.items);
-    if (!deviceId && deviceList.items[0]) setDeviceId(deviceList.items[0].id);
+    if (scopedDeviceId && deviceList.items.some((device) => device.id === scopedDeviceId)) {
+      setDeviceId(scopedDeviceId);
+    } else if (!deviceId && deviceList.items[0]) {
+      setDeviceId(deviceList.items[0].id);
+    }
   }
 
   async function refreshIncidents() {
@@ -136,6 +146,12 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
       setError(caught instanceof APIError ? caught.message : "Could not load collector configuration"),
     );
   }, [deviceId]);
+
+  useEffect(() => {
+    if (!scopedDeviceId) return;
+    setDeviceId(scopedDeviceId);
+    setFilterDeviceId(scopedDeviceId);
+  }, [scopedDeviceId]);
 
   const configByCollector = useMemo(() => new Map(configs.map((config) => [config.collectorId, config])), [configs]);
 
@@ -228,10 +244,7 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
             Extensible collectors
           </Badge>
           <h2>Services</h2>
-          <p>
-            Provider adapters share bounded lifecycle, health, expiry, and redaction rules. A failed adapter cannot
-            block host monitoring.
-          </p>
+          <p>Collector health and service state.</p>
         </div>
         <Button
           variant="ghost"
@@ -267,17 +280,19 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
             <option value="fake">Fixture provider</option>
           </select>
         </label>
-        <label>
-          Device
-          <select value={filterDeviceId} onChange={(event) => setFilterDeviceId(event.target.value)}>
-            <option value="">All devices</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!scopedDeviceId && (
+          <label>
+            Device
+            <select value={filterDeviceId} onChange={(event) => setFilterDeviceId(event.target.value)}>
+              <option value="">All devices</option>
+              {devices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="service-summary" aria-label="Service inventory summary">
           <Badge variant="outline">{visibleItems.length} observed</Badge>
           <Badge
@@ -294,10 +309,7 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
         <div className="section-heading">
           <div>
             <h3>Collector configuration</h3>
-            <p>
-              Use a credential reference, never a provider secret. Configuration keys are metadata and are bounded by
-              the server.
-            </p>
+            <p>Credential references only. Provider secrets stay server-side.</p>
           </div>
           <Badge variant="outline">{descriptors.length}</Badge>
         </div>
@@ -305,16 +317,18 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
           <p className="empty-inline">Enroll a device before configuring service collectors.</p>
         ) : (
           <>
-            <label className="device-selector">
-              Device
-              <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)}>
-                {devices.map((device) => (
-                  <option key={device.id} value={device.id}>
-                    {device.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!scopedDeviceId && (
+              <label className="device-selector">
+                Device
+                <select value={deviceId} onChange={(event) => setDeviceId(event.target.value)}>
+                  {devices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="collector-list">
               {descriptors
                 .filter((descriptor) => descriptor.id !== "host")
@@ -356,10 +370,7 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
                         descriptor.id === "systemd" && key === "expectedRunning" ? (
                           <fieldset className="must-run-selector" key={key}>
                             <legend>Expected to stay active</legend>
-                            <p>
-                              Select loaded units for the 60-second inactivity warning. Failed units alert regardless of
-                              this selection.
-                            </p>
+                            <p>Warn after 60s inactivity. Failed units always alert.</p>
                             <label>
                               Service patterns
                               <span className="label-hint">{description}</span>
@@ -444,8 +455,8 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
                 <Boxes size={13} />
                 Observed inventory
               </Badge>
-              <h3 id="service-inventory-title">Service state at a glance</h3>
-              <p>States are source evidence, not controls. Scout never starts, stops, or reloads a service.</p>
+              <h3 id="service-inventory-title">Service state</h3>
+              <p>Read-only source evidence.</p>
             </div>
             <small>{visibleItems.length} loaded entities</small>
           </div>
@@ -516,10 +527,7 @@ export function ServicesView({ onOpenIncident }: { onOpenIncident?: (incidentId:
         <div className="empty">
           <Boxes size={30} />
           <h2>No observed service entities</h2>
-          <p>
-            Enable the systemd collector on an enrolled Linux device to see loaded services here. Host metrics remain
-            independent if service access is denied or unavailable.
-          </p>
+          <p>Enable the systemd collector.</p>
         </div>
       )}
     </section>

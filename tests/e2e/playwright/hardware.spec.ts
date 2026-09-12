@@ -187,7 +187,8 @@ test("owner can inspect hardware fields and save exact sensor exclusions", async
 
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Hardware", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Hardware Sensors/ }).click();
 
   await expect(page.getByRole("heading", { name: "Hardware telemetry" })).toBeVisible();
   await expect(page.locator(".hardware-card-heading p").first()).toHaveText("Hardware fixture");
@@ -197,7 +198,7 @@ test("owner can inspect hardware fields and save exact sensor exclusions", async
   await expect(
     page.locator(".gpu-signal-grid .hardware-signal-tile strong", { hasText: "Unavailable" }).first(),
   ).toBeVisible();
-  await expect(page.getByText("Gaps are left visible instead of being interpolated.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gaps remain visible.", { exact: true })).toBeVisible();
 
   await page.getByLabel("Core temperature").check();
   await page.getByRole("button", { name: "Save exclusions" }).click();

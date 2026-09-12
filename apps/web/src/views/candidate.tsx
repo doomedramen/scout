@@ -123,7 +123,7 @@ export function CandidateView({
           <div className="panel-title">
             <KeyRound size={17} />
             <div>
-              <h3 id="candidate-action-title">SSH access is the next step</h3>
+              <h3 id="candidate-action-title">SSH access</h3>
               <p>
                 {hasOpenCredentialRequest && candidate.state === "discovered"
                   ? "SSH was found on this system, but Scout needs credentials to continue."
@@ -142,7 +142,6 @@ export function CandidateView({
           <CheckCircle2 size={18} />
           <div>
             <strong>Agent enrolled</strong>
-            <p>Telemetry will appear in Systems as the agent reports its first heartbeat.</p>
           </div>
         </section>
       )}
@@ -152,7 +151,7 @@ export function CandidateView({
           <div className="section-heading">
             <div>
               <h3 id="candidate-entry-points-title">Observed services</h3>
-              <p>Reachability evidence only; Scout does not store banners or packet contents.</p>
+              <p>Reachability only. No banners stored.</p>
             </div>
             <Badge variant="outline">{candidate.entryPointCount ?? openSSH.length}</Badge>
           </div>
@@ -183,7 +182,6 @@ export function CandidateView({
           <div className="section-heading">
             <div>
               <h3 id="candidate-access-title">Access checklist</h3>
-              <p>Only the current prerequisite is actionable.</p>
             </div>
             <ShieldCheck size={17} />
           </div>
@@ -209,7 +207,6 @@ export function CandidateView({
         <div className="section-heading">
           <div>
             <h3 id="candidate-provenance-title">Evidence provenance</h3>
-            <p>Separate scanner observations are retained while this candidate stays deduplicated.</p>
           </div>
           <Badge variant="outline">{candidate.provenance?.length ?? 0}</Badge>
         </div>
@@ -235,7 +232,6 @@ export function CandidateView({
           <div className="section-heading">
             <div>
               <h3 id="candidate-enrollment-title">Enrollment</h3>
-              <p>Guarded work is revalidated before every privileged step.</p>
             </div>
             <Badge variant="outline">{detail.enrollment.state}</Badge>
           </div>

@@ -167,7 +167,7 @@ export function ScopesView() {
         { kind: "server", id: "control-server" },
         crypto.randomUUID(),
       );
-      setMessage("Scan queued. Results and discovered SSH services will appear here shortly.");
+      setMessage("Scan queued.");
       await refresh();
     } catch (caught) {
       setError(caught instanceof APIError ? caught.message : "Scan could not be queued");
@@ -185,10 +185,7 @@ export function ScopesView() {
             Automatic scoped enrollment
           </Badge>
           <h2>Sites and scopes</h2>
-          <p>
-            Scope boundaries and exclusions are always enforced. Enable the scope first, then opt into server scanning
-            after reviewing the targets.
-          </p>
+          <p>Boundaries and exclusions apply to every scan.</p>
         </div>
       </div>
       {error && (
@@ -298,7 +295,6 @@ export function ScopesView() {
         <div className="section-heading">
           <div>
             <h3>Current policies</h3>
-            <p>Policy revisions are visible to agents and workers.</p>
           </div>
           <Badge variant="outline">{scopes.length}</Badge>
         </div>

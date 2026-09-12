@@ -295,6 +295,7 @@ test("owner can keyboard-inspect incidents, services, and history at mobile and 
   await signIn(page);
   await page.goto("/");
 
+  await page.getByRole("button", { name: "Open navigation" }).click();
   const incidentsNav = page.getByRole("button", { name: "Incidents", exact: true });
   await incidentsNav.focus();
   await expect(incidentsNav).toBeFocused();
@@ -317,8 +318,12 @@ test("owner can keyboard-inspect incidents, services, and history at mobile and 
   await expect(page.getByRole("heading", { name: "Incident history" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  const servicesNav = page.getByRole("button", { name: "Services", exact: true });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const servicesNav = page.getByRole("button", { name: "Settings", exact: true });
   await servicesNav.focus();
+  await page.keyboard.press("Enter");
+  const serviceDestination = page.getByRole("button", { name: /^Services Collectors/ });
+  await serviceDestination.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("h1")).toHaveText("Services");
   await expect(page.getByText("sshd.service", { exact: true })).toBeVisible();
@@ -331,6 +336,7 @@ test("owner can keyboard-inspect incidents, services, and history at mobile and 
   await expect(page.getByRole("heading", { name: "SSH service failed" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Incident history" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Open navigation" }).click();
   const systemsNav = page.getByRole("button", { name: "Systems", exact: true });
   await systemsNav.focus();
   await page.keyboard.press("Enter");

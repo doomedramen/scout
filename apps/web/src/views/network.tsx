@@ -65,9 +65,18 @@ export function NetworkView({
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateState, setCandidateState] = useState("");
   const [candidateQuery, setCandidateQuery] = useState("");
+  const [nodeQuery, setNodeQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "map">("map");
   const [error, setError] = useState("");
   const [candidateError, setCandidateError] = useState("");
   const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const syncView = () => setViewMode(window.innerWidth < 1024 ? "list" : "map");
+    syncView();
+    window.addEventListener("resize", syncView);
+    return () => window.removeEventListener("resize", syncView);
+  }, []);
 
   useEffect(() => {
     if (demo) {
@@ -130,6 +139,15 @@ export function NetworkView({
     () => new Map(visibleNodes.map((node) => [node.id, node.label ?? node.id])),
     [visibleNodes],
   );
+  const shownNodes = useMemo(() => {
+    const query = nodeQuery.trim().toLowerCase();
+    if (!query) return visibleNodes;
+    return visibleNodes.filter((node) =>
+      [node.label, node.id, ...(node.addresses ?? [])]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query)),
+    );
+  }, [nodeQuery, visibleNodes]);
 
   const demoRelationships: Relationship[] = demo
     ? [
@@ -166,11 +184,7 @@ export function NetworkView({
           <ShieldCheck size={13} />
           Evidence-backed
         </Badge>
-        <span>
-          {demo
-            ? "Illustrative observations · not physical cabling"
-            : "Relationships expire unless refreshed; inspect source, confidence, and age."}
-        </span>
+        {demo && <span>Illustrative</span>}
         {!demo && (
           <Button
             variant="ghost"
@@ -181,6 +195,34 @@ export function NetworkView({
             <RefreshCw size={16} />
           </Button>
         )}
+      </div>
+      <div className="network-view-controls">
+        <div className="network-view-toggle" role="group" aria-label="Network view">
+          <button
+            type="button"
+            aria-pressed={viewMode === "list"}
+            className={viewMode === "list" ? "active" : ""}
+            onClick={() => setViewMode("list")}
+          >
+            List
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewMode === "map"}
+            className={viewMode === "map" ? "active" : ""}
+            onClick={() => setViewMode("map")}
+          >
+            Map
+          </button>
+        </div>
+        <label className="network-search">
+          <span>Search observed devices</span>
+          <input
+            value={nodeQuery}
+            onChange={(event) => setNodeQuery(event.target.value)}
+            placeholder="Name or address"
+          />
+        </label>
       </div>
       {error ? (
         <div className="empty" role="alert">
@@ -201,7 +243,6 @@ export function NetworkView({
                   Scan evidence
                 </Badge>
                 <h2 id="found-devices-heading">Found devices</h2>
-                <p>Hosts seen on an approved scope. Select one to review SSH access and adopt it.</p>
               </div>
               <Badge variant="outline">{demo ? 0 : candidates.length}</Badge>
             </div>
@@ -266,35 +307,38 @@ export function NetworkView({
               </div>
             ) : (
               <p className="empty-inline">
-                {candidates.length
-                  ? "No found devices match this filter."
-                  : "No devices found yet. Run a bounded scan from Scopes."}
+                {candidates.length ? "No found devices match this filter." : "No devices found."}
               </p>
             )}
           </section>
-          <div className="map-root">
-            <NetworkIcon size={22} />
-            <strong>{demo ? "Lab network" : "Scout network"}</strong>
-            <span>{visibleNodes.length} observed devices</span>
-          </div>
-          <div className="map-devices" role="list" aria-label="Topology nodes">
-            {visibleNodes.map((node, index) => {
-              const selected = demo ? demoDevice(demoDevices[index], index) : nodeDevice(node);
-              return (
-                <button key={node.id} onClick={() => onSelect(selected)} role="listitem">
-                  <Server size={20} aria-hidden="true" />
-                  <strong>{node.label ?? node.id}</strong>
-                  <small>{node.addresses?.join(", ") || "Address unavailable"}</small>
-                  <span
-                    className={
-                      "dot " + (node.availability === "online" || node.availability === "healthy" ? "healthy" : "muted")
-                    }
-                    aria-hidden="true"
-                  />
-                  <span className="sr-only">{node.availability ?? "unknown"}</span>
-                </button>
-              );
-            })}
+          <div className={`network-observed ${viewMode}`}>
+            <div className="map-root">
+              <NetworkIcon size={22} />
+              <strong>{demo ? "Lab network" : "Scout network"}</strong>
+              <span>{shownNodes.length} observed devices</span>
+            </div>
+            <div className="map-devices" role="list" aria-label="Topology nodes">
+              {shownNodes.map((node) => {
+                const index = visibleNodes.findIndex((item) => item.id === node.id);
+                const selected = demo ? demoDevice(demoDevices[index], index) : nodeDevice(node);
+                return (
+                  <button key={node.id} onClick={() => onSelect(selected)} role="listitem">
+                    <Server size={20} aria-hidden="true" />
+                    <strong>{node.label ?? node.id}</strong>
+                    <small>{node.addresses?.join(", ") || "Address unavailable"}</small>
+                    <span
+                      className={
+                        "dot " +
+                        (node.availability === "online" || node.availability === "healthy" ? "healthy" : "muted")
+                      }
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">{node.availability ?? "unknown"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {!shownNodes.length && <p className="empty-inline">No observed devices match this search.</p>}
           </div>
           <section className="topology-inspector" aria-labelledby="relationship-list-heading">
             <div className="section-heading">

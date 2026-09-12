@@ -33,13 +33,14 @@ async function ownerPost(page: Page, path: string, data: unknown, idempotencyKey
 test("owner can configure a bounded scan and see local SSH evidence", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Scopes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
 
   const siteName = `playwright-scan-${Date.now()}`;
   const scanPort = Number(new URL(page.url()).port);
   expect(scanPort).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: "Scopes" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Scopes Sites/ }).click();
   await expect(page.getByRole("heading", { name: "Sites and scopes" })).toBeVisible();
   await page.getByLabel("Site name").fill(siteName);
   await page.getByRole("button", { name: "Add site" }).click();
@@ -59,9 +60,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await scopeRow.getByRole("button", { name: "Enable server scan" }).click();
   await expect(scopeRow.getByRole("button", { name: "Pause server scan" })).toBeVisible();
   await scopeRow.getByRole("button", { name: "Scan now" }).click();
-  await expect(
-    page.getByText("Scan queued. Results and discovered SSH services will appear here shortly."),
-  ).toBeVisible();
+  await expect(page.getByText("Scan queued.", { exact: true })).toBeVisible();
 
   const scopesResponse = await page.request.get("/api/v1/scopes");
   expect(scopesResponse.status()).toBe(200);
@@ -109,7 +108,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(foundHostButton).toBeFocused();
   await page.keyboard.press("Enter");
 
-  await expect(page.getByRole("heading", { name: "SSH access is the next step" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "SSH access" })).toBeVisible();
   await expect(page.getByText(`127.0.0.1:${scanPort}`, { exact: true })).toBeVisible();
   const addCredentials = page.getByRole("button", { name: "Add SSH credentials" });
   await addCredentials.focus();

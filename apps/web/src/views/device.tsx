@@ -14,6 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { AccessView } from "@/views/access";
+import { HardwareView } from "@/views/hardware";
+import { ServicesView } from "@/views/services";
+import { StorageView } from "@/views/storage";
 import { api, APIError, type Candidate, type Device, type MetricSeries } from "@/lib/api";
 
 type RangeKey = "1h" | "6h" | "24h" | "7d";
@@ -206,11 +209,13 @@ export function DeviceView({
   demo,
   onBack,
   onChanged,
+  onOpenIncident,
 }: {
   selected: Device;
   demo: boolean;
   onBack: () => void;
   onChanged?: (device: Device) => void;
+  onOpenIncident?: (incidentId: string) => void;
 }) {
   const [device, setDevice] = useState(selected);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -226,6 +231,7 @@ export function DeviceView({
   const [reason, setReason] = useState("");
   const [diagnosticMetric, setDiagnosticMetric] = useState("");
   const [diagnosticEntity, setDiagnosticEntity] = useState("");
+  const [diagnosticPanel, setDiagnosticPanel] = useState<"hardware" | "storage" | "services" | "">("");
 
   const selectedRange = ranges.find((item) => item.key === range) ?? ranges[0];
   const selectedCandidateID = selected.candidateId;
@@ -240,6 +246,7 @@ export function DeviceView({
     setError("");
     setOperationError("");
     setOperationMessage("");
+    setDiagnosticPanel("");
   }, [selected]);
 
   useEffect(() => {
@@ -440,6 +447,11 @@ export function DeviceView({
           </select>
         </label>
       </div>
+      <nav className="device-section-nav" aria-label="Device sections">
+        <a href="#device-summary">Summary</a>
+        <a href="#device-metrics">Metrics</a>
+        <a href="#device-manage">Manage</a>
+      </nav>
       {error && (
         <div className="notice error-notice" role="alert">
           <ShieldCheck size={15} />
@@ -455,247 +467,297 @@ export function DeviceView({
           <span>Agent {device.availability}; retained measurements are historical and are not current.</span>
         </div>
       )}
-      {!demo && !hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
-      <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
-        <div className="chart-heading">
-          <div>
-            <h3 id="device-identity-heading">{isProvisional ? "Found system" : "Device identity"}</h3>
-            <p>
-              {isProvisional
-                ? "This scan candidate is not a Scout device yet. A stable identity is created only after authorized enrollment."
-                : "The stable Scout record identifies this host; network addresses are supporting evidence only."}
-            </p>
-          </div>
-        </div>
-        <dl>
-          <div>
-            <dt>{isProvisional ? "Candidate ID" : "Device ID"}</dt>
-            <dd title={device.id}>{isProvisional ? selectedCandidateID : device.id}</dd>
-          </div>
-          <div>
-            <dt>Hostname</dt>
-            <dd>{device.hostname || "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Known addresses</dt>
-            <dd>{device.addresses?.length ? device.addresses.join(", ") : "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Known MAC addresses</dt>
-            <dd>{identifierValues(device, "mac").join(", ") || "Not reported"}</dd>
-          </div>
-          <div>
-            <dt>Agent identity</dt>
-            <dd title={device.agentId}>{device.agentId || "Not enrolled"}</dd>
-          </div>
-        </dl>
-      </section>
-      {hasAgent && !isDecommissioned ? (
-        <div className="charts">
-          <MetricChart
-            title="CPU usage"
-            detail="Utilization across all cores"
-            unit="percent"
-            color="#7392f5"
-            data={chartData.cpu.data}
-            current={cpu}
-            loading={loading}
-            partialRange={chartData.cpu.partial}
-            rangeMinutes={selectedRange.minutes}
-            resolutionSeconds={chartData.cpu.resolutionSeconds}
-          />
-          <MetricChart
-            title="Memory usage"
-            detail="Used memory as a share of total"
-            unit="percent"
-            color="#62b697"
-            data={chartData.memory.data}
-            current={memory}
-            loading={loading}
-            partialRange={chartData.memory.partial}
-            rangeMinutes={selectedRange.minutes}
-            resolutionSeconds={chartData.memory.resolutionSeconds}
-          />
-          <MetricChart
-            title="Disk usage"
-            detail="Used space on the root filesystem"
-            unit="percent"
-            color="#ac8fd9"
-            data={chartData.disk.data}
-            current={disk}
-            loading={loading}
-            partialRange={chartData.disk.partial}
-            rangeMinutes={selectedRange.minutes}
-            resolutionSeconds={chartData.disk.resolutionSeconds}
-          />
-          <section className="chart-panel host-info">
-            <h3>Agent</h3>
-            <dl>
-              <div>
-                <dt>Version</dt>
-                <dd>{device.agentVersion}</dd>
-              </div>
-              <div>
-                <dt>Platform</dt>
-                <dd>
-                  {device.platform} / {device.architecture}
-                </dd>
-              </div>
-              <div>
-                <dt>Availability</dt>
-                <dd>{device.availability}</dd>
-              </div>
-              <div>
-                <dt>Last heartbeat</dt>
-                <dd>{device.lastHeartbeat ? new Date(device.lastHeartbeat).toLocaleString() : "Not received"}</dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-      ) : !canConfigureCandidate ? (
-        <div className="empty">
-          <Server />
-          <h2>
-            {isDecommissioned
-              ? "Agent revoked"
-              : device.availability === "offline"
-                ? "Agent offline"
-                : "Agent not installed"}
-          </h2>
-          <p>
-            {isDecommissioned
-              ? "History is retained, but this identity cannot report or be rediscovered until the owner explicitly re-enables it."
-              : device.availability === "offline"
-                ? "Current metrics are unavailable. Historical values remain accessible with gaps."
-                : "This candidate needs an authorized, trusted enrollment."}
-          </p>
-        </div>
-      ) : null}
-      {hasAgent && !isDecommissioned && !demo && diagnosticMetrics.length > 0 && (
-        <section className="diagnostic-board" aria-labelledby="diagnostic-board-heading">
-          <div className="diagnostic-board-heading">
+      <section id="device-summary" className="device-section" aria-labelledby="device-summary-heading">
+        <h2 id="device-summary-heading" className="sr-only">
+          Summary
+        </h2>
+        {!demo && !hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
+        <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
+          <div className="chart-heading">
             <div>
-              <Badge variant="outline">
-                <ChartNoAxesCombined size={13} />
-                Host diagnostics
-              </Badge>
-              <h2 id="diagnostic-board-heading">Inspect a signal</h2>
-              <p>Choose a metric and entity. Counter resets, missing samples, and unavailable fields stay visible.</p>
-            </div>
-            <small>{diagnosticSeries.length} returned series</small>
-          </div>
-          <div className="diagnostic-controls">
-            <label>
-              Metric
-              <select
-                aria-label="Diagnostic metric"
-                value={diagnosticMetric}
-                onChange={(event) => setDiagnosticMetric(event.target.value)}
-              >
-                {diagnosticMetrics.map((metric) => (
-                  <option key={metric} value={metric}>
-                    {metricLabel(metric)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Entity
-              <select
-                aria-label="Diagnostic entity"
-                value={diagnosticEntity}
-                onChange={(event) => setDiagnosticEntity(event.target.value)}
-              >
-                {diagnosticEntities.map((entity) => (
-                  <option key={entity} value={entity}>
-                    {entityLabel(entity)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedDiagnosticSeries && (
-              <Badge variant="outline">
-                {selectedDiagnosticSeries.unit} · {diagnosticHistory.data.length} samples
-              </Badge>
-            )}
-          </div>
-          {selectedDiagnosticSeries ? (
-            <MetricChart
-              title={metricLabel(selectedDiagnosticSeries.metric)}
-              detail={metricDetail(selectedDiagnosticSeries.metric)}
-              unit={selectedDiagnosticSeries.unit}
-              color={colorForMetric(selectedDiagnosticSeries.metric)}
-              data={diagnosticHistory.data}
-              current={chartCurrent(diagnosticHistory.data)}
-              loading={loading}
-              partialRange={diagnosticHistory.partial}
-              rangeMinutes={selectedRange.minutes}
-              resolutionSeconds={diagnosticHistory.resolutionSeconds}
-            />
-          ) : (
-            <div className="chart-empty" role="status">
-              Select a diagnostic metric with returned history.
-            </div>
-          )}
-        </section>
-      )}
-      {!demo && !isProvisional && (
-        <section className={"danger-panel " + (isDecommissioned ? "danger-panel-muted" : "")}>
-          <div className="panel-title">
-            {isDecommissioned ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
-            <div>
-              <h3>{isDecommissioned ? "Device is decommissioned" : "Decommission device"}</h3>
+              <h3 id="device-identity-heading">{isProvisional ? "Found system" : "Device identity"}</h3>
               <p>
-                {isDecommissioned
-                  ? "Re-enable is explicit and revalidates the active scope and access prerequisites."
-                  : "Revokes the agent identity, excludes the device, and cancels active enrollment work. History is retained."}
+                {isProvisional
+                  ? "This scan candidate is not a Scout device yet. A stable identity is created only after authorized enrollment."
+                  : "The stable Scout record identifies this host; network addresses are supporting evidence only."}
               </p>
             </div>
           </div>
-          {operationError && (
-            <p className="form-error" role="alert">
-              {operationError}
+          <dl>
+            <div>
+              <dt>{isProvisional ? "Candidate ID" : "Device ID"}</dt>
+              <dd title={device.id}>{isProvisional ? selectedCandidateID : device.id}</dd>
+            </div>
+            <div>
+              <dt>Hostname</dt>
+              <dd>{device.hostname || "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Known addresses</dt>
+              <dd>{device.addresses?.length ? device.addresses.join(", ") : "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Known MAC addresses</dt>
+              <dd>{identifierValues(device, "mac").join(", ") || "Not reported"}</dd>
+            </div>
+            <div>
+              <dt>Agent identity</dt>
+              <dd title={device.agentId}>{device.agentId || "Not enrolled"}</dd>
+            </div>
+          </dl>
+        </section>
+      </section>
+      <section id="device-metrics" className="device-section" aria-labelledby="device-metrics-heading">
+        <h2 id="device-metrics-heading" className="sr-only">
+          Metrics
+        </h2>
+        {hasAgent && !isDecommissioned ? (
+          <div className="charts">
+            <MetricChart
+              title="CPU usage"
+              detail="Utilization across all cores"
+              unit="percent"
+              color="#7392f5"
+              data={chartData.cpu.data}
+              current={cpu}
+              loading={loading}
+              partialRange={chartData.cpu.partial}
+              rangeMinutes={selectedRange.minutes}
+              resolutionSeconds={chartData.cpu.resolutionSeconds}
+            />
+            <MetricChart
+              title="Memory usage"
+              detail="Used memory as a share of total"
+              unit="percent"
+              color="#62b697"
+              data={chartData.memory.data}
+              current={memory}
+              loading={loading}
+              partialRange={chartData.memory.partial}
+              rangeMinutes={selectedRange.minutes}
+              resolutionSeconds={chartData.memory.resolutionSeconds}
+            />
+            <MetricChart
+              title="Disk usage"
+              detail="Used space on the root filesystem"
+              unit="percent"
+              color="#ac8fd9"
+              data={chartData.disk.data}
+              current={disk}
+              loading={loading}
+              partialRange={chartData.disk.partial}
+              rangeMinutes={selectedRange.minutes}
+              resolutionSeconds={chartData.disk.resolutionSeconds}
+            />
+            <section className="chart-panel host-info">
+              <h3>Agent</h3>
+              <dl>
+                <div>
+                  <dt>Version</dt>
+                  <dd>{device.agentVersion}</dd>
+                </div>
+                <div>
+                  <dt>Platform</dt>
+                  <dd>
+                    {device.platform} / {device.architecture}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Availability</dt>
+                  <dd>{device.availability}</dd>
+                </div>
+                <div>
+                  <dt>Last heartbeat</dt>
+                  <dd>{device.lastHeartbeat ? new Date(device.lastHeartbeat).toLocaleString() : "Not received"}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+        ) : !canConfigureCandidate ? (
+          <div className="empty">
+            <Server />
+            <h2>
+              {isDecommissioned
+                ? "Agent revoked"
+                : device.availability === "offline"
+                  ? "Agent offline"
+                  : "Agent not installed"}
+            </h2>
+            <p>
+              {isDecommissioned
+                ? "History remains. Re-enable requires owner review."
+                : device.availability === "offline"
+                  ? "Metrics unavailable. History may have gaps."
+                  : "Authorize and trust this candidate."}
             </p>
-          )}
-          {operationMessage && (
-            <p className="form-success" role="status">
-              {operationMessage}
-            </p>
-          )}
-          {isDecommissioned ? (
-            <Button variant="outline" disabled={operationBusy} onClick={reenableDevice}>
-              Re-enable after policy review
-            </Button>
-          ) : (
-            <div className="operation-form">
+          </div>
+        ) : null}
+        {hasAgent && !isDecommissioned && !demo && diagnosticMetrics.length > 0 && (
+          <section className="diagnostic-board" aria-labelledby="diagnostic-board-heading">
+            <div className="diagnostic-board-heading">
+              <div>
+                <Badge variant="outline">
+                  <ChartNoAxesCombined size={13} />
+                  Host diagnostics
+                </Badge>
+                <h2 id="diagnostic-board-heading">Inspect a signal</h2>
+              </div>
+              <small>{diagnosticSeries.length} returned series</small>
+            </div>
+            <div className="diagnostic-controls">
               <label>
-                Reason
-                <textarea
-                  required
-                  minLength={3}
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="Retired host or owner correction"
-                />
+                Metric
+                <select
+                  aria-label="Diagnostic metric"
+                  value={diagnosticMetric}
+                  onChange={(event) => setDiagnosticMetric(event.target.value)}
+                >
+                  {diagnosticMetrics.map((metric) => (
+                    <option key={metric} value={metric}>
+                      {metricLabel(metric)}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <label className="checkbox-label">
-                <input type="checkbox" checked={uninstall} onChange={(event) => setUninstall(event.target.checked)} />
-                <span>Request optional agent uninstall</span>
+              <label>
+                Entity
+                <select
+                  aria-label="Diagnostic entity"
+                  value={diagnosticEntity}
+                  onChange={(event) => setDiagnosticEntity(event.target.value)}
+                >
+                  {diagnosticEntities.map((entity) => (
+                    <option key={entity} value={entity}>
+                      {entityLabel(entity)}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <small>
-                Uninstall is a separate best-effort operation; Scout only reports removal after target confirmation.
-              </small>
+              {selectedDiagnosticSeries && (
+                <Badge variant="outline">
+                  {selectedDiagnosticSeries.unit} · {diagnosticHistory.data.length} samples
+                </Badge>
+              )}
+            </div>
+            {selectedDiagnosticSeries ? (
+              <MetricChart
+                title={metricLabel(selectedDiagnosticSeries.metric)}
+                detail={metricDetail(selectedDiagnosticSeries.metric)}
+                unit={selectedDiagnosticSeries.unit}
+                color={colorForMetric(selectedDiagnosticSeries.metric)}
+                data={diagnosticHistory.data}
+                current={chartCurrent(diagnosticHistory.data)}
+                loading={loading}
+                partialRange={diagnosticHistory.partial}
+                rangeMinutes={selectedRange.minutes}
+                resolutionSeconds={diagnosticHistory.resolutionSeconds}
+              />
+            ) : (
+              <div className="chart-empty" role="status">
+                Select a diagnostic metric with returned history.
+              </div>
+            )}
+          </section>
+        )}
+      </section>
+      <section id="device-manage" className="device-section" aria-labelledby="device-manage-heading">
+        <h2 id="device-manage-heading" className="sr-only">
+          Manage
+        </h2>
+        {!demo && !isProvisional && (
+          <section className={"danger-panel " + (isDecommissioned ? "danger-panel-muted" : "")}>
+            <div className="panel-title">
+              {isDecommissioned ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+              <div>
+                <h3>{isDecommissioned ? "Device is decommissioned" : "Decommission device"}</h3>
+                <p>
+                  {isDecommissioned
+                    ? "Re-enable checks scope and access."
+                    : "Revokes identity, excludes the device, and cancels enrollment. History remains."}
+                </p>
+              </div>
+            </div>
+            {operationError && (
+              <p className="form-error" role="alert">
+                {operationError}
+              </p>
+            )}
+            {operationMessage && (
+              <p className="form-success" role="status">
+                {operationMessage}
+              </p>
+            )}
+            {isDecommissioned ? (
+              <Button variant="outline" disabled={operationBusy} onClick={reenableDevice}>
+                Re-enable after policy review
+              </Button>
+            ) : (
+              <div className="operation-form">
+                <label>
+                  Reason
+                  <textarea
+                    required
+                    minLength={3}
+                    value={reason}
+                    onChange={(event) => setReason(event.target.value)}
+                    placeholder="Retired host or owner correction"
+                  />
+                </label>
+                <label className="checkbox-label">
+                  <input type="checkbox" checked={uninstall} onChange={(event) => setUninstall(event.target.checked)} />
+                  <span>Request optional agent uninstall</span>
+                </label>
+                <small>
+                  Uninstall is a separate best-effort operation; Scout only reports removal after target confirmation.
+                </small>
+                <Button
+                  variant="destructive"
+                  disabled={operationBusy || reason.trim().length < 3}
+                  onClick={decommissionDevice}
+                >
+                  {operationBusy ? "Decommissioning…" : "Revoke and exclude device"}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
+        <section className="device-diagnostics-panel" aria-labelledby="device-diagnostics-heading">
+          <div className="device-diagnostics-heading">
+            <div>
+              <h3 id="device-diagnostics-heading">Diagnostics</h3>
+            </div>
+            <div className="device-diagnostics-actions">
               <Button
-                variant="destructive"
-                disabled={operationBusy || reason.trim().length < 3}
-                onClick={decommissionDevice}
+                type="button"
+                variant={diagnosticPanel === "hardware" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDiagnosticPanel((current) => (current === "hardware" ? "" : "hardware"))}
               >
-                {operationBusy ? "Decommissioning…" : "Revoke and exclude device"}
+                Hardware
+              </Button>
+              <Button
+                type="button"
+                variant={diagnosticPanel === "storage" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDiagnosticPanel((current) => (current === "storage" ? "" : "storage"))}
+              >
+                Storage
+              </Button>
+              <Button
+                type="button"
+                variant={diagnosticPanel === "services" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDiagnosticPanel((current) => (current === "services" ? "" : "services"))}
+              >
+                Services
               </Button>
             </div>
-          )}
+          </div>
+          {diagnosticPanel === "hardware" && <HardwareView deviceId={device.id} />}
+          {diagnosticPanel === "storage" && <StorageView deviceId={device.id} onOpenIncident={onOpenIncident} />}
+          {diagnosticPanel === "services" && <ServicesView deviceId={device.id} onOpenIncident={onOpenIncident} />}
         </section>
-      )}
+      </section>
     </>
   );
 }

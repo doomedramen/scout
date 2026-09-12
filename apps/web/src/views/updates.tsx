@@ -143,11 +143,8 @@ export function UpdatesView() {
             <ShieldCheck size={13} />
             Signed lifecycle
           </Badge>
-          <h2>Updates, on your terms</h2>
-          <p>
-            Only releases that pass manifest, publisher trust, platform, digest, and compatibility checks become
-            assignable.
-          </p>
+          <h2>Agent updates</h2>
+          <p>Only verified compatible releases can be assigned.</p>
         </div>
         <Button
           variant="ghost"
@@ -262,7 +259,6 @@ export function UpdatesView() {
         <div className="section-heading">
           <div>
             <h3>Release catalog</h3>
-            <p>Accepted releases remain immutable. Revocation is visible and prevents new downloads.</p>
           </div>
           <Badge variant="outline">{releases.length}</Badge>
         </div>
@@ -306,7 +302,6 @@ export function UpdatesView() {
         <div className="section-heading">
           <div>
             <h3>Rollouts</h3>
-            <p>Assignments are bounded by release generation and expiry; pause is a safe control boundary.</p>
           </div>
           <Badge variant="outline">{rollouts.length}</Badge>
         </div>
@@ -338,7 +333,6 @@ export function UpdatesView() {
         <div className="section-heading">
           <div>
             <h3>Desired versus installed</h3>
-            <p>Installed version is reported by the device; desired version comes from its current assignment.</p>
           </div>
           <Badge variant="outline">{devices.length}</Badge>
         </div>

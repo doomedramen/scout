@@ -224,9 +224,11 @@ function evidenceText(incident: Incident): string {
 
 export function IncidentsView({
   focusIncidentId = "",
+  manageRulesRequest = 0,
   onFocusConsumed,
 }: {
   focusIncidentId?: string;
+  manageRulesRequest?: number;
   onFocusConsumed?: () => void;
 }) {
   const [mode, setMode] = useState<ViewMode>("incidents");
@@ -292,6 +294,10 @@ export function IncidentsView({
   useEffect(() => {
     void refresh();
   }, [statusFilter, severityFilter, ackFilter, focusIncidentId]);
+
+  useEffect(() => {
+    if (manageRulesRequest > 0) setMode("rules");
+  }, [manageRulesRequest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,9 +413,6 @@ export function IncidentsView({
             Evidence-led monitoring
           </Badge>
           <h2>Incidents and alert rules</h2>
-          <p>
-            Investigate durable incident episodes, acknowledge owner response, and keep every rule revision visible.
-          </p>
         </div>
         <Button
           variant="ghost"
@@ -461,8 +464,7 @@ export function IncidentsView({
           <section className="data-panel incident-rail" aria-labelledby="incident-queue-title">
             <div className="section-heading">
               <div>
-                <h3 id="incident-queue-title">Attention queue</h3>
-                <p>Episodes stay visible until evidence or policy closes them.</p>
+                <h3 id="incident-queue-title">Incident queue</h3>
               </div>
               <Badge variant="outline">{incidents.length}</Badge>
             </div>
@@ -530,7 +532,6 @@ export function IncidentsView({
               <div className="incident-empty">
                 <Check size={22} />
                 <strong>No incidents match these filters.</strong>
-                <p>When monitoring has evidence to act on, Scout will keep the episode here until it is resolved.</p>
               </div>
             )}
           </section>
@@ -733,7 +734,7 @@ export function IncidentsView({
                 ))}
               </div>
             ) : (
-              <p className="empty-inline">No custom rules yet. The automatic baseline is explained below.</p>
+              <p className="empty-inline">No custom rules yet. Default rules are listed below.</p>
             )}
           </section>
 
@@ -994,7 +995,7 @@ export function IncidentsView({
               <ShieldCheck size={13} />
               Automatic defaults
             </Badge>
-            <h3 id="automatic-defaults-title">A useful baseline starts enabled</h3>
+            <h3 id="automatic-defaults-title">Default rules</h3>
             <p>
               Scout seeds owner-visible fleet rules for every enrolled host. They are explicit, revisioned, and safe to
               tune.

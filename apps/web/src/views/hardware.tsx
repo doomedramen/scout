@@ -340,12 +340,12 @@ function GPUCard({ item, device }: { item: ServiceEntity; device: Device | undef
   );
 }
 
-export function HardwareView() {
+export function HardwareView({ deviceId }: { deviceId?: string } = {}) {
   const [sensors, setSensors] = useState<ServiceEntity[]>([]);
   const [gpus, setGPUs] = useState<ServiceEntity[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [configs, setConfigs] = useState<CollectorConfig[]>([]);
-  const [selectedDeviceID, setSelectedDeviceID] = useState("");
+  const [selectedDeviceID, setSelectedDeviceID] = useState(deviceId ?? "");
   const [excludedIDs, setExcludedIDs] = useState<string[]>([]);
   const [chartSelection, setChartSelection] = useState("");
   const [series, setSeries] = useState<MetricSeries[]>([]);
@@ -366,7 +366,11 @@ export function HardwareView() {
       setGPUs(gpuList.items);
       setDevices(deviceList.items);
       setSelectedDeviceID((current) =>
-        current && deviceList.items.some((device) => device.id === current) ? current : (deviceList.items[0]?.id ?? ""),
+        deviceId && deviceList.items.some((device) => device.id === deviceId)
+          ? deviceId
+          : current && deviceList.items.some((device) => device.id === current)
+            ? current
+            : (deviceList.items[0]?.id ?? ""),
       );
       setError("");
     } catch (caught) {
@@ -396,6 +400,10 @@ export function HardwareView() {
     const timer = window.setInterval(() => void refresh(), 5_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    if (deviceId) setSelectedDeviceID(deviceId);
+  }, [deviceId]);
 
   useEffect(() => {
     void refreshConfig();
@@ -499,7 +507,6 @@ export function HardwareView() {
             <ShieldCheck size={13} /> Hardware telemetry
           </Badge>
           <h2>Hardware</h2>
-          <p>Temperature, fan, and GPU fields appear only when the enrolled Linux host exposes them.</p>
         </div>
         <Button
           variant="ghost"
@@ -522,21 +529,23 @@ export function HardwareView() {
         </p>
       )}
       <div className="filter-row hardware-filter-row">
-        <label>
-          Device
-          <select
-            aria-label="Hardware device"
-            value={selectedDeviceID}
-            onChange={(event) => setSelectedDeviceID(event.target.value)}
-          >
-            {!devices.length && <option value="">No enrolled devices</option>}
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!deviceId && (
+          <label>
+            Device
+            <select
+              aria-label="Hardware device"
+              value={selectedDeviceID}
+              onChange={(event) => setSelectedDeviceID(event.target.value)}
+            >
+              {!devices.length && <option value="">No enrolled devices</option>}
+              {devices.map((device) => (
+                <option key={device.id} value={device.id}>
+                  {device.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="hardware-summary" aria-label="Hardware summary">
           <Badge variant="outline">{visibleSensors.length} sensors</Badge>
           <Badge variant="outline">{visibleGPUs.length} GPUs</Badge>
@@ -554,10 +563,7 @@ export function HardwareView() {
         <div className="section-heading">
           <div>
             <h3 id="sensor-exclusions-title">Sensor exclusions</h3>
-            <p>
-              Exclude exact stable sensor IDs when a channel is noisy or not useful. Exclusions do not use mutable
-              display names.
-            </p>
+            <p>Exclude stable sensor IDs.</p>
           </div>
           <Button type="button" size="sm" disabled={!selectedDeviceID || busy} onClick={() => void saveExclusions()}>
             {busy ? "Saving…" : "Save exclusions"}
@@ -606,7 +612,6 @@ export function HardwareView() {
           <div className="hardware-section-heading">
             <div>
               <h3 id="sensors-title">Temperature and fan channels</h3>
-              <p>Alarm flags are shown separately from numeric readings.</p>
             </div>
             <Badge variant="outline">{visibleSensors.length}</Badge>
           </div>
@@ -622,7 +627,6 @@ export function HardwareView() {
           <div className="hardware-section-heading">
             <div>
               <h3 id="gpus-title">GPUs</h3>
-              <p>Unavailable fields remain visible; power labels identify GPU-board or package scope.</p>
             </div>
             <Badge variant="outline">{visibleGPUs.length}</Badge>
           </div>
@@ -638,7 +642,7 @@ export function HardwareView() {
           <div className="section-heading">
             <div>
               <h3>Recent hardware history</h3>
-              <p>Gaps are left visible instead of being interpolated.</p>
+              <p>Gaps remain visible.</p>
             </div>
             <label className="hardware-chart-selector">
               Signal
@@ -742,7 +746,7 @@ export function HardwareView() {
         <div className="empty">
           <Cpu size={30} />
           <h2>No hardware entities observed</h2>
-          <p>Enroll a Linux device with exposed hwmon or GPU fields to see hardware telemetry here.</p>
+          <p>Enable hardware telemetry on an enrolled device.</p>
         </div>
       )}
     </section>

@@ -14,7 +14,8 @@ async function signIn(page: Page): Promise<void> {
 test("access errors stay safe and the credential action is keyboard reachable", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Access" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: /^Access Credentials/ }).click();
   await expect(page.getByRole("heading", { name: "Resolve prerequisites" })).toBeVisible();
 
   const secret = "never-rendered-fixture-secret";
