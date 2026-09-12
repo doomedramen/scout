@@ -72,7 +72,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$(uname -s)" == "Linux" ]] || fail "native installation requires Linux"
-[[ "$agent_server_url" != "$agent_default_server_url" ]] || fail "--server or SCOUT_SERVER_URL is required"
+[[ "$agent_server_url" != "$agent_default_server_url" ]] || fail "server URL was not embedded; use a current Scout installer or provide --server/SCOUT_SERVER_URL"
 server_url_pattern='^https?://[A-Za-z0-9:/._~+\[\]-]+$'
 [[ "$agent_server_url" =~ $server_url_pattern ]] || fail "--server must be an http(s) URL without shell metacharacters"
 

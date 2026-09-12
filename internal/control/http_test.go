@@ -323,6 +323,14 @@ func TestAgentInstallerEmbedsRequestOrigin(t *testing.T) {
 	if got, want := response.Header.Get("Cache-Control"), "no-store"; got != want {
 		t.Fatalf("installer cache control = %q, want %q", got, want)
 	}
+	forwarded := httptest.NewRequest(http.MethodGet, "http://scout.example.test/api/v1/bootstrap/agent/install.sh", nil)
+	forwarded.Host = "scout.example.test"
+	forwarded.Header.Set("X-Forwarded-Proto", "https")
+	forwardedResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(forwardedResponse, forwarded)
+	if forwardedResponse.Code != http.StatusOK || !bytes.Contains(forwardedResponse.Body.Bytes(), []byte("https://scout.example.test")) {
+		t.Fatalf("forwarded HTTPS origin was not embedded: %d %q", forwardedResponse.Code, forwardedResponse.Body.String())
+	}
 	digest := sha256.Sum256(body)
 	if got, want := response.Header.Get("X-Scout-Agent-Installer-SHA256"), hex.EncodeToString(digest[:]); got != want {
 		t.Fatalf("installer checksum = %q, want %q", got, want)

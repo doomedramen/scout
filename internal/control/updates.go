@@ -114,16 +114,36 @@ func bootstrapRequestOrigin(r *http.Request) (string, bool) {
 	if host == "" || strings.ContainsAny(host, "/?#%\\\"' \t\r\n@") {
 		return "", false
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
+	scheme := bootstrapRequestScheme(r)
 	origin := scheme + "://" + host
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Scheme != scheme || parsed.Host != host || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", false
 	}
 	return origin, true
+}
+
+func bootstrapRequestScheme(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("Forwarded")); forwarded != "" {
+		first := strings.TrimSpace(strings.SplitN(forwarded, ",", 2)[0])
+		for _, part := range strings.Split(first, ";") {
+			key, value, found := strings.Cut(strings.TrimSpace(part), "=")
+			if !found || !strings.EqualFold(key, "proto") {
+				continue
+			}
+			value = strings.Trim(strings.TrimSpace(value), "\"")
+			if value == "http" || value == "https" {
+				return value
+			}
+		}
+	}
+	if forwarded := strings.TrimSpace(strings.SplitN(r.Header.Get("X-Forwarded-Proto"), ",", 2)[0]); forwarded == "http" || forwarded == "https" {
+		return forwarded
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 func (a *App) listReleases(w http.ResponseWriter, r *http.Request) {
