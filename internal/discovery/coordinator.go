@@ -28,6 +28,7 @@ type Coordinator struct {
 	Policy        *policy.Engine
 	Scanner       Scanner
 	ServerID      string
+	Logf          func(string, ...any)
 	LeaseDuration time.Duration
 	RunDeadline   time.Duration
 	PollInterval  time.Duration
@@ -54,6 +55,12 @@ func (c *Coordinator) serverID() string {
 		return strings.TrimSpace(c.ServerID)
 	}
 	return DefaultServerVantageID
+}
+
+func (c *Coordinator) logf(format string, args ...any) {
+	if c != nil && c.Logf != nil {
+		c.Logf(format, args...)
+	}
 }
 
 // ScanScheduleJitter returns stable, bounded jitter for one scope/vantage
@@ -232,13 +239,7 @@ func (c *Coordinator) LeaseDue(ctx context.Context) ([]store.ScanRun, error) {
 		if run.LeaseExpiresAt != nil && now.Before(*run.LeaseExpiresAt) {
 			continue
 		}
-		duration := c.LeaseDuration
-		if duration <= 0 {
-			duration = defaultCoordinatorLease
-		}
-		if remaining := run.AssignmentExpiresAt.Sub(now); remaining < duration {
-			duration = remaining
-		}
+		duration := c.leaseDuration(run)
 		if duration <= 0 {
 			continue
 		}
@@ -252,6 +253,19 @@ func (c *Coordinator) LeaseDue(ctx context.Context) ([]store.ScanRun, error) {
 		leased = append(leased, claimed)
 	}
 	return leased, nil
+}
+
+func (c *Coordinator) leaseDuration(run store.ScanRun) time.Duration {
+	duration := c.LeaseDuration
+	if duration <= 0 {
+		duration = defaultCoordinatorLease
+	}
+	if !run.AssignmentExpiresAt.IsZero() {
+		if remaining := run.AssignmentExpiresAt.Sub(c.clock()); remaining < duration {
+			duration = remaining
+		}
+	}
+	return duration
 }
 
 // RunOnce schedules, leases, and executes due server runs. Scanner failures
@@ -318,6 +332,7 @@ func (c *Coordinator) executeServerRun(parent context.Context, queued store.Scan
 	watchContext, stopWatching := context.WithCancel(parent)
 	fenceReasons := make(chan string, 1)
 	go c.watchRunFence(watchContext, run, cancel, fenceReasons)
+	go c.renewRunLease(watchContext, run, cancel, fenceReasons)
 	results, scanErr := c.Scanner.Scan(scanContext, addresses, probePolicy)
 	scanContextErr := scanContext.Err()
 	cancel()
@@ -358,6 +373,46 @@ func (c *Coordinator) executeServerRun(parent context.Context, queued store.Scan
 	return c.currentRun(parent, run.ID, run)
 }
 
+func (c *Coordinator) renewRunLease(ctx context.Context, run store.ScanRun, cancel context.CancelFunc, reasons chan<- string) {
+	duration := c.leaseDuration(run)
+	if duration <= 0 {
+		cancel()
+		signalFence(reasons, "scanner_unavailable")
+		return
+	}
+	interval := duration / 2
+	if interval <= 0 {
+		interval = time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			renewalDuration := c.leaseDuration(run)
+			if renewalDuration <= 0 {
+				cancel()
+				signalFence(reasons, "scanner_unavailable")
+				return
+			}
+			if _, err := c.Store.RenewScanLease(ctx, run.ID, c.serverID(), run.LeaseEpoch, renewalDuration); err != nil {
+				cancel()
+				signalFence(reasons, "scanner_unavailable")
+				return
+			}
+		}
+	}
+}
+
+func signalFence(reasons chan<- string, reason string) {
+	select {
+	case reasons <- reason:
+	default:
+	}
+}
+
 func (c *Coordinator) watchRunFence(ctx context.Context, run store.ScanRun, cancel context.CancelFunc, reasons chan<- string) {
 	interval := c.FenceInterval
 	if interval <= 0 {
@@ -375,7 +430,7 @@ func (c *Coordinator) watchRunFence(ctx context.Context, run store.ScanRun, canc
 				continue
 			}
 			cancel()
-			reasons <- reason
+			signalFence(reasons, reason)
 			return
 		}
 	}
@@ -556,16 +611,22 @@ func (c *Coordinator) Start(ctx context.Context) error {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	if _, err := c.RunOnce(ctx); err != nil && ctx.Err() != nil {
-		return err
+	if _, err := c.RunOnce(ctx); err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		c.logf("scan coordinator: %v", err)
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if _, err := c.RunOnce(ctx); err != nil && ctx.Err() != nil {
-				return err
+			if _, err := c.RunOnce(ctx); err != nil {
+				if ctx.Err() != nil {
+					return err
+				}
+				c.logf("scan coordinator: %v", err)
 			}
 		}
 	}

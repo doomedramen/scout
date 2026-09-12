@@ -56,6 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	app.Coordinator.Logf = func(format string, args ...any) { log.Printf(format, args...) }
 	server := &http.Server{Addr: listen, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

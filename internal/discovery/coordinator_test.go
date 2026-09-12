@@ -269,3 +269,27 @@ func TestCoordinatorFencesPolicyRevisionDuringServerScan(t *testing.T) {
 		t.Fatalf("run revision changed while executing: %+v", runs[0])
 	}
 }
+
+func TestCoordinatorRenewsLeaseDuringLongServerScan(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, _ := coordinatorFixture(t)
+	repository.SetClock(time.Now)
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{scan: func(scanContext context.Context, addresses []string, probePolicy ProbePolicy) ([]ProbeResult, error) {
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-scanContext.Done():
+			return nil, scanContext.Err()
+		}
+		return []ProbeResult{{Address: addresses[0], Port: probePolicy.Ports[0], Outcome: "closed", ReasonCode: "connection_refused"}}, nil
+	}})
+	coordinator.LeaseDuration = 30 * time.Millisecond
+	coordinator.FenceInterval = time.Millisecond
+	coordinator.RunDeadline = time.Second
+	runs, err := coordinator.RunOnce(ctx)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("long scan: %+v err=%v", runs, err)
+	}
+	if runs[0].State != store.ScanRunCompleted || runs[0].AttemptsCompleted != 1 {
+		t.Fatalf("lease was not renewed during scan: %+v", runs[0])
+	}
+}
