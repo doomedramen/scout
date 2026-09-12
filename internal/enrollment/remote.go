@@ -24,6 +24,12 @@ type ClaimedJob struct {
 	ReleaseID         string `json:"releaseId"`
 }
 
+type RedeemedCredential struct {
+	Secret     string
+	AuthMethod string
+	Username   string
+}
+
 type RemoteWorker struct {
 	ServerURL string
 	Token     string
@@ -102,18 +108,20 @@ func (w *RemoteWorker) Progress(ctx context.Context, job ClaimedJob, state strin
 	return err
 }
 
-func (w *RemoteWorker) Redeem(ctx context.Context, job ClaimedJob) (string, error) {
+func (w *RemoteWorker) Redeem(ctx context.Context, job ClaimedJob) (RedeemedCredential, error) {
 	var result struct {
 		Credential string `json:"credential"`
+		AuthMethod string `json:"authMethod"`
+		Username   string `json:"username"`
 	}
 	_, err := w.do(ctx, http.MethodPost, "/grants/"+job.CredentialGrantID+"/redeem", map[string]any{}, &result)
 	if err != nil {
-		return "", err
+		return RedeemedCredential{}, err
 	}
 	if result.Credential == "" {
-		return "", errors.New("worker credential grant was empty")
+		return RedeemedCredential{}, errors.New("worker credential grant was empty")
 	}
-	return result.Credential, nil
+	return RedeemedCredential{Secret: result.Credential, AuthMethod: result.AuthMethod, Username: result.Username}, nil
 }
 
 func (w *RemoteWorker) Confirmed(ctx context.Context, job ClaimedJob) (bool, error) {

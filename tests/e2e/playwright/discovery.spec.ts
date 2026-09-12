@@ -118,11 +118,26 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
   await expect(page.getByLabel("Scope ID")).toHaveValue(createdScope?.id ?? "");
 
-  await page.getByLabel("Secret").fill("fixture-secret");
+  const authenticationMethod = page.getByLabel("SSH authentication");
+  await expect(authenticationMethod).toHaveValue("password");
+  await authenticationMethod.selectOption("private_key");
+  await expect(page.getByLabel("SSH private key")).toBeVisible();
+  await authenticationMethod.selectOption("password");
+  await expect(page.getByLabel("SSH password")).toBeVisible();
+  await page.getByLabel("SSH username").fill("fixture");
+  await page.getByLabel("SSH password").fill("fixture-password");
   await page.getByRole("button", { name: "Store encrypted credential" }).click();
   await expect(
     page.getByText("Credential stored. The secret is write-only and will not be shown again."),
   ).toBeVisible();
+  const credentialsResponse = await page.request.get("/api/v1/credentials");
+  expect(credentialsResponse.status()).toBe(200);
+  const credentials = (await credentialsResponse.json()) as {
+    items: Array<{ metadata: Record<string, string>; targets: string[] }>;
+  };
+  const scopedCredential = credentials.items.find((item) => item.targets.includes(`127.0.0.1:${scanPort}`));
+  expect(scopedCredential?.metadata).toMatchObject({ authMethod: "password", username: "fixture" });
+  expect(JSON.stringify(scopedCredential)).not.toContain("fixture-password");
   await page.getByLabel("Fingerprint").fill("SHA256:fixture");
   await page.getByRole("button", { name: "Record trusted identity" }).click();
   await expect(page.getByText("Trust record added. Scout will not accept a changed key automatically.")).toBeVisible();

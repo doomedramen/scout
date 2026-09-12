@@ -17,15 +17,34 @@ import (
 type SSHOptions struct {
 	Address         string
 	Username        string
+	Password        string
 	PrivateKeyPEM   []byte
 	KnownHostsFile  string
 	HostKeyCallback ssh.HostKeyCallback
 	Timeout         time.Duration
 }
 
+const (
+	SSHAuthMethodPassword   = "password"
+	SSHAuthMethodPrivateKey = "private_key"
+)
+
 var ErrHostKeyMismatch = errors.New("SSH host key does not match the trusted fingerprint")
 var ErrSSHConnectivity = errors.New("SSH target could not be reached")
 var ErrSSHAuthentication = errors.New("SSH authentication failed")
+
+func NormalizeSSHAuthMethod(value string) (string, bool) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return SSHAuthMethodPrivateKey, true
+	}
+	switch value {
+	case SSHAuthMethodPassword, SSHAuthMethodPrivateKey:
+		return value, true
+	default:
+		return "", false
+	}
+}
 
 // FingerprintHostKeyCallback makes an owner-supplied fingerprint usable by
 // the server-local enrollment worker without creating a known_hosts file.
@@ -47,13 +66,21 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	if err := ValidateTarget(options.Address); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(options.Username) == "" || len(options.PrivateKeyPEM) == 0 || options.KnownHostsFile == "" && options.HostKeyCallback == nil {
+	if strings.TrimSpace(options.Username) == "" || len(options.PrivateKeyPEM) == 0 && options.Password == "" || options.KnownHostsFile == "" && options.HostKeyCallback == nil {
 		return nil, errors.New("SSH identity and host trust are required")
 	}
-	signer, err := ssh.ParsePrivateKey(options.PrivateKeyPEM)
-	if err != nil {
-		return nil, ErrSSHAuthentication
+	authMethods := make([]ssh.AuthMethod, 0, 2)
+	if len(options.PrivateKeyPEM) > 0 {
+		signer, err := ssh.ParsePrivateKey(options.PrivateKeyPEM)
+		if err != nil {
+			return nil, ErrSSHAuthentication
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+	if options.Password != "" {
+		authMethods = append(authMethods, ssh.Password(options.Password))
+	}
+	var err error
 	hostKeyCallback := options.HostKeyCallback
 	var callbackErr error
 	if hostKeyCallback != nil {
@@ -76,7 +103,7 @@ func DialSSH(ctx context.Context, options SSHOptions) (SSHTransport, error) {
 	if timeout > 60*time.Second {
 		return nil, errors.New("SSH timeout exceeds limit")
 	}
-	config := &ssh.ClientConfig{User: options.Username, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyCallback: hostKeyCallback, Timeout: timeout}
+	config := &ssh.ClientConfig{User: options.Username, Auth: authMethods, HostKeyCallback: hostKeyCallback, Timeout: timeout}
 	dialer := net.Dialer{Timeout: timeout}
 	connection, err := dialer.DialContext(ctx, "tcp", options.Address)
 	if err != nil {

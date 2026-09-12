@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"scout.local/scout/internal/enrollment"
@@ -73,16 +74,38 @@ func execute(ctx context.Context, worker *enrollment.RemoteWorker, job enrollmen
 		_ = worker.Progress(ctx, job, "failed", map[string]string{"code": "credential_unavailable"})
 		return err
 	}
-	transport, err := enrollment.DialSSH(ctx, enrollment.SSHOptions{Address: job.Destination, Username: username, PrivateKeyPEM: []byte(credential), KnownHostsFile: knownHosts})
+	sshUsername := strings.TrimSpace(credential.Username)
+	if sshUsername == "" {
+		sshUsername = username
+	}
+	authMethod, validAuthMethod := enrollment.NormalizeSSHAuthMethod(credential.AuthMethod)
+	if !validAuthMethod {
+		_ = worker.Progress(ctx, job, "failed", map[string]string{"code": "credential_unavailable"})
+		return errors.New("worker credential auth method is invalid")
+	}
+	sshOptions := enrollment.SSHOptions{Address: job.Destination, Username: sshUsername, KnownHostsFile: knownHosts}
+	if authMethod == enrollment.SSHAuthMethodPassword {
+		sshOptions.Password = credential.Secret
+	} else {
+		sshOptions.PrivateKeyPEM = []byte(credential.Secret)
+	}
+	transport, err := enrollment.DialSSH(ctx, sshOptions)
 	if err != nil {
-		_ = worker.Progress(ctx, job, "failed", map[string]string{"code": "connectivity"})
+		code := "connectivity"
+		switch {
+		case errors.Is(err, enrollment.ErrHostKeyMismatch):
+			code = "host_key_mismatch"
+		case errors.Is(err, enrollment.ErrSSHAuthentication):
+			code = "invalid_credentials"
+		}
+		_ = worker.Progress(ctx, job, "failed", map[string]string{"code": code})
 		return err
 	}
 	if err := worker.Progress(ctx, job, "installing", map[string]string{}); err != nil {
 		transport.Close()
 		return err
 	}
-	if _, err := enrollment.Install(ctx, transport, enrollment.InstallRequest{Target: job.Destination, Username: username, Version: version, Artifact: artifact, ArtifactHash: artifactHash, ServiceUnit: serviceUnit}); err != nil {
+	if _, err := enrollment.Install(ctx, transport, enrollment.InstallRequest{Target: job.Destination, Username: sshUsername, Version: version, Artifact: artifact, ArtifactHash: artifactHash, ServiceUnit: serviceUnit}); err != nil {
 		_ = worker.Progress(ctx, job, "failed", map[string]string{"code": "installation"})
 		return err
 	}

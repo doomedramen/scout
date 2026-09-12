@@ -143,6 +143,11 @@ short-lived one-time invitation, and runs only the fixed agent installation
 operation. The SSH account must have root access or non-interactive sudo for
 that bounded operation.
 
+The Access form defaults to SSH username/password authentication. Enter the
+account used on the target host and its password, or select **Private key** for
+key-based SSH hosts. The selected method and username are safe metadata; the
+password or private key remains write-only and encrypted.
+
 An explicitly registered `apps/enroller` relay remains available for a later
 segmented-network deployment, but it is not needed by the default Compose
 stack and is not started automatically.

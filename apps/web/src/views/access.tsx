@@ -12,6 +12,7 @@ import {
   type CandidateDetail,
   type Credential,
   type Owner,
+  type SSHAuthMethod,
   type TrustRecord,
 } from "@/lib/api";
 
@@ -37,7 +38,8 @@ export function AccessView({
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [trust, setTrust] = useState<TrustRecord[]>([]);
   const [credentialKind, setCredentialKind] = useState("ssh");
-  const [username, setUsername] = useState("scout");
+  const [sshAuthMethod, setSSHAuthMethod] = useState<SSHAuthMethod>("password");
+  const [username, setUsername] = useState("");
   const [secret, setSecret] = useState("");
   const [targets, setTargets] = useState("");
   const [endpoint, setEndpoint] = useState("");
@@ -177,14 +179,16 @@ export function AccessView({
     setBusy(true);
     setError("");
     setMessage("");
+    const isSSHCredential = credentialKind.trim().toLowerCase() === "ssh";
     try {
       await api.createCredential({
         kind: credentialKind,
         secret,
         targets: splitValues(targets),
         allowedUse: ["enrollment"],
+        authMethod: isSSHCredential ? sshAuthMethod : undefined,
         endpoint,
-        username: credentialKind === "ssh" ? username : undefined,
+        username: isSSHCredential ? username : undefined,
         scopeId: focusedCandidate?.scopeId,
         expectedScopeRevision: scopeRevision,
       });
@@ -220,6 +224,9 @@ export function AccessView({
       setBusy(false);
     }
   }
+
+  const isSSHCredential = credentialKind.trim().toLowerCase() === "ssh";
+  const usesSSHPassword = isSSHCredential && sshAuthMethod === "password";
 
   return (
     <section className="workspace-grid access-view">
@@ -384,25 +391,57 @@ export function AccessView({
             Credential type
             <Input value={credentialKind} onChange={(event) => setCredentialKind(event.target.value)} />
           </label>
-          <label>
-            Secret
-            <Textarea
-              required
-              autoComplete="new-password"
-              aria-label="Secret"
-              placeholder={credentialKind === "ssh" ? "Paste the complete private key" : "Paste the secret"}
-              spellCheck={false}
-              value={secret}
-              onChange={(event) => setSecret(event.target.value)}
-            />
-            {credentialKind === "ssh" && <span className="label-hint">Keep the original line breaks.</span>}
-          </label>
-          {credentialKind === "ssh" && (
+          {isSSHCredential && (
             <label>
-              SSH username
-              <Input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
+              SSH authentication
+              <select
+                aria-label="SSH authentication"
+                value={sshAuthMethod}
+                onChange={(event) => setSSHAuthMethod(event.target.value as SSHAuthMethod)}
+              >
+                <option value="password">Username + password</option>
+                <option value="private_key">Private key</option>
+              </select>
+              <span className="label-hint">Scout uses this only for the target-bound enrollment connection.</span>
             </label>
           )}
+          {isSSHCredential && (
+            <label>
+              SSH username
+              <Input
+                required
+                autoComplete="username"
+                placeholder="root or another SSH account"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+              />
+            </label>
+          )}
+          <label>
+            {usesSSHPassword ? "SSH password" : isSSHCredential ? "SSH private key" : "Secret"}
+            {usesSSHPassword ? (
+              <Input
+                required
+                type="password"
+                autoComplete="new-password"
+                aria-label="SSH password"
+                placeholder="Password used by SSH on this host"
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+              />
+            ) : (
+              <Textarea
+                required
+                autoComplete="new-password"
+                aria-label={isSSHCredential ? "SSH private key" : "Secret"}
+                placeholder={isSSHCredential ? "Paste the complete private key" : "Paste the secret"}
+                spellCheck={false}
+                value={secret}
+                onChange={(event) => setSecret(event.target.value)}
+              />
+            )}
+            {isSSHCredential && !usesSSHPassword && <span className="label-hint">Keep the original line breaks.</span>}
+          </label>
           <label>
             Exact targets <span className="label-hint">host:port, comma separated</span>
             <Input

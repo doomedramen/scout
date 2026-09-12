@@ -355,11 +355,24 @@ func (a *App) workerRedeem(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrConflict)
 		return
 	}
+	credential, err := a.Store.Credential(r.Context(), scope.CredentialRef)
+	if err != nil || credential.RevokedAt != nil || credential.Kind != "ssh" {
+		if err == nil {
+			err = store.ErrForbidden
+		}
+		writeMappedError(w, r, err)
+		return
+	}
+	authMethod, validAuthMethod := enrollment.NormalizeSSHAuthMethod(credential.Metadata["authMethod"])
+	if !validAuthMethod {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
 	secret, err := (&secrets.Broker{Store: a.Store, KeyRing: a.Secrets}).RedeemForTarget(r.Context(), scope.CredentialRef, "enrollment", job.Destination)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
 	}
 	_ = a.Audit.Record(context.Background(), audit.Event{ActorKind: "worker", ActorID: worker.ID, Action: "credential.redeem", Target: job.Destination, Outcome: map[string]any{"jobId": job.ID, "success": true}, RequestID: r.Header.Get("X-Request-ID")})
-	writeJSON(w, http.StatusOK, map[string]any{"credential": string(secret), "target": job.Destination, "expiresAt": a.Store.Now().Add(60 * time.Second)})
+	writeJSON(w, http.StatusOK, map[string]any{"credential": string(secret), "authMethod": authMethod, "username": credential.Metadata["username"], "target": job.Destination, "expiresAt": a.Store.Now().Add(60 * time.Second)})
 }

@@ -156,6 +156,10 @@ func (w *LocalWorker) execute(ctx context.Context, job store.Job) error {
 	if credential.RevokedAt != nil || credential.Kind != "ssh" || job.CredentialVersion > 0 && credential.Revision != job.CredentialVersion {
 		return w.fail(ctx, job, "invalid_credentials", store.ErrForbidden)
 	}
+	authMethod, validAuthMethod := NormalizeSSHAuthMethod(credential.Metadata["authMethod"])
+	if !validAuthMethod {
+		return w.fail(ctx, job, "invalid_credentials", store.ErrInvalid)
+	}
 	trust, err := w.Store.ScopeTrustRecord(ctx, scope.ID, job.Destination)
 	if err != nil {
 		return w.fail(ctx, job, "host_trust_required", err)
@@ -164,6 +168,11 @@ func (w *LocalWorker) execute(ctx context.Context, job store.Job) error {
 	if err != nil {
 		return w.fail(ctx, job, "credential_unavailable", err)
 	}
+	defer func() {
+		for index := range secret {
+			secret[index] = 0
+		}
+	}()
 	username := strings.TrimSpace(credential.Metadata["username"])
 	if username == "" {
 		username = strings.TrimSpace(w.Config.Username)
@@ -179,7 +188,13 @@ func (w *LocalWorker) execute(ctx context.Context, job store.Job) error {
 	if dial == nil {
 		dial = DialSSH
 	}
-	transport, err := dial(ctx, SSHOptions{Address: job.Destination, Username: username, PrivateKeyPEM: secret, HostKeyCallback: FingerprintHostKeyCallback(trust.Fingerprint), Timeout: w.sshTimeout()})
+	sshOptions := SSHOptions{Address: job.Destination, Username: username, HostKeyCallback: FingerprintHostKeyCallback(trust.Fingerprint), Timeout: w.sshTimeout()}
+	if authMethod == SSHAuthMethodPassword {
+		sshOptions.Password = string(secret)
+	} else {
+		sshOptions.PrivateKeyPEM = secret
+	}
+	transport, err := dial(ctx, sshOptions)
 	if err != nil {
 		code := "connectivity"
 		switch {

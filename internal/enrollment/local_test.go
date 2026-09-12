@@ -62,7 +62,7 @@ func TestLocalWorkerInstallsAgentFromOwnerBoundAccess(t *testing.T) {
 		PollInterval: time.Millisecond,
 		Dial: func(_ context.Context, options SSHOptions) (SSHTransport, error) {
 			if options.Address != fixture.job.Destination || options.Username != "fixture" || options.HostKeyCallback == nil {
-				t.Fatalf("unexpected SSH options: %+v", options)
+				t.Fatalf("unexpected SSH connection target: address=%q username=%q host-trust=%t", options.Address, options.Username, options.HostKeyCallback != nil)
 			}
 			return transport, nil
 		},
@@ -94,6 +94,37 @@ func TestLocalWorkerInstallsAgentFromOwnerBoundAccess(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(transport.commands, "\n"), "sudo -n true") {
 		t.Fatal("fixed install command did not check non-interactive privilege")
+	}
+}
+
+func TestLocalWorkerUsesSSHPasswordAccess(t *testing.T) {
+	fixture := newLocalWorkerFixtureWithCredential(t, SSHAuthMethodPassword, "fixture-password")
+	transport := &localWorkerSSH{repository: fixture.repository, deviceID: fixture.job.DeviceID}
+	sawPassword := false
+	worker := NewLocalWorker(fixture.repository, &Access{Store: fixture.repository}, fixture.broker, LocalWorkerConfig{
+		PublicOrigin: "https://scout.example.test",
+		ArtifactDir:  fixture.artifactDir,
+		ServiceUnit:  []byte("Environment=SCOUT_SERVER_URL=__SCOUT_SERVER_URL__\n"),
+		AgentVersion: "0.1.0",
+		PollInterval: time.Millisecond,
+		Dial: func(_ context.Context, options SSHOptions) (SSHTransport, error) {
+			if options.Address != fixture.job.Destination || options.Username != "fixture" || options.HostKeyCallback == nil {
+				t.Fatalf("unexpected SSH options: %+v", options)
+			}
+			if options.Password != "fixture-password" || len(options.PrivateKeyPEM) != 0 {
+				t.Fatalf("password authentication was not selected")
+			}
+			sawPassword = true
+			return transport, nil
+		},
+	})
+
+	handled, err := worker.RunOnce(context.Background())
+	if !handled || err != nil {
+		t.Fatalf("local worker password run = handled %t err %v", handled, err)
+	}
+	if !sawPassword {
+		t.Fatal("local worker did not pass the SSH password to the transport")
 	}
 }
 
@@ -136,6 +167,10 @@ type localWorkerFixture struct {
 }
 
 func newLocalWorkerFixture(t *testing.T) localWorkerFixture {
+	return newLocalWorkerFixtureWithCredential(t, SSHAuthMethodPrivateKey, "fixture-private-key")
+}
+
+func newLocalWorkerFixtureWithCredential(t *testing.T, authMethod, secret string) localWorkerFixture {
 	t.Helper()
 	ctx := context.Background()
 	repository := store.NewMemory()
@@ -153,11 +188,11 @@ func newLocalWorkerFixture(t *testing.T) localWorkerFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope, err := keyRing.EncryptSecret(credentialID, "ssh", []byte("fixture-private-key"))
+	envelope, err := keyRing.EncryptSecret(credentialID, "ssh", []byte(secret))
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := repository.PutCredential(ctx, store.CredentialRef{ID: credentialID, Kind: "ssh", AllowedUse: []string{"enrollment"}, Targets: []string{"192.0.2.10:22"}, Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion, Metadata: map[string]string{"username": "fixture"}})
+	credential, err := repository.PutCredential(ctx, store.CredentialRef{ID: credentialID, Kind: "ssh", AllowedUse: []string{"enrollment"}, Targets: []string{"192.0.2.10:22"}, Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion, Metadata: map[string]string{"authMethod": authMethod, "username": "fixture"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -475,6 +475,8 @@ export type Credential = {
   revokedAt?: string;
 };
 
+export type SSHAuthMethod = "password" | "private_key";
+
 export type TrustRecord = {
   id: string;
   scopeId?: string;
@@ -1004,6 +1006,7 @@ export const api = {
     secret: string;
     allowedUse: string[];
     targets: string[];
+    authMethod?: SSHAuthMethod;
     endpoint?: string;
     username?: string;
     scopeId?: string;

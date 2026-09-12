@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"scout.local/scout/internal/audit"
+	"scout.local/scout/internal/enrollment"
 	"scout.local/scout/internal/store"
 )
 
@@ -286,6 +287,7 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Kind                  string   `json:"kind"`
+		AuthMethod            string   `json:"authMethod"`
 		Secret                string   `json:"secret"`
 		AllowedUse            []string `json:"allowedUse"`
 		Targets               []string `json:"targets"`
@@ -307,6 +309,18 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
+	authMethod := ""
+	if req.Kind == "ssh" {
+		var valid bool
+		authMethod, valid = enrollment.NormalizeSSHAuthMethod(req.AuthMethod)
+		if !valid || authMethod == enrollment.SSHAuthMethodPassword && username == "" {
+			writeMappedError(w, r, store.ErrInvalid)
+			return
+		}
+	} else if strings.TrimSpace(req.AuthMethod) != "" {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
 	id := store.NewID()
 	envelope, err := a.Secrets.EncryptSecret(id, req.Kind, []byte(req.Secret))
 	if err != nil {
@@ -316,6 +330,9 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 	metadata := map[string]string{"created": "owner"}
 	if username != "" {
 		metadata["username"] = username
+	}
+	if authMethod != "" {
+		metadata["authMethod"] = authMethod
 	}
 	credential, err := a.Store.PutCredential(r.Context(), store.CredentialRef{ID: id, Kind: req.Kind, Endpoint: req.Endpoint, AllowedUse: req.AllowedUse, Targets: req.Targets, Ciphertext: envelope.Ciphertext, Nonce: envelope.Nonce, WrappedDataKey: envelope.WrappedDataKey, KeyVersion: envelope.KeyVersion, Metadata: metadata})
 	if err != nil {
