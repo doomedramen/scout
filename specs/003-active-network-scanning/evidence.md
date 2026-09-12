@@ -695,3 +695,29 @@ Never attach credential values, private keys, host-key private material, banners
   packet-captured segmented multi-vantage lab, 256-address/100-device load,
   recovery, older-agent, or full viewport matrix. T029–T044 therefore remain
   open in `tasks.md`.
+
+## Multi-vantage authority and pause fencing slice
+
+- Requirements: FR-002–FR-004, FR-007, FR-009, FR-014–FR-018, FR-022;
+  implementation/test commit: 87b258d.
+- Explicit agent assignments now require an active identity, current TCP scan
+  capability, compatible device lifecycle, and site match at policy update,
+  run creation, desired-state delivery, and result ingestion boundaries. A
+  moved, revoked, or decommissioned agent cannot receive or complete stale
+  scan work; queued and leased work is canceled immediately, while running or
+  uploading work is cancellation-fenced and rejects new result pages.
+- Discovery pause now cancels queued/leased scan runs, exposes active scan
+  holders in `ExecutionHolders`, blocks new scheduling and desired-state
+  delivery, and supports authenticated agent `POST /agent/v1/pause-ack` only
+  after the agent scan executor has stopped. Pause acknowledgement cannot clear
+  a holder while its active scan lease remains.
+- Tests were written before the new behavior and initially failed for leased
+  cancellation, early pause acknowledgement, absent agent pause route, and
+  missing runtime acknowledgement. Exact passing checks after implementation:
+  `go test ./internal/agent ./internal/control ./internal/discovery
+  ./internal/policy ./internal/store ./tests/integration -count=1`; and
+  `git diff --check`. The integration suite passed in 42.6 seconds. No live
+  device, production network, or production credential was contacted.
+- Remaining limits: T029/T030 still need the complete multi-vantage and
+  restart/unreachable matrix, and T031/T032 remain open pending the broader
+  authority/recovery audit.
