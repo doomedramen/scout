@@ -581,3 +581,35 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limit: the already-running public deployment must be rebuilt and
   restarted from the pushed image before its endpoint can serve this fix; no
   production deployment or device installation was performed from this task.
+
+## Server-local discovered enrollment checkpoint
+
+- Requirements: FR-010–FR-015, FR-017, FR-020; SC-003–SC-005, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: f7aced4.
+- Discovered Linux candidates can now be processed by an in-process server
+  worker after owner-approved SSH credential and exact host-fingerprint trust
+  are present. The worker claims one target-bound job, revalidates scope,
+  exclusion, credential revision, destination, and trust immediately before
+  use, redeems the secret only for that target, stages the native artifact,
+  service unit, and short-lived invitation over SSH, and waits for the new
+  agent heartbeat before marking the candidate enrolled. The fixed remote
+  command checks root or non-interactive sudo, creates the restricted agent
+  account, installs the binary and service, enables it, and confirms the
+  service state; connection parameters and secrets are not interpolated into
+  that command. The server image contains the AMD64/ARM64 native artifacts;
+  the CI workflow publishes only the server image.
+- Exact verification commands and outcomes: `go test ./internal/enrollment
+  ./internal/identity ./internal/control ./internal/store ./apps/server
+  ./apps/enroller -count=1`; `go test ./... -count=1`; `go vet ./...`; `npm
+  run lint`; `npm run check`; `npm run format:check`; `npm run build`; `go
+  test ./tests/contracts -count=1`; and `git diff --check` passed. The local
+  worker tests use an in-memory store, an injected SSH transport, RFC 5737
+  target data, and redacted fixture material; the positive case verifies
+  invitation/service uploads and confirmation, while the negative case
+  projects host-key mismatch without leaking the credential. No real device,
+  network, production credential, or deployment was used.
+- Remaining limits: this proves the server-local orchestration boundary and
+  fixed installer behavior, not a real Linux/systemd installation, segmented
+  packet capture, 256-address performance, or the full keyboard/viewport
+  browser matrix. The live deployment must rebuild from the pushed commits
+  before its served installer contains the latest fixes.
