@@ -1155,7 +1155,7 @@ For future results append: task and requirement IDs, commit, date, exact command
 ## T041 — accessible monitoring journeys and security failures
 
 - Requirements: FR-009, FR-016, FR-019, FR-028, FR-032, FR-035; SC-010, SC-011.
-- Date: 2026-09-12 (Europe/London); implementation commit: 29ca809.
+- Date: 2026-09-12 (Europe/London); implementation commit: 3d1ec90.
 - Added `tests/e2e/playwright/advanced-monitoring.spec.ts`, a cross-view
   journey that uses keyboard focus and activation to inspect a fresh failed
   systemd incident, acknowledge it, follow the service incident link, open a
