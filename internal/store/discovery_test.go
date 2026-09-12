@@ -2,11 +2,32 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestPersistedDiscoveryKeysAreJSONSafe(t *testing.T) {
+	keys := []string{
+		candidateKey("scope\x00id", "2001:db8::10"),
+		scanAccessRequestDedupeKey("candidate", ScanAccessSSH, "2001:db8::10:22"),
+	}
+	for _, key := range keys {
+		if strings.ContainsRune(key, '\x00') {
+			t.Fatalf("composite key contains a NUL byte: %q", key)
+		}
+		encoded, err := json.Marshal(map[string]any{key: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "\\u0000") {
+			t.Fatalf("JSON encoded composite key contains a NUL escape: %s", encoded)
+		}
+	}
+}
 
 func TestCandidatesDeduplicateAndPreserveExclusions(t *testing.T) {
 	ctx := context.Background()

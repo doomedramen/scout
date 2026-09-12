@@ -8,7 +8,7 @@ import (
 )
 
 func collectorConfigKey(deviceID, collectorID string) string {
-	return deviceID + "\x00" + collectorID
+	return safeCompositeKey(deviceID, collectorID)
 }
 
 func (s *Store) PutCollectorConfig(ctx context.Context, config CollectorConfig, expectedRevision int64) (CollectorConfig, error) {
@@ -102,7 +102,7 @@ func (s *Store) PutServiceEntity(ctx context.Context, entity ServiceEntity) erro
 }
 
 func serviceEntityKey(entity ServiceEntity) string {
-	return strings.Join([]string{entity.Provider, entity.ClusterID, entity.ID}, "\x00")
+	return safeCompositeKey(entity.Provider, entity.ClusterID, entity.ID)
 }
 
 func (s *Store) ListServiceEntities(ctx context.Context, provider string, now time.Time) ([]ServiceEntity, error) {

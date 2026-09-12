@@ -354,7 +354,7 @@ func alertTargetRank(kind string) int {
 }
 
 func alertOverrideKey(lineageID, targetKind, targetID string) string {
-	return strings.Join([]string{lineageID, targetKind, targetID}, "\x00")
+	return safeCompositeKey(lineageID, targetKind, targetID)
 }
 
 func finiteAlertValue(value float64) bool {

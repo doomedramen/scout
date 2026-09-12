@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,17 @@ func NewID() string {
 	raw[6] = (raw[6] & 0x0f) | 0x40
 	raw[8] = (raw[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%s-%s-%s-%s-%s", hex.EncodeToString(raw[0:4]), hex.EncodeToString(raw[4:6]), hex.EncodeToString(raw[6:8]), hex.EncodeToString(raw[8:10]), hex.EncodeToString(raw[10:16]))
+}
+
+// safeCompositeKey creates a collision-free map key without control bytes.
+// State maps are serialized into PostgreSQL JSONB, which rejects a JSON
+// string containing a NUL escape.
+func safeCompositeKey(parts ...string) string {
+	encoded := make([]string, len(parts))
+	for index, part := range parts {
+		encoded[index] = base64.RawURLEncoding.EncodeToString([]byte(part))
+	}
+	return strings.Join(encoded, ".")
 }
 
 func HashToken(token string) string {

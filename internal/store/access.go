@@ -313,7 +313,7 @@ func updateAccessRequestState(state *State, existing, requested AccessRequest, k
 }
 
 func scanAccessRequestDedupeKey(candidateID, accessMethod, endpoint string) string {
-	return candidateID + "\x00" + accessMethod + "\x00" + endpoint
+	return safeCompositeKey(candidateID, accessMethod, endpoint)
 }
 
 func (s *Store) ListAccessRequests(ctx context.Context, stateFilter, reason string) ([]AccessRequest, error) {

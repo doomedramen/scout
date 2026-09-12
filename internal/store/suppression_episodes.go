@@ -169,7 +169,7 @@ func mergeSuppressionReasons(left, right []string) []string {
 }
 
 func suppressionEpisodeKey(destinationID, entityID string, epoch int64) string {
-	return destinationID + "\x00" + entityID + "\x00" + strconv.FormatInt(epoch, 10)
+	return safeCompositeKey(destinationID, entityID, strconv.FormatInt(epoch, 10))
 }
 
 func latestSuppressionEpisodeState(state *State, destinationID, entityID string) (SuppressionEpisode, bool) {

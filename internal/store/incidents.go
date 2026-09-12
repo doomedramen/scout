@@ -1183,9 +1183,11 @@ func incidentMatches(incident Incident, query IncidentQuery) bool {
 	return true
 }
 
-func alertWorkKey(lineageID, entityID string) string { return lineageID + "\x00" + entityID }
+func alertWorkKey(lineageID, entityID string) string { return safeCompositeKey(lineageID, entityID) }
 
-func alertEvaluationKey(lineageID, entityID string) string { return lineageID + "\x00" + entityID }
+func alertEvaluationKey(lineageID, entityID string) string {
+	return safeCompositeKey(lineageID, entityID)
+}
 
 func nextTransitionSequence(values map[string]IncidentTransition, incidentID string) int64 {
 	var result int64

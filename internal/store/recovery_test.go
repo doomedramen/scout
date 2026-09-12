@@ -80,7 +80,7 @@ func TestRecoveryCancelsPendingWorkAndResumesOnlyFreshSummaries(t *testing.T) {
 	}
 	if err := s.mutate(ctx, func(state *State) error {
 		observed := now.Add(-time.Minute)
-		state.AlertEvaluations["lineage\x00entity"] = AlertEvaluation{
+		state.AlertEvaluations[alertEvaluationKey("lineage", "entity")] = AlertEvaluation{
 			LineageID: "lineage", EntityID: "entity", EffectiveRevision: 4, EvidenceState: "fresh",
 			LastObservedAt: &observed, LastReceivedAt: &observed, PendingSince: &observed, RecoverySince: &observed, LastValidAt: &observed,
 			TriggerConsecutive: 3, RecoveryConsecutive: 2, IncidentID: "incident", UpdatedAt: observed,

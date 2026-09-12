@@ -17,7 +17,7 @@ func normalizeAddress(raw string) (string, error) {
 }
 
 func candidateKey(scopeID, address string) string {
-	return scopeID + "\x00" + address
+	return safeCompositeKey(scopeID, address)
 }
 
 func (s *Store) UpsertCandidate(ctx context.Context, candidate Candidate) (Candidate, error) {

@@ -110,7 +110,7 @@ func (s *Store) PutCollector(ctx context.Context, deviceID string, descriptor Co
 		if !ok {
 			return ErrNotFound
 		}
-		key := deviceID + "\x00" + descriptor.ID
+		key := safeCompositeKey(deviceID, descriptor.ID)
 		state.Collectors[key] = descriptor
 		found := false
 		for i, item := range device.CollectorStates {
@@ -132,7 +132,7 @@ func (s *Store) ListCollectors(ctx context.Context, deviceID string) ([]Collecto
 	result := []CollectorDescriptorState{}
 	err := s.read(ctx, func(state *State) error {
 		for key, item := range state.Collectors {
-			if deviceID == "" || strings.HasPrefix(key, deviceID+"\x00") {
+			if deviceID == "" || strings.HasPrefix(key, safeCompositeKey(deviceID)+".") {
 				result = append(result, item)
 			}
 		}
