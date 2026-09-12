@@ -615,6 +615,43 @@ func (s *Store) RequestScanCancellation(ctx context.Context, runID string) (Scan
 	return result, err
 }
 
+// RecoverExpiredScanRuns fences work that can no longer be acknowledged by
+// its scanner. A cancelled run is held open briefly so a healthy scanner can
+// stop and acknowledge the pause; once its lease expires, the control plane
+// terminalizes it. Assignment deadlines also terminalize any remaining
+// authority so a restart cannot resurrect stale work.
+func (s *Store) RecoverExpiredScanRuns(ctx context.Context) (int, error) {
+	changed := 0
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		now := s.now().UTC()
+		for id, run := range state.ScanRuns {
+			if scanRunTerminalStates[run.State] {
+				continue
+			}
+			leaseExpired := run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt)
+			assignmentExpired := !run.AssignmentExpiresAt.IsZero() && !now.Before(run.AssignmentExpiresAt)
+			if !assignmentExpired && !(run.CancellationRequested && leaseExpired) {
+				continue
+			}
+			terminalState := ScanRunExpired
+			partialReason := "deadline"
+			errorCode := "assignment_expired"
+			if run.CancellationRequested && leaseExpired {
+				terminalState = ScanRunCancelled
+				partialReason = "cancelled"
+				errorCode = "scanner_unavailable"
+			}
+			run = terminalizeScanRun(run, terminalState, partialReason, errorCode, now)
+			state.ScanRuns[id] = run
+			delete(state.ScanRunLeases, id)
+			changed++
+		}
+		pruneExecutionHolders(state)
+		return nil
+	})
+	return changed, err
+}
+
 func markScanRunCancellation(run ScanRun, now time.Time) ScanRun {
 	run.CancellationRequested = true
 	run.UpdatedAt = now
@@ -624,6 +661,17 @@ func markScanRunCancellation(run ScanRun, now time.Time) ScanRun {
 		run.LeaseOwner = ""
 		run.LeaseExpiresAt = nil
 	}
+	return run
+}
+
+func terminalizeScanRun(run ScanRun, state, partialReason, errorCode string, now time.Time) ScanRun {
+	run.State = state
+	run.PartialReason = partialReason
+	run.ErrorCode = errorCode
+	run.FinishedAt = &now
+	run.LeaseOwner = ""
+	run.LeaseExpiresAt = nil
+	run.UpdatedAt = now
 	return run
 }
 

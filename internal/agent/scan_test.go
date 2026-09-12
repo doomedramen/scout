@@ -208,6 +208,34 @@ func TestScanResultPagesRetryThroughTheSeparateSpool(t *testing.T) {
 	}
 }
 
+func TestFencedScanResultDoesNotPoisonRetrySpool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/agent/v1/scan-results" {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.identity.AgentToken = "scan-token"
+	now := time.Now().UTC()
+	page := discovery.ScanResultPage{ProtocolVersion: 1, RunID: "run-1", LeaseEpoch: 1, ScopeRevision: 1, PageOrdinal: 0, ObservedFrom: now, ObservedTo: now, Final: true}
+	if err := runtime.postScanPages(context.Background(), []discovery.ScanResultPage{page}); err != nil {
+		t.Fatalf("fenced scan result should be terminally discarded: %v", err)
+	}
+	items, err := runtime.scanSpool.Items()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("fenced scan result poisoned retry spool: %+v", items)
+	}
+}
+
 func TestReportOnceKeepsTelemetryAheadOfScanExecution(t *testing.T) {
 	var eventMu sync.Mutex
 	events := []string{}

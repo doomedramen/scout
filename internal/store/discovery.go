@@ -293,7 +293,7 @@ func (s *Store) AcknowledgePause(ctx context.Context, holder string) (WorkspaceS
 		return result, ErrInvalid
 	}
 	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
-		if state.Workspace.DiscoveryPaused && activeScanHeldBy(state, holder) {
+		if state.Workspace.PauseRequested && activePausedExecutionHeldBy(state, holder) {
 			result = state.Workspace
 			return nil
 		}
@@ -318,6 +318,32 @@ func activeScanHeldBy(state *State, holder string) bool {
 		}
 	}
 	return false
+}
+
+func activePausedExecutionHeldBy(state *State, holder string) bool {
+	if state.Workspace.DiscoveryPaused && activeScanHeldBy(state, holder) {
+		return true
+	}
+	for _, job := range state.Jobs {
+		if isActiveJob(job.State) && job.LeaseOwner == holder && jobPaused(state.Workspace, job.Kind) {
+			return true
+		}
+	}
+	return false
+}
+
+func pruneExecutionHolders(state *State) {
+	remaining := state.Workspace.ExecutionHolders[:0]
+	seen := map[string]bool{}
+	for _, holder := range state.Workspace.ExecutionHolders {
+		if holder == "" || seen[holder] || !activePausedExecutionHeldBy(state, holder) {
+			continue
+		}
+		seen[holder] = true
+		remaining = append(remaining, holder)
+	}
+	state.Workspace.ExecutionHolders = remaining
+	state.Workspace.PausePending = len(remaining) > 0
 }
 
 func (s *Store) SetControlPause(ctx context.Context, discovery, enrollment, updates bool) (WorkspaceState, error) {

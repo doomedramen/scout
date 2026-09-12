@@ -234,6 +234,99 @@ func TestScanCancellationFencesQueuedLeasedRunningAndUploadingWork(t *testing.T)
 	}
 }
 
+func TestRecoverExpiredScanRunsFencesCancelledAuthorityAfterScannerLoss(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	run, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "recover-cancelled", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := s.LeaseScanRun(ctx, run.ID, "unreachable-agent", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartScanRun(ctx, run.ID, "unreachable-agent", leased.LeaseEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestScanCancellation(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := s.SetControlPause(ctx, true, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paused.PausePending || len(paused.ExecutionHolders) != 1 || paused.ExecutionHolders[0] != "unreachable-agent" {
+		t.Fatalf("cancelled scanner was not held for acknowledgement: %+v", paused)
+	}
+	currentNow := now.Add(2 * time.Minute)
+	s.SetClock(func() time.Time { return currentNow })
+	changed, err := s.RecoverExpiredScanRuns(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed != 1 {
+		t.Fatalf("recovery changed %d runs, want 1", changed)
+	}
+	recovered, err := s.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.State != ScanRunCancelled || recovered.PartialReason != "cancelled" || recovered.FinishedAt == nil || recovered.LeaseOwner != "" || recovered.LeaseExpiresAt != nil {
+		t.Fatalf("cancelled scanner authority was not terminalized: %+v", recovered)
+	}
+	if _, err := s.RecoverExpiredScanRuns(ctx); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := s.Workspace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.PausePending || len(workspace.ExecutionHolders) != 0 {
+		t.Fatalf("expired scanner remained in pause state: %+v", workspace)
+	}
+	if _, err := s.LeaseScanRun(ctx, run.ID, "replacement", time.Minute); !errors.Is(err, ErrConflict) {
+		t.Fatalf("recovered cancelled run became leaseable: %v", err)
+	}
+}
+
+func TestRecoveryCancelsActiveScanAuthorityBeforeResumingControl(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	run, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "recovery-active", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := s.LeaseScanRun(ctx, run.ID, "old-coordinator", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartScanRun(ctx, run.ID, "old-coordinator", leased.LeaseEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartRecovery(ctx); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := s.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.State != ScanRunCancelled || recovered.PartialReason != "cancelled" || !recovered.CancellationRequested || recovered.LeaseOwner != "" {
+		t.Fatalf("recovery did not fence active scan: %+v", recovered)
+	}
+	if _, err := s.ReconcileRecovery(ctx); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State != ScanRunCancelled || current.PartialReason != "cancelled" || current.LeaseOwner != "" {
+		t.Fatalf("recovery reconciliation left stale scan authority: %+v", current)
+	}
+}
+
 func TestScanResultPagesAreIdempotentAndTerminalStateIsFenced(t *testing.T) {
 	ctx := context.Background()
 	s, scope, policy := newScanFixture(t)

@@ -453,6 +453,9 @@ func (r *Runtime) postScanPages(ctx context.Context, pages []discovery.ScanResul
 			return errors.New("scan result page exceeds size limit")
 		}
 		if _, err := r.postResponse(ctx, "/api/v1/agent/v1/scan-results", data, r.identity.AgentToken); err != nil {
+			if isTerminalScanResultError(err) {
+				return nil
+			}
 			for _, pending := range pages[index:] {
 				pendingData, marshalErr := json.Marshal(pending)
 				if marshalErr != nil {
@@ -478,6 +481,12 @@ func (r *Runtime) flushScanSpool(ctx context.Context) error {
 	}
 	for _, item := range items {
 		if _, err := r.postResponse(ctx, "/api/v1/agent/v1/scan-results", item.Data, r.identity.AgentToken); err != nil {
+			if isTerminalScanResultError(err) {
+				if removeErr := r.scanSpool.Remove(item.Path); removeErr != nil {
+					return removeErr
+				}
+				continue
+			}
 			return err
 		}
 		if err := r.scanSpool.Remove(item.Path); err != nil {

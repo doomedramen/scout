@@ -185,6 +185,103 @@ func TestCoordinatorReleasesExpiredLeaseAfterRestart(t *testing.T) {
 	}
 }
 
+func TestCoordinatorReclaimsUnreachableCancelledRunAfterPause(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, now := coordinatorFixture(t)
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{})
+	queued, err := coordinator.ScheduleDue(ctx)
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("scheduled run: %+v err=%v", queued, err)
+	}
+	leased, err := repository.LeaseScanRun(ctx, queued[0].ID, DefaultServerVantageID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.StartScanRun(ctx, queued[0].ID, DefaultServerVantageID, leased.LeaseEpoch); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := repository.SetControlPause(ctx, true, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paused.PausePending || len(paused.ExecutionHolders) != 1 || paused.ExecutionHolders[0] != DefaultServerVantageID {
+		t.Fatalf("server run was not held for pause acknowledgement: %+v", paused)
+	}
+	*now = now.Add(2 * time.Minute)
+	leasedRuns, err := coordinator.LeaseDue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leasedRuns) != 0 {
+		t.Fatalf("recovery re-leased cancelled work: %+v", leasedRuns)
+	}
+	recovered, err := repository.GetScanRun(ctx, queued[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.State != store.ScanRunCancelled || recovered.LeaseOwner != "" {
+		t.Fatalf("cancelled run was not reclaimed: %+v", recovered)
+	}
+	state, err := repository.Workspace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.PausePending || len(state.ExecutionHolders) != 0 {
+		t.Fatalf("pause remained pending after scanner loss recovery: %+v", state)
+	}
+}
+
+func TestCoordinatorAcknowledgesPauseAfterServerScanStops(t *testing.T) {
+	ctx := context.Background()
+	repository, _, _, _ := coordinatorFixture(t)
+	started := make(chan struct{})
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{scan: func(scanContext context.Context, _ []string, _ ProbePolicy) ([]ProbeResult, error) {
+		close(started)
+		<-scanContext.Done()
+		return nil, scanContext.Err()
+	}})
+	coordinator.FenceInterval = time.Millisecond
+	coordinator.RunDeadline = time.Second
+	result := make(chan struct {
+		runs []store.ScanRun
+		err  error
+	}, 1)
+	go func() {
+		runs, err := coordinator.RunOnce(ctx)
+		result <- struct {
+			runs []store.ScanRun
+			err  error
+		}{runs: runs, err: err}
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("server scanner did not start")
+	}
+	paused, err := repository.SetControlPause(ctx, true, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !paused.PausePending {
+		t.Fatalf("pause was not pending for the server scanner: %+v", paused)
+	}
+	select {
+	case outcome := <-result:
+		if outcome.err != nil || len(outcome.runs) != 1 || outcome.runs[0].State != store.ScanRunPartial || outcome.runs[0].PartialReason != "cancelled" {
+			t.Fatalf("server pause result: %+v", outcome)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server scanner did not stop after pause")
+	}
+	state, err := repository.Workspace(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.PausePending || len(state.ExecutionHolders) != 0 {
+		t.Fatalf("server scanner did not acknowledge pause: %+v", state)
+	}
+}
+
 func TestCoordinatorTurnsDeadlineAndScannerFailureIntoPartialRuns(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {

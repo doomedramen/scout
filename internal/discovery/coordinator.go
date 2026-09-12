@@ -230,6 +230,9 @@ func (c *Coordinator) LeaseDue(ctx context.Context) ([]store.ScanRun, error) {
 	if c == nil || c.Store == nil {
 		return nil, store.ErrInvalid
 	}
+	if _, err := c.Store.RecoverExpiredScanRuns(ctx); err != nil {
+		return nil, err
+	}
 	if _, err := c.ScheduleDue(ctx); err != nil {
 		return nil, err
 	}
@@ -593,6 +596,7 @@ func (c *Coordinator) finishFailed(ctx context.Context, run store.ScanRun, error
 	if _, err := c.Store.FinalizeScanRun(ctx, run.ID, c.serverID(), run.LeaseEpoch, store.ScanRunPartial, "scanner_unavailable", errorCode); err != nil {
 		return store.ScanRun{}, err
 	}
+	c.acknowledgePauseIfIdle(ctx)
 	return c.currentRun(ctx, run.ID, run)
 }
 
@@ -603,7 +607,16 @@ func (c *Coordinator) finishPartial(ctx context.Context, run store.ScanRun, reas
 		}
 		return store.ScanRun{}, err
 	}
+	c.acknowledgePauseIfIdle(ctx)
 	return c.currentRun(ctx, run.ID, run)
+}
+
+func (c *Coordinator) acknowledgePauseIfIdle(ctx context.Context) {
+	workspace, err := c.Store.Workspace(ctx)
+	if err != nil || !workspace.PauseRequested {
+		return
+	}
+	_, _ = c.Store.AcknowledgePause(ctx, c.serverID())
 }
 
 // Start runs the coordinator independently from host telemetry. The server

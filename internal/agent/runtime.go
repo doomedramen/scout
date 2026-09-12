@@ -380,6 +380,22 @@ func (r *Runtime) getResponse(ctx context.Context, path, token string) ([]byte, 
 	return r.requestResponse(ctx, http.MethodGet, path, nil, token)
 }
 
+type httpStatusError struct {
+	StatusCode int
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("Scout API returned HTTP %d", e.StatusCode)
+}
+
+func isTerminalScanResultError(err error) bool {
+	var statusErr *httpStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	return statusErr.StatusCode >= http.StatusBadRequest && statusErr.StatusCode < http.StatusInternalServerError && statusErr.StatusCode != http.StatusTooManyRequests
+}
+
 func (r *Runtime) requestResponse(ctx context.Context, method, path string, body []byte, token string) ([]byte, error) {
 	base, err := url.Parse(r.Config.ServerURL)
 	if err != nil {
@@ -406,7 +422,7 @@ func (r *Runtime) requestResponse(ctx context.Context, method, path string, body
 	defer response.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(response.Body, 2<<20))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("Scout API returned HTTP %d", response.StatusCode)
+		return nil, &httpStatusError{StatusCode: response.StatusCode}
 	}
 	return data, nil
 }

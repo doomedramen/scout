@@ -122,6 +122,7 @@ func (s *Store) ReconcileRecovery(ctx context.Context) (WorkspaceState, error) {
 				state.Jobs[id] = job
 			}
 		}
+		fenceScanRunsForRecovery(state, now)
 		state.Workspace.RecoveryMode = false
 		// Enrollment and updates stay paused until the owner explicitly resumes
 		// them after reviewing restored policy, keys, and revocations.
@@ -272,6 +273,7 @@ func (s *Store) reconcileRecoverySQL(ctx context.Context) (WorkspaceState, error
 			state.Agents[id] = agent
 		}
 	}
+	fenceScanRunsForRecovery(&state, now)
 	for id, job := range state.Jobs {
 		if isActiveJob(job.State) {
 			job.State = "paused"
@@ -358,6 +360,7 @@ func (s *Store) resumeNotificationDeliveriesSQL(ctx context.Context, expectedRev
 
 func prepareRestoredState(state *State, now time.Time) {
 	ensureStateMaps(state)
+	fenceScanRunsForRecovery(state, now)
 	state.Workspace.RecoveryMode = true
 	state.Workspace.EnrollmentPaused = true
 	state.Workspace.UpdatesPaused = true
@@ -371,6 +374,8 @@ func prepareRestoredState(state *State, now time.Time) {
 }
 
 func pauseRecoveryState(state *State, now time.Time) {
+	ensureStateMaps(state)
+	fenceScanRunsForRecovery(state, now)
 	state.Workspace.RecoveryMode = true
 	state.Workspace.EnrollmentPaused = true
 	state.Workspace.UpdatesPaused = true
@@ -380,6 +385,23 @@ func pauseRecoveryState(state *State, now time.Time) {
 	resetAlertWorkState(state, now)
 	cancelPendingNotificationDeliveriesState(state, notificationDeliveryRecoveryCancellation, now)
 	cancelExpiredSendingNotificationDeliveriesState(state, notificationDeliveryRecoveryCancellation, now)
+}
+
+// Recovery invalidates every unfinished scan lease. Keeping an active scan
+// around after process or database recovery would let an old executor resume
+// with authority that has not been re-reviewed by the owner.
+func fenceScanRunsForRecovery(state *State, now time.Time) {
+	for id, run := range state.ScanRuns {
+		if scanRunTerminalStates[run.State] {
+			continue
+		}
+		run.CancellationRequested = true
+		run = terminalizeScanRun(run, ScanRunCancelled, "cancelled", "recovery_reconciliation_required", now)
+		state.ScanRuns[id] = run
+		delete(state.ScanRunLeases, id)
+	}
+	state.Workspace.ExecutionHolders = nil
+	state.Workspace.PausePending = false
 }
 
 func advancePolicyRevision(workspace *WorkspaceState) {
