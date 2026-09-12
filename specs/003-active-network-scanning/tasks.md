@@ -87,7 +87,7 @@
 - [X] T025 [US2] Revalidate current scope, exclusion, entry point, credential version, host trust, destination, release, and server reachability before scan-derived enrollment job creation in internal/enrollment/access.go and internal/discovery/reconcile.go (FR-012–FR-015; SC-003, SC-005, SC-008).
 - [X] T026 [US2] Implement owner candidate list/detail/entry-point/reevaluate endpoints with cursor bounds, action descriptors, safe provenance, and no banner/secret fields in internal/control/discovery.go and api/openapi.yaml (FR-010–FR-13, FR-15, FR-19–FR-21).
 - [X] T027 [US2] Add actionable candidate filters, evidence details, entry-point freshness, specific access states, and credential/trust flow links to apps/web/src/views/network.tsx, apps/web/src/views/access.tsx, and apps/web/src/lib/api.ts (FR-010–FR-013, FR-019, FR-021; SC-004, SC-005, SC-009).
-- [ ] T028 [US2] Complete keyboard-first browser coverage for needs-credentials through trusted enrollment, duplicate evidence, unsupported service, and safe error text in tests/e2e/discovery.spec.ts and tests/e2e/access.spec.ts (FR-010–FR-015, FR-020, FR-021; SC-003–SC-005, SC-009).
+- [X] T028 [US2] Complete keyboard-first browser coverage for needs-credentials through trusted enrollment, duplicate evidence, unsupported service, and safe error text in tests/e2e/playwright/discovery.spec.ts and tests/e2e/playwright/access.spec.ts (FR-010–FR-015, FR-020, FR-021; SC-003–SC-005, SC-009).
 
 **Checkpoint**: A scan-derived SSH candidate becomes an actionable, secret-safe, trusted enrollment flow.
 

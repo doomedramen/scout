@@ -15,6 +15,21 @@ async function signIn(page: Page): Promise<void> {
   expect(signInResponse.status()).toBe(200);
 }
 
+async function csrfToken(page: Page): Promise<string> {
+  const cookie = (await page.context().cookies()).find((item) => item.name === "scout_csrf");
+  return cookie ? decodeURIComponent(cookie.value) : "";
+}
+
+async function ownerPost(page: Page, path: string, data: unknown, idempotencyKey?: string) {
+  return page.request.post(path, {
+    data,
+    headers: {
+      "X-CSRF-Token": await csrfToken(page),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+    },
+  });
+}
+
 test("owner can configure a bounded scan and see local SSH evidence", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
@@ -37,13 +52,13 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
     page.getByText("Scope saved disabled. Enable it only after reviewing access and exclusions."),
   ).toBeVisible();
 
-  const scope = page.locator(".scope-row").filter({ hasText: "127.0.0.1" }).last();
-  await expect(scope).toBeVisible();
-  await scope.getByRole("button", { name: "Enable scope" }).click();
-  await expect(scope.getByRole("button", { name: "Pause scope" })).toBeVisible();
-  await scope.getByRole("button", { name: "Enable server scan" }).click();
-  await expect(scope.getByRole("button", { name: "Pause server scan" })).toBeVisible();
-  await scope.getByRole("button", { name: "Scan now" }).click();
+  const scopeRow = page.locator(".scope-row").filter({ hasText: "127.0.0.1" }).last();
+  await expect(scopeRow).toBeVisible();
+  await scopeRow.getByRole("button", { name: "Enable scope" }).click();
+  await expect(scopeRow.getByRole("button", { name: "Pause scope" })).toBeVisible();
+  await scopeRow.getByRole("button", { name: "Enable server scan" }).click();
+  await expect(scopeRow.getByRole("button", { name: "Pause server scan" })).toBeVisible();
+  await scopeRow.getByRole("button", { name: "Scan now" }).click();
   await expect(
     page.getByText("Scan queued. Results and discovered SSH services will appear here shortly."),
   ).toBeVisible();
@@ -73,13 +88,22 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await page.getByRole("button", { name: "Network" }).click();
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   const foundDevices = page.getByRole("list", { name: "Found devices" });
-  const foundHost = foundDevices.getByRole("listitem").filter({ hasText: "127.0.0.1" });
+  const foundHost = foundDevices
+    .getByRole("listitem")
+    .filter({ hasText: "127.0.0.1" })
+    .filter({ hasText: "unsupported" });
   await expect(foundHost).toHaveCount(1);
-  await foundHost.getByRole("button").click();
+  const foundHostButton = foundHost.getByRole("button");
+  await foundHostButton.focus();
+  await expect(foundHostButton).toBeFocused();
+  await page.keyboard.press("Enter");
 
   await expect(page.getByRole("heading", { name: "SSH access is the next step" })).toBeVisible();
   await expect(page.getByText(`127.0.0.1:${scanPort}`, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Add SSH credentials" }).click();
+  const addCredentials = page.getByRole("button", { name: "Add SSH credentials" });
+  await addCredentials.focus();
+  await expect(addCredentials).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: /Prepare access for 127\.0\.0\.1/ })).toBeVisible();
   await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
   await expect(page.getByLabel("Scope ID")).toHaveValue(createdScope?.id ?? "");
@@ -112,4 +136,114 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   expect(jobsResponse.status()).toBe(200);
   const jobs = (await jobsResponse.json()) as { items: Array<{ kind: string }> };
   expect(jobs.items.filter((job) => job.kind === "enrollment")).toHaveLength(1);
+
+  const scopeResponse = await page.request.get(`/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}`);
+  expect(scopeResponse.status()).toBe(200);
+  const scanScope = (await scopeResponse.json()) as { scanPolicy: { revision: number } };
+  const duplicateRun = await ownerPost(
+    page,
+    `/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}/scan-runs`,
+    { expectedRevision: scanScope.scanPolicy.revision, scanner: { kind: "server", id: "control-server" } },
+    `duplicate-evidence-${Date.now()}`,
+  );
+  expect(duplicateRun.status()).toBe(202);
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}/scan-status`,
+        );
+        if (response.status() !== 200) return "request-failed";
+        const status = (await response.json()) as { activeRun: { state: string } | null };
+        return status.activeRun?.state ?? "idle";
+      },
+      { timeout: 15_000, intervals: [250, 500, 1000] },
+    )
+    .toBe("idle");
+  const duplicateCandidatesResponse = await page.request.get(
+    `/api/v1/candidates?scopeId=${encodeURIComponent(createdScope?.id ?? "")}`,
+  );
+  expect(duplicateCandidatesResponse.status()).toBe(200);
+  const duplicateCandidates = (await duplicateCandidatesResponse.json()) as {
+    items: Array<{ id: string; address: string }>;
+  };
+  const sameAddress = duplicateCandidates.items.filter((candidate) => candidate.address === "127.0.0.1");
+  expect(sameAddress).toHaveLength(1);
+  const duplicateDetailResponse = await page.request.get(`/api/v1/candidates/${sameAddress[0].id}`);
+  expect(duplicateDetailResponse.status()).toBe(200);
+  const duplicateDetail = await duplicateDetailResponse.text();
+  expect(duplicateDetail).not.toContain("fixture-secret");
+  expect((JSON.parse(duplicateDetail) as { accessRequests: unknown[] }).accessRequests).toHaveLength(1);
+});
+
+test("owner keeps unsupported services observable without requesting irrelevant access", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/");
+  const scanPort = Number(new URL(page.url()).port);
+  const siteResponse = await ownerPost(page, "/api/v1/sites", { name: `playwright-unsupported-${Date.now()}` });
+  expect(siteResponse.status()).toBe(201);
+  const site = (await siteResponse.json()) as { id: string };
+  const scopeResponse = await ownerPost(page, "/api/v1/scopes", {
+    siteId: site.id,
+    ranges: ["127.0.0.1"],
+    exclusions: [],
+    methods: ["tcp"],
+    ports: [scanPort],
+    enabled: true,
+    limits: { probesPerSecond: 10, concurrency: 1, targetBudget: 1 },
+    scanPolicy: {
+      serverEnabled: true,
+      agentIds: [],
+      scheduleSeconds: 300,
+      entryPoints: [{ id: "http-fixture", name: "HTTP fixture", transport: "tcp", port: scanPort, enabled: true }],
+      limits: {
+        probesPerSecond: 10,
+        concurrency: 1,
+        targetBudget: 1,
+        attemptBudget: 1,
+        timeoutMilliseconds: 1000,
+        runDeadlineSeconds: 60,
+        resultPageSize: 10,
+      },
+    },
+  });
+  expect(scopeResponse.status()).toBe(201);
+  const scope = (await scopeResponse.json()) as { id: string; scanPolicy: { revision: number } };
+  const runResponse = await ownerPost(page, `/api/v1/scopes/${scope.id}/scan-runs`, {
+    expectedRevision: scope.scanPolicy.revision,
+    scanner: { kind: "server", id: "control-server" },
+  });
+  expect(runResponse.status()).toBe(202);
+
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/v1/candidates?scopeId=${encodeURIComponent(scope.id)}`);
+        if (response.status() !== 200) return "request-failed";
+        const body = (await response.json()) as { items: Array<{ address: string; state: string }> };
+        return body.items.find((candidate) => candidate.address === "127.0.0.1")?.state ?? "pending";
+      },
+      { timeout: 15_000, intervals: [250, 500, 1000] },
+    )
+    .toBe("unsupported");
+
+  await page.getByRole("button", { name: "Network" }).click();
+  const foundDevices = page.getByRole("list", { name: "Found devices" });
+  const foundHost = foundDevices.getByRole("listitem").filter({ hasText: "127.0.0.1" });
+  await expect(foundHost).toHaveCount(1);
+  const foundHostButton = foundHost.getByRole("button");
+  await foundHostButton.focus();
+  await expect(foundHostButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Observed services" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "SSH access is the next step" })).not.toBeVisible();
+  const candidatesResponse = await page.request.get(`/api/v1/candidates?scopeId=${encodeURIComponent(scope.id)}`);
+  expect(candidatesResponse.status()).toBe(200);
+  const candidates = (await candidatesResponse.json()) as { items: Array<{ id: string; address: string }> };
+  const unsupported = candidates.items.find((candidate) => candidate.address === "127.0.0.1");
+  expect(unsupported).toBeDefined();
+  const detailResponse = await page.request.get(`/api/v1/candidates/${encodeURIComponent(unsupported?.id ?? "")}`);
+  expect(detailResponse.status()).toBe(200);
+  const detail = (await detailResponse.json()) as { accessRequests: unknown[] };
+  expect(detail.accessRequests).toHaveLength(0);
 });
