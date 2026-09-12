@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	ScanTransportTCP = "tcp"
-	ScanAccessSSH    = "ssh"
+	ScanTransportTCP   = "tcp"
+	ScanAccessSSH      = "ssh"
+	maxScanRunAttempts = 16384
 
 	ScanRunQueued    = "queued"
 	ScanRunLeased    = "leased"
@@ -312,7 +313,11 @@ func (s *Store) CreateScanRun(ctx context.Context, run ScanRun) (ScanRun, error)
 		if run.AssignmentExpiresAt.Before(run.ScheduledAt) {
 			return ErrInvalid
 		}
-		if run.TargetsPlanned < 0 || run.TargetsPlanned > run.PolicySnapshot.Limits.TargetBudget || run.AttemptsPlanned < 0 || run.AttemptsPlanned > run.PolicySnapshot.Limits.AttemptBudget {
+		if run.TargetsPlanned < 0 || run.TargetsPlanned > run.PolicySnapshot.Limits.TargetBudget || run.AttemptsPlanned < 0 || run.AttemptsPlanned > maxScanRunAttempts || run.AttemptsCompleted < 0 || run.AttemptsCompleted > run.AttemptsPlanned {
+			return ErrInvalid
+		}
+		planLimit, planErr := scanRunPlanLimit(run.PolicySnapshot)
+		if planErr != nil || run.AttemptsPlanned > planLimit {
 			return ErrInvalid
 		}
 		if run.State == "" {
@@ -352,6 +357,26 @@ func (s *Store) CreateScanRun(ctx context.Context, run ScanRun) (ScanRun, error)
 		return nil
 	})
 	return result, err
+}
+
+func scanRunPlanLimit(snapshot ScanPolicySnapshot) (int, error) {
+	enabledEntryPoints := 0
+	for _, entryPoint := range snapshot.EntryPoints {
+		if entryPoint.Enabled {
+			enabledEntryPoints++
+		}
+	}
+	if enabledEntryPoints == 0 {
+		return 0, ErrInvalid
+	}
+	if enabledEntryPoints > 0 && snapshot.Limits.TargetBudget > int(^uint(0)>>1)/enabledEntryPoints {
+		return 0, ErrInvalid
+	}
+	limit := snapshot.Limits.TargetBudget * enabledEntryPoints
+	if limit > maxScanRunAttempts {
+		limit = maxScanRunAttempts
+	}
+	return limit, nil
 }
 
 func (s *Store) GetScanRun(ctx context.Context, id string) (ScanRun, error) {

@@ -316,11 +316,12 @@ func ProbeWithOptions(ctx context.Context, addresses []string, policy ProbePolic
 	if err != nil {
 		return nil, err
 	}
+	planCount := total
+	if planCount > maxProbeAttempts {
+		planCount = maxProbeAttempts
+	}
 	if policy.AttemptBudget == 0 {
-		policy.AttemptBudget = total
-		if policy.AttemptBudget > maxProbeAttempts {
-			policy.AttemptBudget = maxProbeAttempts
-		}
+		policy.AttemptBudget = planCount
 	}
 	if policy.AttemptBudget > total {
 		return nil, errors.New("attempt budget exceeds target and entry-point multiplication")
@@ -328,10 +329,16 @@ func ProbeWithOptions(ctx context.Context, addresses []string, policy ProbePolic
 	if policy.AttemptBudget == 0 {
 		return []ProbeResult{}, nil
 	}
-	planned := make([]probeJob, 0, total)
+	planned := make([]probeJob, 0, planCount)
 	for _, address := range unique {
 		for _, port := range policy.Ports {
+			if len(planned) >= planCount {
+				break
+			}
 			planned = append(planned, probeJob{address: address, port: port})
+		}
+		if len(planned) >= planCount {
+			break
 		}
 	}
 	jobs := make(chan probeJob, policy.AttemptBudget)
@@ -390,7 +397,7 @@ func ProbeWithOptions(ctx context.Context, addresses []string, policy ProbePolic
 		group.Wait()
 		close(results)
 	}()
-	result := make([]ProbeResult, 0, total)
+	result := make([]ProbeResult, 0, planCount)
 	for item := range results {
 		result = append(result, item)
 	}
