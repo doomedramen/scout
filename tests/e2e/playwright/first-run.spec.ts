@@ -10,11 +10,14 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create owner" }).click();
 
-  if (!(await page.getByRole("heading", { name: "Sign in to Scout" }).isVisible())) {
-    await expect(page.getByRole("alert")).toContainText("Owner setup could not be completed");
+  const signInHeading = page.getByRole("heading", { name: "Sign in to Scout" });
+  const setupError = page.getByRole("alert");
+  await expect(signInHeading.or(setupError)).toBeVisible();
+  if (await setupError.isVisible()) {
+    await expect(setupError).toContainText("Owner setup could not be completed");
     await page.getByRole("button", { name: "Owner already exists? Sign in" }).click();
   }
-  await expect(page.getByRole("heading", { name: "Sign in to Scout" })).toBeVisible();
+  await expect(signInHeading).toBeVisible();
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
@@ -33,8 +36,9 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await expect(
     page.getByText("Scope saved disabled. Enable it only after reviewing access and exclusions."),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Enable scope" }).click();
-  await expect(page.getByText("Enabled", { exact: true })).toBeVisible();
+  const createdScope = page.locator(".scope-row").filter({ hasText: "192.0.2.0/24" }).last();
+  await createdScope.getByRole("button", { name: "Enable scope" }).click();
+  await expect(createdScope.getByRole("button", { name: "Pause scope" })).toBeVisible();
 
   await page.getByRole("button", { name: "Systems" }).click();
   await page.getByRole("button", { name: "Agent setup" }).first().click();
@@ -63,7 +67,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
 
   await page.getByRole("button", { name: "Close agent setup" }).click();
   await page.reload();
-  await expect(page.getByText("1 systems", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("System totals")).toContainText("1 needs access");
 
   await page.getByRole("button", { name: "Incidents", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Incidents and alert rules" })).toBeVisible();
