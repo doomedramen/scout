@@ -972,7 +972,7 @@ For future results append: task and requirement IDs, commit, date, exact command
 ## T035 — bounded hwmon sensor collector
 
 - Requirements: FR-029, FR-031, FR-032; SC-009, SC-011.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending checkpoint.
+- Date: 2026-09-12 (Europe/London); implementation commit: `69c5d9b`.
 - Added temporary fixture trees covering hwmon temperature and fan channels,
   negative millidegrees, zero RPM, optional labels, absent alarms, explicit
   alarm faults, malformed values, negative fan values, sensor renumbering,
@@ -1000,6 +1000,37 @@ For future results append: task and requirement IDs, commit, date, exact command
   mount was used.
 - Remaining limits: the development host is macOS and has no owner-authorized
   representative Linux hwmon lab, so live driver/kernel support and exact
-  permissions remain unvalidated. T036 is next; T037 must expose persisted
-  exclusions and the hardware view, and T038 remains the live hardware
+  permissions remain unvalidated. T037 is next; it must expose persisted
+  exclusions and the hardware view, while T038 remains the live hardware
   evidence gate.
+
+## T036 — bounded GPU collectors
+
+- Requirements: FR-030, FR-031, FR-032; SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: `99d8b2e`.
+- Added secret-free fixtures for NVIDIA CSV rows with UUID/PCI identities,
+  `N/A` fields, malformed fields, duplicate evidence, AMD DRM/sysfs VRAM and
+  hwmon temperature/power, and Intel DRM/sysfs local-memory plus cumulative
+  energy samples. Intel tests cover the first-sample gap, watts derived from
+  energy deltas, and a counter reset gap; the cross-source fixture confirms a
+  PCI-identical sysfs GPU is not reported twice.
+- Implemented a fixed `nvidia-smi` query with CSV/no-header/no-units parsing,
+  1 MiB output and 10-second collection bounds, without a shell or arbitrary
+  arguments. NVIDIA memory values are converted from MiB to bytes; `N/A`
+  remains unavailable. AMD and Intel use bounded, allowlisted DRM, PCI
+  `uevent`, driver, VRAM/local-memory, hwmon, and Intel energy paths only.
+  GPU identity uses vendor UUID or PCI slot where available; fallback evidence
+  is explicitly unstable and never uses a card index alone. Power labels
+  identify `gpu-board` versus Intel `package` scope, and missing fields emit
+  per-metric availability instead of zeroes.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/collector/gpu/collector.go
+  internal/collector/gpu/collector_test.go internal/collector/registry.go`;
+  `go test ./internal/collector/gpu ./internal/collector -race -count=1`;
+  `go vet ./internal/collector/gpu ./internal/collector`; and `git diff
+  --check` all passed. No production database, credential, real GPU, driver,
+  or host sysfs mount was used.
+- Remaining limits: this macOS workspace has no owner-authorized NVIDIA,
+  AMD, or Intel Linux lab, so live driver/kernel versions, permissions, and
+  family compatibility remain unvalidated. T037 is next; T038 remains the
+  live hardware evidence gate and no GPU family is advertised as validated.
