@@ -1087,3 +1087,36 @@ For future results append: task and requirement IDs, commit, date, exact command
   live-unvalidated. Fixture results do not advertise NVIDIA, AMD, Intel, or
   hwmon production support. The agent runtime still needs to schedule and
   transmit these collector results from enrolled hosts.
+
+## T039 — monitoring backup/restore coverage and no-replay recovery
+
+- Requirements: FR-013, FR-024; SC-008.
+- Date: 2026-09-12 (Europe/London); implementation commit: `409597c`.
+- Backup metadata now verifies that all 21 002 monitoring tables exist before
+  creating a dump and records the storage generation/phase, current migration
+  checkpoint count, and monitoring-settings revision. Restore validates those
+  values after `pg_restore` before applying the recovery fence. The restore
+  fence pauses workspace and monitoring delivery state, cancels queued/retry/
+  sending notification work, resets alert evaluation timing and worker leases,
+  closes stale suppression episodes, and queues only fresh post-reconciliation
+  evaluation work.
+- Added `tests/integration/monitoring_recovery_test.go`. Against disposable
+  PostgreSQL it verifies representative rows and encrypted key material across
+  every 002 table, preserves telemetry receipt/sample-ordinal/current-series
+  identity, migration checkpoints, aggregate and rollup work, rules/incidents,
+  notification destinations, suppression policy, and retention previews. It
+  then starts SQL recovery, proves stale notification work is cancelled and
+  cannot be claimed, and proves alert timing is reset while durable history and
+  suppression context remain present.
+- Exact verification commands and outcomes: `scripts/test-integration.sh`
+  passed against a disposable PostgreSQL 17 container; `go test ./... -count=1`;
+  `go vet ./...`; `scripts/test-restore.sh`; `bash -n scripts/backup.sh
+  scripts/restore.sh scripts/test-restore.sh`; `npm run check`; `npm run build`;
+  `npm run lint`; `npm run format:check`; `go mod verify`; and `git diff
+  --check` all passed. The missing-DSN restore path remains fixture-only and no
+  production database, credential, or real device was used.
+- Remaining limits: the actual `pg_dump`/`pg_restore` command pair was not run
+  against an owner-provided protected restore destination in this workspace;
+  the scripts are explicitly opt-in for that operation. A future authorized
+  restore run must record PostgreSQL versions, separate key custody, clean
+  destination, restored row parity, and owner reconciliation evidence.

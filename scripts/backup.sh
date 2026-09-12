@@ -24,6 +24,26 @@ command -v psql >/dev/null 2>&1 || { echo "psql is required" >&2; exit 2; }
 [[ -f "$SCOUT_SECRET_KEY_FILE" ]] || { echo "secret key file is unavailable" >&2; exit 2; }
 [[ "$(wc -c <"$SCOUT_SECRET_KEY_FILE")" -eq 32 ]] || { echo "secret key file must contain 32 bytes" >&2; exit 2; }
 
+required_002_tables=(
+	monitoring_storage_state monitoring_migration_checkpoints metric_series metric_samples
+	telemetry_receipts telemetry_sample_ordinals current_series metric_aggregates rollup_work
+	alert_rules alert_overrides alert_evaluations incidents incident_transitions alert_work
+	notification_destinations notification_deliveries suppression_windows suppression_episodes
+	monitoring_settings retention_previews
+)
+required_table_list=$(printf "'%s'," "${required_002_tables[@]}")
+required_table_list=${required_table_list%,}
+monitoring_table_count=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename IN (${required_table_list})" | tr -d '[:space:]')
+if [[ ! "$monitoring_table_count" =~ ^[0-9]+$ || "$monitoring_table_count" -ne "${#required_002_tables[@]}" ]]; then
+	echo "database is missing one or more 002 monitoring tables" >&2
+	exit 2
+fi
+monitoring_state=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT storage_generation || ':' || migration_generation || ':' || phase FROM monitoring_storage_state WHERE singleton=true" | tr -d '[:space:]')
+[[ "$monitoring_state" =~ ^[0-9]+:[0-9]+:(legacy|importing|authoritative)$ ]] || { echo "monitoring storage state is unavailable" >&2; exit 2; }
+migration_checkpoint_count=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM monitoring_migration_checkpoints WHERE migration_generation=(SELECT migration_generation FROM monitoring_storage_state WHERE singleton=true)" | tr -d '[:space:]')
+settings_revision=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT revision FROM monitoring_settings WHERE singleton=true" | tr -d '[:space:]')
+[[ "$migration_checkpoint_count" =~ ^[0-9]+$ && "$settings_revision" =~ ^[0-9]+$ ]] || { echo "monitoring checkpoint/settings metadata is unavailable" >&2; exit 2; }
+
 backup_dir=$(dirname -- "$SCOUT_BACKUP_FILE")
 mkdir -p -- "$backup_dir"
 temporary=$(mktemp "$SCOUT_BACKUP_FILE.tmp.XXXXXX")
@@ -38,7 +58,7 @@ mv -- "$temporary" "$SCOUT_BACKUP_FILE"
 trap - EXIT
 
 cat >"$metadata_file" <<EOF
-{"format":"scout-postgres-custom","schemaVersion":${schema_version//[[:space:]]/},"keyFingerprint":"$key_fingerprint","createdAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"format":"scout-postgres-custom","schemaVersion":${schema_version//[[:space:]]/},"keyFingerprint":"$key_fingerprint","createdAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","monitoringTableCount":${#required_002_tables[@]},"monitoringState":"$monitoring_state","migrationCheckpointCount":$migration_checkpoint_count,"monitoringSettingsRevision":$settings_revision}
 EOF
 chmod 0600 -- "$SCOUT_BACKUP_FILE" "$metadata_file"
 echo "Scout backup created: $SCOUT_BACKUP_FILE"
