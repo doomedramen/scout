@@ -810,5 +810,34 @@ For future results append: task and requirement IDs, commit, date, exact command
   unaggregated raw row is deferred and is removed only after both aggregate
   tiers are committed.
 - No production database, real device, production credential, or deployment
-  was used. T029 still owns the device/recovery UI wiring and interrupted or
-  mixed-version aggregation presentation evidence.
+  was used. The device/recovery UI wiring and interrupted or mixed-version
+  aggregation presentation evidence were completed in T029; live hardware,
+  100-device/year capacity, and production deployment remain unclaimed gates.
+
+## T029 — history quality and retention review UI
+
+- Requirements: FR-019, FR-020, FR-021, FR-022, FR-023, FR-024; SC-007,
+  SC-008, SC-010.
+- Date: 2026-09-12 (Europe/London); implementation commit: `f2c0d26`.
+- Device history now presents the server-selected resolution, explicit partial
+  buckets, per-bucket sample counts, coverage, availability, and empty gaps in
+  the chart and accessible sample table. The UI uses the API's partial metadata
+  rather than inferring an incomplete range from the age of the first point.
+  Recovery review now exposes queue/lag/storage pressure, bounded counters,
+  retention days, an exact revision-fenced retention preview, affected ranges,
+  expiry, estimated deletions, and an explicit apply action.
+- Added `tests/e2e/playwright/z-history-retention.spec.ts` for authenticated
+  history metadata and recovery retention-preview/apply journeys. Extended
+  `tests/integration/z_rollups_test.go` with two agent versions that preserve
+  base CPU telemetry while reporting an unsupported collector explicitly; the
+  same file retains the interrupted lease/generation and retry coverage from
+  T026. Updated the diagnostics fixture to carry the explicit coverage
+  contract.
+- Exact verification commands and outcomes: `go test ./... -count=1`; `go vet
+  ./...`; `scripts/test-integration.sh` against disposable PostgreSQL 17;
+  `npm run format:check`; `npm run lint`; `npm run check`; `npm run build`;
+  `npm run test:e2e:browser` (5/5 tests passed); and `git diff --check` all
+  passed. No production database, real device, production credential, or
+  deployment was used.
+- T030 is now the next unchecked task. Live hardware support, 100-device/year
+  capacity, and production deployment remain unclaimed evidence gates.
