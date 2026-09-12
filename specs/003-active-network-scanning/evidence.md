@@ -212,8 +212,8 @@ Never attach credential values, private keys, host-key private material, banners
   capability persistence, no all-scope exposure, and no assignment after an
   older-agent heartbeat omits capabilities. No real device, network, or
   credential was contacted.
-- Remaining limits: coordinator scheduling/leases for assigned-agent runs,
-  candidate reconciliation, and owner UI/API wiring remain for T017+.
+- Remaining limits: coordinator scheduling/leases for assigned-agent runs and
+  owner-facing candidate actions remain in T023–T031.
 
 ## T009 — PostgreSQL and in-memory scan fencing tests
 
@@ -388,8 +388,8 @@ Never attach credential values, private keys, host-key private material, banners
   device, network, or credential was contacted.
 - Remaining limits: desired-state data is ready for agents but coordinator
   scheduling/lease materialization for assigned agents and service packaging
-  remain T017/T031; candidate reconciliation, owner actions, and live
-  server/agent network proof remain T021+ and T043.
+  remain T031; owner candidate actions and live server/agent network proof
+  remain T023–T031 and T043.
 
 ## T021 — scan reconciliation failure-first tests
 
@@ -431,5 +431,43 @@ Never attach credential values, private keys, host-key private material, banners
   configuration and invalid capability rejection. No real device, network,
   or credential was contacted.
 - Remaining limits: native systemd installation and assigned-agent live scan
-  acceptance remain open for T020/T031/T043; the owner scan-policy API and UI
-  remain T018/T019.
+  acceptance remain open for T020/T031/T043; candidate APIs, credential
+  re-evaluation, and enrollment remain T023–T031.
+
+## T018 — protected scan-policy and on-demand run API
+
+- Requirements: FR-001, FR-002, FR-016, FR-018, FR-020.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: b07f8cd.
+- Added authenticated owner routes for scope scan-policy create/read/update,
+  on-demand run creation, run listing/detail/cancellation, and scan status.
+  Policy normalization enforces bounded targets, typed entry points, limits,
+  explicit server opt-in, assigned-agent capability checks, revision fencing,
+  idempotent retries, active-run conflicts, safe redacted responses, audit
+  events, and development-mode MFA friction reduction through the existing
+  protected-route policy.
+- Exact verification commands and outcomes: the focused route tests first
+  failed on the missing nested policy contract and scan-run route, then
+  `go test ./internal/control ./internal/store -count=1`, `go test ./...`,
+  `go vet ./...`, and `git diff --check` passed. Positive coverage verifies
+  policy creation, status, queued on-demand execution, idempotent replay,
+  safe output, and policy revision supersession. Negative coverage verifies
+  active-run conflict and unauthenticated rejection. No real device, network,
+  or credential was contacted.
+- Remaining limits: server/agent execution proof and candidate-facing routes
+  remain open in T020 and T023–T031.
+
+## T019 — owner scan controls
+
+- Requirements: FR-001–FR-003, FR-005, FR-016, FR-018, FR-021.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: b07f8cd.
+- Added scope controls for schedule, server scan opt-in, enrolled-agent
+  selection, typed SSH/TCP entry points, target and attempt limits, a
+  review-before-enable flow, and on-demand server scans. The web API client
+  exposes scope detail, scan policy, run, cancellation, and status contracts;
+  scope creation persists a disabled policy by default and the UI renders
+  assigned device addresses to reduce ambiguity.
+- Exact verification commands and outcomes: `npm run check` and `npm run
+  format:check` passed, along with the backend suite and vet checks recorded
+  under T018. No real device, network, or credential was contacted.
+- Remaining limits: candidate discovery presentation and credential actions
+  remain open in T023–T031; Playwright acceptance remains T020.
