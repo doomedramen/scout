@@ -119,7 +119,6 @@ func cloneScanSnapshot(snapshot ScanPolicySnapshot) ScanPolicySnapshot {
 
 func cloneScanRun(run ScanRun) ScanRun {
 	run.PolicySnapshot = cloneScanSnapshot(run.PolicySnapshot)
-	run.OutcomeCounts = run.OutcomeCounts
 	if run.StartedAt != nil {
 		value := *run.StartedAt
 		run.StartedAt = &value
