@@ -118,3 +118,26 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: operations are intentionally not implemented here. T005
   must add transaction-safe policy/run/lease/receipt/observation operations and
   test rollback, replay, active uniqueness, and fencing for both stores.
+
+## T005 — scan store authority and fencing
+
+- Requirements: FR-007–FR-009, FR-015, FR-016, FR-018, FR-019, FR-022.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Added store operations for disabled-by-default policy materialization and
+  expected-revision updates, one active run per scope/vantage pair, owner
+  idempotency, lease epochs and expiry re-lease, owner/epoch transition
+  checks, cancellation and terminal fencing, bounded result receipt replay,
+  conflicting-page rejection, atomic outcome counters, current per-vantage
+  projections, and cursor-bounded run/observation pages. SQL-backed stores
+  use the existing serialized transactional workspace state while migration
+  11 provides the normalized PostgreSQL authority tables for the subsequent
+  SQL parity work.
+- Tests were written first and initially failed with missing store methods;
+  the intended failures were then resolved. Exact verification commands and
+  outcomes: `go test ./internal/store -run 'TestScan' -count=1`; `gofmt -w
+  internal/store/scanning.go internal/store/scanning_test.go`; and `git diff
+  --check` passed. The full disposable PostgreSQL migration suite had already
+  passed in T004; this task's store tests are deterministic in-memory tests.
+- Remaining limits: normalized-table reads/writes, concurrent PostgreSQL
+  lease contention, and scanner/result policy validation belong to T007–T009.
+  No scan or device was contacted.
