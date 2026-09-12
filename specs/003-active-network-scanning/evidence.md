@@ -214,3 +214,24 @@ Never attach credential values, private keys, host-key private material, banners
   credential was contacted.
 - Remaining limits: coordinator scheduling/leases, agent scan execution,
   candidate reconciliation, and owner UI/API wiring remain for T009+.
+
+## T009 — PostgreSQL and in-memory scan fencing tests
+
+- Requirements: FR-003, FR-004, FR-007–FR-009, FR-015, FR-018, FR-022;
+  SC-003, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commits: ab7c6c6,
+  90f75a0.
+- Added in-memory and disposable-PostgreSQL coverage for idempotent and
+  conflicting pages, cross-page duplicate observations, wrong scanner,
+  superseded policy, expired assignment, revoked scanner, transaction
+  rollback, durable restart, and concurrent lease ownership. Migration checks
+  run twice and verify all nine active-scanning tables. The initial SQL
+  concurrency test exposed two successful leases across separate Store
+  instances; scan mutations now lock `workspace_state` with PostgreSQL
+  `FOR UPDATE` and persist atomically before either lease can proceed.
+- Exact verification commands and outcomes: `go test ./internal/store -run
+  'TestScanStore' -count=1` passed; `scripts/test-integration.sh` passed all
+  integration tests against disposable PostgreSQL 17; and `git diff --check`
+  passed. No real device, network, or credential was contacted.
+- Remaining limits: scan-table-specific SQL query parity and runtime
+  coordinator/executor behavior remain for T010+.
