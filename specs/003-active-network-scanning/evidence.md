@@ -212,8 +212,8 @@ Never attach credential values, private keys, host-key private material, banners
   capability persistence, no all-scope exposure, and no assignment after an
   older-agent heartbeat omits capabilities. No real device, network, or
   credential was contacted.
-- Remaining limits: coordinator scheduling/leases, agent scan execution,
-  candidate reconciliation, and owner UI/API wiring remain for T009+.
+- Remaining limits: coordinator scheduling/leases for assigned-agent runs,
+  candidate reconciliation, and owner UI/API wiring remain for T017+.
 
 ## T009 — PostgreSQL and in-memory scan fencing tests
 
@@ -276,9 +276,10 @@ Never attach credential values, private keys, host-key private material, banners
   integration suite); `go vet ./...`; and `git diff --check` passed. The
   integration run completed in 54.959 seconds. No scan was enabled and no
   real device, network, or credential was contacted.
-- Remaining limits: the scanner is not yet called by an agent runtime; server
-  coordinator execution and authenticated result paging are covered by
-  T014, while agent work remains open in T012 and T016–T017.
+- Remaining limits: server coordinator execution and authenticated result
+  paging are covered by T014; agent packaging and assigned-agent scheduling
+  remain open in T017 and T031, while end-to-end packet-boundary evidence
+  remains open in T020 and T043.
 
 ## T011 — coordinator failure-first tests
 
@@ -299,8 +300,8 @@ Never attach credential values, private keys, host-key private material, banners
   '^TestCoordinator' -count=1`; `go test ./internal/discovery -count=1`;
   `go vet ./...`; and `git diff --check` passed. No real device, network,
   or credential was contacted.
-- Remaining limits: agent scheduling/execution, owner on-demand routes, and
-  browser coverage remain open.
+- Remaining limits: assigned-agent scheduling/lease materialization, owner
+  on-demand routes, and browser coverage remain open.
 
 ## T014 — durable server-vantage coordinator
 
@@ -338,5 +339,52 @@ Never attach credential values, private keys, host-key private material, banners
   -count=1`; `go vet ./...`; and `git diff --check` passed. No real device,
   network, or credential was contacted.
 - Remaining limits: process-level lifecycle behavior will be included in the
-  disposable Compose and end-to-end gates; agent execution remains T012 and
-  T016–T017.
+  disposable Compose and end-to-end gates; agent packaging and assigned-agent
+  scheduling remain T017 and T031.
+
+## T012 — agent scan failure-first tests
+
+- Requirements: FR-003–FR-008, FR-014, FR-017, FR-018, FR-022; SC-007, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: 4434073.
+- Tests were written before the agent scan implementation. The initial
+  focused command `gofmt -w internal/agent/scan_test.go && go test
+  ./internal/agent -run 'Test(ValidateScanAssignment|BuildScanResultPages|StartScan|ScanResultSpool)' -count=1`
+  failed for the intended missing `ScanAssignment`, validation, paging,
+  runtime, and spool symbols. The completed suite covers expired and unsafe
+  assignments, asynchronous single-flight execution, changed-revision
+  cancellation, bounded final summaries, retry through the separate result
+  spool, a 16 MiB scan-spool ceiling, and telemetry/heartbeat ordering ahead
+  of scan execution.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/agent/runtime.go internal/agent/scan.go
+  internal/agent/scan_test.go`; `go test ./internal/agent -count=1`; `go
+  test -race ./internal/agent -count=1`; and the focused package, vet, and
+  whitespace checks recorded under T016 all passed. No real device, network,
+  or credential was contacted.
+- Remaining limits: these tests use local seams and an HTTP fixture; native
+  service installation, assigned-agent run materialization, and live
+  segmented-network evidence remain open.
+
+## T016 — bounded agent scan execution
+
+- Requirements: FR-003–FR-008, FR-014, FR-017, FR-018, FR-022; SC-001,
+  SC-002, SC-007, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation commit: 4434073.
+- Added credential-free desired-state handoff and default bounded TCP scan
+  execution. The runtime validates immutable ranges, exclusions, typed TCP
+  entry points, limits, expiry, and attempt multiplication before scanning;
+  runs one scan asynchronously; cancels it when desired work is withdrawn or
+  its run/lease/scope revision changes; and emits deterministic, bounded
+  result pages with a final cumulative summary. Scan results use an isolated
+  16 MiB/hour spool, while telemetry remains on the existing spool and is
+  posted before desired-state scan work. The scan path sends no credentials,
+  banners, or application payloads.
+- Exact verification commands and outcomes: `go test ./internal/agent
+  -count=1`; `go test -race ./internal/agent -count=1`; `go test
+  ./internal/discovery ./internal/store ./internal/control ./internal/agent
+  -count=1`; `go vet ./...`; and `git diff --check` all passed. No real
+  device, network, or credential was contacted.
+- Remaining limits: desired-state data is ready for agents but coordinator
+  scheduling/lease materialization for assigned agents and service packaging
+  remain T017/T031; candidate reconciliation, owner actions, and live
+  server/agent network proof remain T021+ and T043.
