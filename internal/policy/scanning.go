@@ -6,7 +6,6 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
-	"time"
 
 	"scout.local/scout/internal/store"
 )
@@ -143,6 +142,7 @@ func (e *Engine) ValidateScanVantage(ctx context.Context, scopeID string, vantag
 		return Decision{}, err
 	}
 	decision := Decision{ScopeRevision: scope.Revision}
+	now := e.Store.Now()
 	switch vantage.Kind {
 	case "server":
 		decision.Allowed = true
@@ -161,7 +161,7 @@ func (e *Engine) ValidateScanVantage(ctx context.Context, scopeID string, vantag
 			}
 			return Decision{}, agentErr
 		}
-		if agent.RevokedAt != nil || !agent.ExpiresAt.IsZero() && !agent.ExpiresAt.After(time.Now().UTC()) {
+		if agent.RevokedAt != nil || !agent.ExpiresAt.IsZero() && !agent.ExpiresAt.After(now) {
 			decision.Reason = "vantage_unavailable"
 			return decision, nil
 		}

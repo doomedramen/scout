@@ -17,6 +17,7 @@ import (
 
 	"scout.local/scout/internal/audit"
 	"scout.local/scout/internal/auth"
+	"scout.local/scout/internal/discovery"
 	"scout.local/scout/internal/identity"
 	"scout.local/scout/internal/jobs"
 	"scout.local/scout/internal/notifications/ntfy"
@@ -56,6 +57,7 @@ type App struct {
 	Secrets    *secrets.KeyRing
 	Audit      *audit.Logger
 	Policy     *policy.Engine
+	Discovery  *discovery.Service
 	Jobs       jobs.Queue
 	Telemetry  *telemetry.Service
 	Updates    *updates.ReleaseService
@@ -123,6 +125,7 @@ func NewApp(repository *store.Store, database Database, config Config) (*App, er
 	app.Identity = &identity.Service{Store: repository, Authority: authority}
 	app.Audit = audit.NewLogger(repository)
 	app.Policy = &policy.Engine{Store: repository}
+	app.Discovery = &discovery.Service{Store: repository, Policy: app.Policy, Now: repository.Now}
 	app.Jobs = jobs.Queue{Store: repository}
 	app.Telemetry = &telemetry.Service{Store: repository}
 	trust := updates.NewTrustStore()
@@ -496,6 +499,13 @@ func cookieValue(r *http.Request, name string) string {
 func decodeJSON(r *http.Request, target any, max int64) error {
 	data, err := io.ReadAll(io.LimitReader(r.Body, max+1))
 	if err != nil || int64(len(data)) > max {
+		return store.ErrInvalid
+	}
+	return decodeJSONBytes(data, target, max)
+}
+
+func decodeJSONBytes(data []byte, target any, max int64) error {
+	if int64(len(data)) > max {
 		return store.ErrInvalid
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {

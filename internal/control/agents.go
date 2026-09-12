@@ -1,14 +1,18 @@
 package control
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"scout.local/scout/internal/audit"
+	"scout.local/scout/internal/discovery"
 	"scout.local/scout/internal/identity"
+	"scout.local/scout/internal/policy"
 	"scout.local/scout/internal/store"
 	"scout.local/scout/internal/telemetry"
 	"scout.local/scout/internal/updates"
@@ -21,6 +25,7 @@ func (a *App) registerAgentRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST "+prefix+"/batches", a.agentBatch)
 		mux.HandleFunc("POST "+prefix+"/heartbeat", a.agentHeartbeat)
 		mux.HandleFunc("GET "+prefix+"/desired-state", a.agentDesiredState)
+		mux.HandleFunc("POST "+prefix+"/scan-results", a.agentScanResults)
 		mux.HandleFunc("POST "+prefix+"/update-results", a.agentUpdateResult)
 	}
 }
@@ -139,6 +144,40 @@ func (a *App) agentDesiredState(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"revision": maxScopeRevision(visible), "expiresAt": time.Now().UTC().Add(5 * time.Minute), "discoveryPolicy": visible, "collectorConfig": []any{}, "updateAssignment": update})
+}
+
+func (a *App) agentScanResults(w http.ResponseWriter, r *http.Request) {
+	agent, ok := a.requireAgent(w, r)
+	if !ok {
+		return
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, a.Config.MaxBodyBytes))
+	if err != nil || int64(len(data)) > a.Config.MaxBodyBytes {
+		writeError(w, r, http.StatusRequestEntityTooLarge, "payload_too_large", "Scan result page is too large", false)
+		return
+	}
+	var page discovery.ScanResultPage
+	if err := decodeJSONBytes(data, &page, a.Config.MaxBodyBytes); err != nil {
+		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
+	digest := sha256.Sum256(data)
+	page.ContentHash = hex.EncodeToString(digest[:])
+	discoveryService := a.Discovery
+	if discoveryService == nil {
+		discoveryService = &discovery.Service{Store: a.Store, Policy: a.Policy}
+	}
+	receipt, duplicate, err := discoveryService.IngestScanResultPage(r.Context(), policy.ScanVantage{Kind: "agent", ID: agent.ID, DeviceID: agent.DeviceID}, page)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	run, err := a.Store.GetScanRun(r.Context(), receipt.RunID)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runId": receipt.RunID, "pageOrdinal": receipt.PageOrdinal, "acceptedAt": receipt.AcceptedAt, "duplicate": duplicate, "runState": run.State})
 }
 
 func releaseManifest(release store.Release) map[string]any {

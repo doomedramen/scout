@@ -626,6 +626,11 @@ func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultRece
 				return ErrDuplicate
 			}
 			seen[key] = true
+			for _, existing := range state.EntryPointObservations {
+				if existing.RunID == observation.RunID && scanObservationKey(existing.Address, existing.Transport, existing.Port, existing.EntryPointID) == key {
+					return ErrDuplicate
+				}
+			}
 			if observation.ReceivedAt.IsZero() {
 				observation.ReceivedAt = s.now().UTC()
 			}
@@ -664,6 +669,10 @@ func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultRece
 
 func scanReceiptKey(runID string, ordinal int) string {
 	return fmt.Sprintf("%s/%d", runID, ordinal)
+}
+
+func scanObservationKey(address, transport string, port int, entryPointID string) string {
+	return fmt.Sprintf("%s/%s/%d/%s", address, transport, port, entryPointID)
 }
 
 func validScanOutcome(outcome string) bool {
