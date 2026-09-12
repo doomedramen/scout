@@ -18,7 +18,7 @@
 **Purpose**: Confirm inherited security foundations and lock additive public contracts before storage or runtime changes.
 
 - [X] T001 Run and record the 001 prerequisite gate for identity, scope/exclusion policy, credential/trust broker, enrollment fencing, desired state, audit, pause, backup, and agent telemetry in specs/003-active-network-scanning/evidence.md; leave unmet prerequisites open rather than duplicating them (FR-003, FR-004, FR-013, FR-014, FR-022).
-- [ ] T002 Add strict scan-policy, entry-point, run, candidate, agent-assignment, and paged-result schemas and routes in api/openapi.yaml and api/schemas/ per contracts/control-api.md and contracts/agent-protocol.md (FR-001–FR-008, FR-016, FR-018, FR-021).
+- [X] T002 Add strict scan-policy, entry-point, run, candidate, agent-assignment, and paged-result schemas and routes in api/openapi.yaml and api/schemas/ per contracts/control-api.md and contracts/agent-protocol.md (FR-001–FR-008, FR-016, FR-018, FR-021).
 - [ ] T003 Add positive and negative JSON contract fixtures plus schema/reference validation in tests/contracts/fixtures/scan-*.json and tests/contracts/discovery_contract_test.go, covering unknown fields, all bounds, excluded targets, unsupported transport, wrong scanner, stale revision, and conflicting replay (FR-001, FR-004–FR-008, FR-15, FR-018).
 
 **Checkpoint**: Contracts are executable; existing 001 security prerequisites are evidenced.

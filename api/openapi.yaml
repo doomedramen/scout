@@ -17,6 +17,7 @@ tags:
   - name: monitoring
   - name: incidents
   - name: notifications
+  - name: scanning
 paths:
   /setup:
     post:
@@ -170,6 +171,135 @@ paths:
       parameters: [{ name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/scope-patch.json" } } } }
       responses: { "200": { description: Scope updated }, "409": { $ref: "#/components/responses/Conflict" } }
+    get:
+      tags: [access]
+      parameters: [{ name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: Scope detail including the redacted scan policy } }
+  /scopes/{scopeId}/scan-runs:
+    post:
+      tags: [scanning]
+      x-requires-recent-mfa: true
+      parameters:
+        - { name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./schemas/scan-run-create.json" } } }
+      responses:
+        "202":
+          {
+            description: Owner-triggered scan queued,
+            content: { application/json: { schema: { $ref: "./schemas/scan-run.json" } } },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /scopes/{scopeId}/scan-status:
+    get:
+      tags: [scanning]
+      parameters: [{ name: scopeId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          {
+            description: Scope scan status and bounded coverage,
+            content: { application/json: { schema: { $ref: "./schemas/scan-status.json" } } },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scan-runs:
+    get:
+      tags: [scanning]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: scopeId, in: query, schema: { type: string, format: uuid } }
+        - { name: scannerId, in: query, schema: { type: string, maxLength: 128 } }
+        - { name: state, in: query, schema: { $ref: "./schemas/scan-common.json#/$defs/runState" } }
+        - { name: startedAfter, in: query, schema: { type: string, format: date-time } }
+        - { name: startedBefore, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          {
+            description: Redacted scan run summaries,
+            content: { application/json: { schema: { $ref: "./schemas/scan-run-list.json" } } },
+          }
+  /scan-runs/{runId}:
+    get:
+      tags: [scanning]
+      parameters: [{ $ref: "#/components/parameters/ScanRunId" }]
+      responses:
+        "200":
+          {
+            description: Scan run detail,
+            content: { application/json: { schema: { $ref: "./schemas/scan-run.json" } } },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /scan-runs/{runId}/cancel:
+    post:
+      tags: [scanning]
+      parameters: [{ $ref: "#/components/parameters/ScanRunId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./schemas/scan-run-cancel.json" } } }
+      responses:
+        "202":
+          {
+            description: Scan cancellation accepted,
+            content: { application/json: { schema: { $ref: "./schemas/scan-run.json" } } },
+          }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /candidates:
+    get:
+      tags: [scanning]
+      parameters:
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: scopeId, in: query, schema: { type: string, format: uuid } }
+        - { name: state, in: query, schema: { $ref: "./schemas/scan-common.json#/$defs/candidateState" } }
+        - { name: accessMethod, in: query, schema: { type: string, enum: [ssh] } }
+        - { name: freshness, in: query, schema: { $ref: "./schemas/scan-common.json#/$defs/coverageState" } }
+        - { name: query, in: query, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          {
+            description: Actionable candidate summaries,
+            content: { application/json: { schema: { $ref: "./schemas/candidate-list.json" } } },
+          }
+  /candidates/{candidateId}:
+    get:
+      tags: [scanning]
+      parameters: [{ $ref: "#/components/parameters/CandidateId" }]
+      responses:
+        "200":
+          {
+            description: Candidate evidence and access state,
+            content: { application/json: { schema: { $ref: "./schemas/candidate-detail.json" } } },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /candidates/{candidateId}/entry-points:
+    get:
+      tags: [scanning]
+      parameters:
+        - { $ref: "#/components/parameters/CandidateId" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { name: currentOnly, in: query, schema: { type: boolean } }
+        - { name: scannerId, in: query, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          {
+            description: Redacted entry-point observations,
+            content: { application/json: { schema: { $ref: "./schemas/entry-point-observation-list.json" } } },
+          }
+  /candidates/{candidateId}/reevaluate:
+    post:
+      tags: [scanning]
+      parameters: [{ $ref: "#/components/parameters/CandidateId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./schemas/candidate-reevaluate.json" } } }
+      responses:
+        "202": { description: Candidate re-evaluation queued }
+        "409": { $ref: "#/components/responses/Conflict" }
   /credentials:
     get: { tags: [access], responses: { "200": { description: Credential metadata only } } }
     post:
@@ -279,6 +409,22 @@ paths:
       responses: { "200": { description: Current server policy revision } }
   /agent/v1/desired-state:
     get: { tags: [agents], responses: { "200": { description: Bounded desired state } } }
+  /agent/v1/scan-results:
+    post:
+      tags: [agents]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "./schemas/scan-result-page.json" } } }
+      responses:
+        "200":
+          {
+            description: Accepted or duplicate scan-result page,
+            content: { application/json: { schema: { $ref: "./schemas/scan-result-response.json" } } },
+          }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { description: Scan backpressure, headers: { Retry-After: { schema: { type: integer, minimum: 1 } } } }
   /worker/v1/claim:
     post: { tags: [agents], responses: { "200": { description: Target-scoped job claim } } }
   /releases/import:
@@ -686,6 +832,8 @@ components:
     AlertRuleId: { name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }
     OverrideId: { name: overrideId, in: path, required: true, schema: { type: string, format: uuid } }
     IncidentId: { name: incidentId, in: path, required: true, schema: { type: string, format: uuid } }
+    ScanRunId: { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+    CandidateId: { name: candidateId, in: path, required: true, schema: { type: string, format: uuid } }
     DestinationId: { name: destinationId, in: path, required: true, schema: { type: string, format: uuid } }
     SuppressionWindowId: { name: windowId, in: path, required: true, schema: { type: string, format: uuid } }
     IdempotencyKey:

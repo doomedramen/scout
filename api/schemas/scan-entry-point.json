@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-entry-point.json",
+  "type": "object",
+  "required": ["id", "name", "transport", "port", "accessMethod", "enabled"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_.:-]+$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "transport": { "$ref": "scan-common.json#/$defs/transport" },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "accessMethod": { "$ref": "scan-common.json#/$defs/accessMethod" },
+    "enabled": { "type": "boolean" }
+  },
+  "additionalProperties": false
+}

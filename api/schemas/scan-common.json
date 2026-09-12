@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-common.json",
+  "$defs": {
+    "uuid": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "transport": { "type": "string", "const": "tcp" },
+    "accessMethod": { "type": ["string", "null"], "enum": ["ssh", null] },
+    "outcome": {
+      "type": "string",
+      "enum": ["open", "closed", "filtered", "unreachable", "skipped", "scanner_error"]
+    },
+    "reasonCode": {
+      "type": ["string", "null"],
+      "enum": [
+        "connection_refused",
+        "timeout",
+        "network_unreachable",
+        "policy_excluded",
+        "outside_scope",
+        "bound_target_budget",
+        "bound_attempt_budget",
+        "bound_deadline",
+        "cancelled",
+        "scanner_revoked",
+        "scanner_error",
+        "unsupported_transport",
+        "invalid_address",
+        "source_unavailable",
+        null
+      ]
+    },
+    "runState": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "leased",
+        "running",
+        "uploading",
+        "completed",
+        "partial",
+        "failed",
+        "cancelled",
+        "rejected",
+        "expired"
+      ]
+    },
+    "partialReason": {
+      "type": ["string", "null"],
+      "enum": [
+        "target_budget",
+        "attempt_budget",
+        "deadline",
+        "cancelled",
+        "policy_changed",
+        "scanner_unavailable",
+        "upload_backpressure",
+        "result_limit",
+        "spool_overflow",
+        null
+      ]
+    },
+    "candidateState": {
+      "type": "string",
+      "enum": [
+        "discovered",
+        "needs_credentials",
+        "invalid_credentials",
+        "needs_privilege",
+        "needs_host_trust",
+        "needs_server_connectivity",
+        "queued",
+        "enrolling",
+        "enrolled",
+        "unsupported",
+        "unreachable",
+        "excluded",
+        "stale"
+      ]
+    },
+    "coverageState": {
+      "type": "string",
+      "enum": ["current", "partial", "stale", "contradicted", "unknown"]
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "probesPerSecond",
+        "concurrency",
+        "targetBudget",
+        "attemptBudget",
+        "timeoutMilliseconds",
+        "runDeadlineSeconds"
+      ],
+      "properties": {
+        "probesPerSecond": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 16 },
+        "targetBudget": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "attemptBudget": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "timeoutMilliseconds": { "type": "integer", "minimum": 100, "maximum": 10000 },
+        "runDeadlineSeconds": { "type": "integer", "minimum": 30, "maximum": 900 },
+        "resultPageSize": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      },
+      "additionalProperties": false,
+      "$comment": "attemptBudget must not exceed targetBudget multiplied by enabled entry-point count."
+    },
+    "scanner": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["server", "agent"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "deviceId": { "$ref": "#/$defs/uuid" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "agent" } }, "required": ["kind"] },
+          "then": { "required": ["deviceId"] },
+          "else": { "not": { "required": ["deviceId"] } }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -11,7 +11,8 @@
     "enabled": { "type": "boolean" },
     "credentialRef": { "type": ["string", "null"] },
     "trustRef": { "type": ["string", "null"] },
-    "limits": { "type": "object" }
+    "limits": { "type": "object" },
+    "scanPolicy": { "$ref": "scan-policy-patch.json" }
   },
   "additionalProperties": false
 }

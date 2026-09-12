@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-run-cancel.json",
+  "type": "object",
+  "required": ["expectedRevision"],
+  "properties": {
+    "expectedRevision": { "$ref": "scan-common.json#/$defs/revision" }
+  },
+  "additionalProperties": false
+}

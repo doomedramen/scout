@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-status.json",
+  "type": "object",
+  "required": [
+    "scopeId",
+    "policyRevision",
+    "enabled",
+    "lastCompletedAt",
+    "nextScheduledAt",
+    "activeRun",
+    "vantages",
+    "coverageState",
+    "partialReason",
+    "candidateOutcomeCounts",
+    "retention",
+    "queue"
+  ],
+  "properties": {
+    "scopeId": { "$ref": "scan-common.json#/$defs/uuid" },
+    "policyRevision": { "$ref": "scan-common.json#/$defs/revision" },
+    "enabled": { "type": "boolean" },
+    "lastCompletedAt": { "type": ["string", "null"], "format": "date-time" },
+    "nextScheduledAt": { "type": ["string", "null"], "format": "date-time" },
+    "activeRun": { "anyOf": [{ "$ref": "scan-run.json" }, { "type": "null" }] },
+    "vantages": {
+      "type": "array",
+      "maxItems": 17,
+      "items": {
+        "type": "object",
+        "required": ["scanner", "state", "assigned", "capabilities", "lastSeen"],
+        "properties": {
+          "scanner": { "$ref": "scan-common.json#/$defs/scanner" },
+          "state": { "type": "string", "enum": ["available", "stale", "revoked", "decommissioned", "unsupported"] },
+          "assigned": { "type": "boolean" },
+          "capabilities": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 64 } },
+          "lastSeen": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "coverageState": { "$ref": "scan-common.json#/$defs/coverageState" },
+    "partialReason": { "$ref": "scan-common.json#/$defs/partialReason" },
+    "candidateOutcomeCounts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 4096 },
+      "maxProperties": 16
+    },
+    "retention": {
+      "type": "object",
+      "required": ["evidenceBefore", "runsBefore", "lagSeconds", "blocked"],
+      "properties": {
+        "evidenceBefore": { "$ref": "scan-common.json#/$defs/timestamp" },
+        "runsBefore": { "$ref": "scan-common.json#/$defs/timestamp" },
+        "lagSeconds": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "queue": {
+      "type": "object",
+      "required": ["activeRuns", "pendingPages", "backpressure"],
+      "properties": {
+        "activeRuns": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "pendingPages": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "backpressure": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

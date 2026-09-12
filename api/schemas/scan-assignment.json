@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-assignment.json",
+  "type": "object",
+  "required": [
+    "runId",
+    "leaseEpoch",
+    "scopeId",
+    "scopeRevision",
+    "assignmentExpiresAt",
+    "ranges",
+    "exclusions",
+    "entryPoints",
+    "limits"
+  ],
+  "properties": {
+    "runId": { "$ref": "scan-common.json#/$defs/uuid" },
+    "leaseEpoch": { "type": "integer", "minimum": 1 },
+    "scopeId": { "$ref": "scan-common.json#/$defs/uuid" },
+    "scopeRevision": { "$ref": "scan-common.json#/$defs/revision" },
+    "assignmentExpiresAt": { "$ref": "scan-common.json#/$defs/timestamp" },
+    "ranges": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
+    "exclusions": { "type": "array", "maxItems": 128, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+    "entryPoints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "transport", "port", "accessMethod"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "transport": { "$ref": "scan-common.json#/$defs/transport" },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "accessMethod": { "$ref": "scan-common.json#/$defs/accessMethod" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "allOf": [{ "$ref": "scan-common.json#/$defs/limits" }],
+      "required": ["resultPageSize"]
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "An assignment contains no credential, trust secret, command, script, banner rule, or arbitrary payload."
+}

@@ -51,3 +51,24 @@ Never attach credential values, private keys, host-key private material, banners
   (T059), and live capacity/disk-pressure measurement (T061). In particular,
   no 001 evidence authorizes scanning the owner's LAN or installing an agent
   on a real device.
+
+## T002 — active scanning contracts
+
+- Requirements: FR-001–FR-008, FR-016, FR-018, FR-021.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Added strict JSON Schema contracts for typed scan policies and entry points,
+  bounded runs and result pages, credential-free agent assignments, redacted
+  observations, candidate/access detail, scan status, and safe cancellation or
+  re-evaluation requests. Existing scope schemas now accept the additive scan
+  policy shape. The OpenAPI document includes owner scan configuration, run,
+  candidate, status, and authenticated agent result routes with bounded
+  headers, body references, and recent-MFA annotations where network authority
+  changes.
+- Exact verification commands and outcomes: `npx prettier --write` over the
+  changed OpenAPI and schema files completed; `go test ./tests/contracts
+  -count=1` passed, including JSON validity, security-boundary, and existing
+  bounded-route checks; and `git diff --check` passed. No route handler has
+  been claimed yet, and no scan or device was contacted.
+- Remaining limits: T003 must add executable positive/negative scan fixtures
+  and reference validation; runtime routes, persistence, agent execution,
+  policy enforcement, and UI remain unimplemented.

@@ -11,7 +11,8 @@
     "credentialRef": { "type": ["string", "null"], "format": "uuid" },
     "trustRef": { "type": ["string", "null"], "format": "uuid" },
     "enabled": { "type": "boolean" },
-    "limits": { "type": "object" }
+    "limits": { "type": "object" },
+    "scanPolicy": { "$ref": "scan-policy-input.json" }
   },
   "additionalProperties": false
 }

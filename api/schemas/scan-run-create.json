@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-run-create.json",
+  "type": "object",
+  "required": ["expectedRevision", "scanner"],
+  "properties": {
+    "expectedRevision": { "$ref": "scan-common.json#/$defs/revision" },
+    "scanner": { "$ref": "scan-common.json#/$defs/scanner" }
+  },
+  "additionalProperties": false,
+  "$comment": "Idempotency-Key is a request header and is not accepted in the JSON body."
+}

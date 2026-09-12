@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-result-response.json",
+  "type": "object",
+  "required": ["runId", "pageOrdinal", "acceptedAt", "duplicate", "runState"],
+  "properties": {
+    "runId": { "$ref": "scan-common.json#/$defs/uuid" },
+    "pageOrdinal": { "type": "integer", "minimum": 0, "maximum": 16383 },
+    "acceptedAt": { "$ref": "scan-common.json#/$defs/timestamp" },
+    "duplicate": { "type": "boolean" },
+    "runState": { "$ref": "scan-common.json#/$defs/runState" }
+  },
+  "additionalProperties": false
+}

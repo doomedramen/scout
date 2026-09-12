@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scout.local/schemas/scan-policy.json",
+  "type": "object",
+  "required": ["revision", "enabled", "serverEnabled", "agentIds", "scheduleSeconds", "entryPoints", "limits"],
+  "properties": {
+    "revision": { "$ref": "scan-common.json#/$defs/revision" },
+    "enabled": { "type": "boolean" },
+    "serverEnabled": { "type": "boolean" },
+    "agentIds": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "scan-common.json#/$defs/uuid" }
+    },
+    "scheduleSeconds": { "type": "integer", "minimum": 60, "maximum": 86400 },
+    "entryPoints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "scan-entry-point.json" }
+    },
+    "limits": { "$ref": "scan-common.json#/$defs/limits" }
+  },
+  "additionalProperties": false
+}
