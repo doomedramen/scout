@@ -1,0 +1,47 @@
+{
+  "name": "Scout",
+  "slug": "scout",
+  "categories": [9],
+  "date_created": "2026-09-12",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 8080,
+  "documentation": "https://github.com/doomedramen/scout/blob/main/README.md",
+  "website": "https://github.com/doomedramen/scout",
+  "repository": "https://github.com/doomedramen/scout",
+  "logo": "https://github.com/doomedramen.png",
+  "description": "Scout is a self-hosted server, network, and device monitor with distributed agents, infrastructure health history, and network mapping.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/scout.sh",
+      "config_path": "/opt/scout/.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 12,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Open http://<IP>:8080 after installation. Read the initial setup token with: grep '^SCOUT_SETUP_TOKEN=' /opt/scout/.env | cut -d= -f2-",
+      "type": "info"
+    },
+    {
+      "text": "Scout and PostgreSQL run as Docker containers. Persistent data lives in the scout-server-data and scout-postgres Docker volumes; include both volumes in backups.",
+      "type": "warning"
+    },
+    {
+      "text": "This helper exposes Scout over plain HTTP on port 8080. Use it only on a trusted network or place a TLS reverse proxy in front of it before remote access.",
+      "type": "warning"
+    }
+  ]
+}

@@ -139,6 +139,27 @@ Docker Hub as well, configure repository secrets `DOCKERHUB_USERNAME` and
 `DOCKERHUB_TOKEN`; the workflow then publishes
 `docker.io/<username>/scout` and `docker.io/<username>/scout-agent`.
 
+## Proxmox VE helper script
+
+Run this command on a Proxmox VE host:
+
+```sh
+var_os='debian' bash -c "$(curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/install/scout-install.sh)"
+```
+
+The public installer dispatches to the Community Scripts-compatible LXC
+definition in [`ct/scout.sh`](ct/scout.sh). Its container installation logic
+and metadata live in [`install/scout-install.sh`](install/scout-install.sh) and
+[`json/scout.json`](json/scout.json).
+
+The helper creates an unprivileged Debian 13 LXC, installs Docker, and starts
+the Scout quickstart stack with generated database and setup credentials. Run
+`update` inside the resulting LXC to pull the latest Scout and PostgreSQL
+images and recreate the services while retaining both named data volumes.
+
+This integration has syntax and metadata contract coverage, but still needs a
+live Proxmox VE installation test before it can be described as verified.
+
 ```sh
 npm ci
 npm run setup
