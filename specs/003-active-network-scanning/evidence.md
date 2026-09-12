@@ -613,3 +613,42 @@ Never attach credential values, private keys, host-key private material, banners
   packet capture, 256-address performance, or the full keyboard/viewport
   browser matrix. The live deployment must rebuild from the pushed commits
   before its served installer contains the latest fixes.
+
+## System-detail access flow and isolated live-agent verification
+
+- Requirements: FR-010–FR-015, FR-019–FR-021; SC-003–SC-005, SC-009.
+- Date: 2026-09-12 (Europe/London); implementation/test commits: 2db33fa,
+  3107941, f952a85.
+- The Systems page now keeps a discovered, unenrolled host visible as
+  `Needs access`. Opening that system renders the credential form in place,
+  headed `SSH found on this system`, with the discovered SSH target
+  prefilled. Supplying an owner-approved credential and host trust continues
+  through the existing bounded re-evaluation and server-local enrollment
+  worker. The detail view polls device metadata and candidates so the same
+  page transitions to live agent state after the first heartbeat.
+- The local isolated verification used Scout Compose project
+  `scout-e2e-local` on `127.0.0.1:18081` plus a privileged Debian systemd
+  container on the private Compose network. The target's agent service was
+  active; PostgreSQL projected the same stable device record as `online` with
+  agent version `0.1.0` and a recent heartbeat; the telemetry spool was empty;
+  and the server remained running with zero restarts. The browser showed the
+  target on the Systems page as `Online`, then showed live CPU/memory values,
+  agent identity, version, availability, and last heartbeat on its detail
+  page without a manual reload.
+- The run exposed and fixed two local-only correctness issues: direct legacy
+  Docker builds on the arm64 host now build a native server binary, and all
+  persisted in-memory composite keys avoid NUL bytes rejected by PostgreSQL
+  JSONB. Regression coverage was added for the key builders.
+- Exact verification commands and outcomes: `go test ./... -count=1`, `go vet
+  ./...`, `npm run check`, `npm run lint`, `npm run build`, `npm run
+  format:check`, `go test ./tests/contracts -count=1`, `git diff --check`, and
+  `npx playwright test tests/e2e/playwright/discovery.spec.ts --grep
+  "owner can configure a bounded scan"` all passed. The final browser
+  assertion covered the system-detail heading, automatic-install copy, and
+  exact discovered target. Only the disposable local container and fixture
+  credentials were used; no real device, production network, or production
+  credential was contacted.
+- Remaining limits: the isolated run does not replace T029–T044's broader
+  multi-vantage, segmented-packet, workload, recovery, and viewport matrices;
+  the public deployment must rebuild from the pushed commits before it serves
+  these UI and installer changes.
