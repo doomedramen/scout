@@ -198,4 +198,24 @@ func TestIngestScanResultPageRejectsWrongScannerExpiredAndUnsafeResults(t *testi
 	if _, _, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, page); !errors.Is(err, store.ErrConflict) {
 		t.Fatalf("expired assignment accepted: %v", err)
 	}
+
+	fixture = newScanIngestionFixture(t)
+	currentPolicy, err := fixture.store.ScanPolicy(ctx, fixture.scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.store.UpdateScanPolicy(ctx, fixture.scope.ID, currentPolicy.Revision, currentPolicy); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, validScanResultPage(fixture)); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("superseded policy accepted: %v", err)
+	}
+
+	fixture = newScanIngestionFixture(t)
+	if err := fixture.store.RevokeAgent(ctx, fixture.scanner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, validScanResultPage(fixture)); !errors.Is(err, store.ErrForbidden) {
+		t.Fatalf("revoked scanner accepted: %v", err)
+	}
 }
