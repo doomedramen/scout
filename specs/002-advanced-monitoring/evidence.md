@@ -968,3 +968,38 @@ For future results append: task and requirement IDs, commit, date, exact command
   versions, grants, and representative family compatibility remain
   unvalidated. The script is ready for that explicitly authorized run; no
   live support claim is made.
+
+## T035 — bounded hwmon sensor collector
+
+- Requirements: FR-029, FR-031, FR-032; SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: pending checkpoint.
+- Added temporary fixture trees covering hwmon temperature and fan channels,
+  negative millidegrees, zero RPM, optional labels, absent alarms, explicit
+  alarm faults, malformed values, negative fan values, sensor renumbering,
+  exact exclusions, unsafe symlink targets, empty inventories, and the 256
+  entity bound. Stable IDs include the host, resolved device path, chip when
+  available, channel kind, and channel number; hwmon entry names are never
+  used alone. Duplicate aliases of the same resolved channel are suppressed.
+- Implemented a read-only hwmon adapter through the collector contract. It
+  reads only fixed `name`, `tempN_input/label/alarm`, and
+  `fanN_input/label/alarm` attributes, resolves every device and attribute
+  within the configured sysfs root, caps each read at 4 KiB, caps directory
+  enumeration and sensor entities, and enforces a five-second collector
+  deadline. Celsius conversion preserves supported negative values; fan
+  conversion preserves zero and rejects negative readings as unavailable.
+  Alarm `1` is the only sensor hardware-fault predicate; absent or invalid
+  alarms remain unavailable, and temperature max/crit files do not create a
+  default incident. Per-field capability labels and metric availability make
+  malformed or inaccessible values explicit without blocking other channels.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/collector/sensors/collector.go
+  internal/collector/sensors/collector_test.go`; `go test
+  ./internal/collector/sensors ./internal/collector -race -count=1`; `go vet
+  ./internal/collector/sensors ./internal/collector`; and `git diff --check`
+  all passed. No production database, credential, real device, or sysfs host
+  mount was used.
+- Remaining limits: the development host is macOS and has no owner-authorized
+  representative Linux hwmon lab, so live driver/kernel support and exact
+  permissions remain unvalidated. T036 is next; T037 must expose persisted
+  exclusions and the hardware view, and T038 remains the live hardware
+  evidence gate.
