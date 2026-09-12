@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
 
-if [[ -z "${FUNCTIONS_FILE_PATH:-}" ]]; then
-  scout_helper_url="${SCOUT_HELPER_URL:-https://raw.githubusercontent.com/doomedramen/scout/main/ct/scout.sh}"
-  if ! scout_helper=$(curl -fsSL "$scout_helper_url"); then
-    echo "Scout installer: failed to download the Proxmox VE helper script" >&2
-    exit 1
-  fi
-  bash -c "$scout_helper"
-  exit
-fi
-
 # Copyright (c) 2021-2026 community-scripts ORG
 # Author: doomedramen
 # License: MIT | https://github.com/community-scripts/ProxmoxVED/raw/main/LICENSE
@@ -99,4 +89,16 @@ msg_ok "Started Scout"
 
 motd_ssh
 customize
+
+cat <<'EOF' >/usr/bin/update
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "${SCOUT_INSTALL_DIR:-/opt/scout}"
+docker compose pull
+docker compose up -d --remove-orphans --wait
+echo "Scout updated successfully."
+EOF
+chmod 0755 /usr/bin/update
+
 cleanup_lxc
