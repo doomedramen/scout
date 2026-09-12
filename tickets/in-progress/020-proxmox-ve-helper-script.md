@@ -1,10 +1,10 @@
 ---
 id: "020"
 title: "Add a Proxmox VE helper script"
-status: open
+status: in-progress
 priority: medium
 created: "2026-09-12T09:47:01Z"
-updated: "2026-09-12T09:47:01Z"
+updated: "2026-09-12T11:20:41Z"
 tags: [distribution, integrations, proxmox]
 ---
 
