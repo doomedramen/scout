@@ -871,4 +871,38 @@ For future results append: task and requirement IDs, commit, date, exact command
   and `git diff --check` all passed.
 - The development host does not have smartmontools or representative SATA,
   SAS, or NVMe hardware available, so no live family support claim is made.
-  T032 is next; ZFS live evidence remains a later T034/release gate.
+  T033 is next; ZFS live evidence remains a later T034/release gate.
+
+## T032 — bounded ZFS storage collector
+
+- Requirements: FR-026, FR-027, FR-028, FR-032; SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: `ba39a0a`.
+- Added secret-free OpenZFS pool, dataset, scrub, partial, permission, and
+  cumulative-counter fixtures. Pool and dataset entities use host-scoped
+  GUID identities when present; name-only identities are marked unstable and
+  duplicate GUID/name evidence is kept ambiguous. A changed GUID produces a
+  new entity identity rather than merging replacement history.
+- Implemented fixed, read-only `zpool list -H -p -o
+  name,guid,size,allocated,health`, `zfs list -H -p -o
+  name,guid,used,available`, and `zpool status -p` queries with `LC_ALL=C`, no
+  shell, 1 MiB output bounds, 10-second per-command deadlines, and a
+  20-second total collector deadline. Linux ZFS kstat counters are read only
+  from the fixed `/proc/spl/kstat/zfs` path (injectable in tests); decreases or
+  missing samples produce unavailable rate gaps rather than fabricated zeroes.
+  Pool allocation/capacity is labeled physical, dataset used/available is
+  labeled usable, and scrub/health/data-error state remains typed labels with
+  explicit hardware-fault predicates.
+- Positive and negative fixtures cover ONLINE/DEGRADED pools, finished and
+  in-progress scrubs, explicit data errors, counter rates, counter reset,
+  malformed rows, denied access, missing counters, empty inventories,
+  truncated output, replacement identity, and ambiguous identity. The ZFS
+  descriptor is registered with bounded permissions and an entity cap of 32
+  pools plus 1000 datasets.
+- Exact verification commands and outcomes: `go test
+  ./internal/collector/zfs ./internal/collector -count=1`; `go vet
+  ./internal/collector/...`; `go test ./... -count=1`; `go vet ./...`; and
+  `git diff --check` all passed. No production database, real device, ZFS
+  pool, production credential, or deployment was used; the development host
+  has no live OpenZFS lab, so T034 remains the live-evidence gate.
+- T033 is now the next unchecked task. Live SMART/ZFS family support, expanded
+  load capacity, and production deployment remain unclaimed evidence gates.
