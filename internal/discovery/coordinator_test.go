@@ -240,3 +240,32 @@ func TestCoordinatorExecutesControlledServerTCPScanAndPersistsEvidence(t *testin
 		t.Fatalf("controlled scan evidence: %+v err=%v", observations.Items, err)
 	}
 }
+
+func TestCoordinatorFencesPolicyRevisionDuringServerScan(t *testing.T) {
+	ctx := context.Background()
+	repository, scope, scanPolicy, _ := coordinatorFixture(t)
+	scanner := coordinatorTestScanner{scan: func(scanContext context.Context, _ []string, _ ProbePolicy) ([]ProbeResult, error) {
+		current, err := repository.ScanPolicy(ctx, scope.ID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := repository.UpdateScanPolicy(ctx, scope.ID, current.Revision, current); err != nil {
+			return nil, err
+		}
+		<-scanContext.Done()
+		return nil, scanContext.Err()
+	}}
+	coordinator := coordinatorFor(repository, scanner)
+	coordinator.RunDeadline = time.Second
+	coordinator.FenceInterval = time.Millisecond
+	runs, err := coordinator.RunOnce(ctx)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("revision-fenced run: %+v err=%v", runs, err)
+	}
+	if runs[0].State != store.ScanRunPartial || runs[0].PartialReason != "policy_changed" {
+		t.Fatalf("stale run was not fenced: %+v", runs[0])
+	}
+	if runs[0].ScopeRevision != scanPolicy.Revision {
+		t.Fatalf("run revision changed while executing: %+v", runs[0])
+	}
+}

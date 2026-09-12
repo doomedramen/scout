@@ -17,6 +17,7 @@ const (
 	DefaultServerVantageID  = "control-server"
 	defaultCoordinatorLease = 30 * time.Second
 	defaultCoordinatorPoll  = 5 * time.Second
+	defaultFenceInterval    = 100 * time.Millisecond
 )
 
 // Coordinator materializes and executes the control-server vantage. Agent
@@ -30,11 +31,12 @@ type Coordinator struct {
 	LeaseDuration time.Duration
 	RunDeadline   time.Duration
 	PollInterval  time.Duration
+	FenceInterval time.Duration
 	Now           func() time.Time
 }
 
 func NewCoordinator(repository *store.Store, engine *policy.Engine, scanner Scanner) *Coordinator {
-	return &Coordinator{Store: repository, Policy: engine, Scanner: scanner, ServerID: DefaultServerVantageID, LeaseDuration: defaultCoordinatorLease, PollInterval: defaultCoordinatorPoll}
+	return &Coordinator{Store: repository, Policy: engine, Scanner: scanner, ServerID: DefaultServerVantageID, LeaseDuration: defaultCoordinatorLease, PollInterval: defaultCoordinatorPoll, FenceInterval: defaultFenceInterval}
 }
 
 func (c *Coordinator) clock() time.Time {
@@ -309,9 +311,24 @@ func (c *Coordinator) executeServerRun(parent context.Context, queued store.Scan
 		return c.finishFailed(parent, run, "scanner_error")
 	}
 	scanContext, cancel := context.WithTimeout(parent, deadline)
+	watchContext, stopWatching := context.WithCancel(parent)
+	fenceReasons := make(chan string, 1)
+	go c.watchRunFence(watchContext, run, cancel, fenceReasons)
 	results, scanErr := c.Scanner.Scan(scanContext, addresses, probePolicy)
 	scanContextErr := scanContext.Err()
 	cancel()
+	stopWatching()
+	fenceReason := ""
+	select {
+	case fenceReason = <-fenceReasons:
+	default:
+	}
+	if fenceReason == "" {
+		fenceReason = c.scanFenceReason(parent, run)
+	}
+	if fenceReason != "" {
+		return c.finishPartial(parent, run, fenceReason)
+	}
 	partialReason := scanPartialReason(scanErr, scanContextErr, parent.Err())
 	if partialReason == "" && len(results) != run.AttemptsPlanned {
 		partialReason = "scanner_unavailable"
@@ -329,9 +346,74 @@ func (c *Coordinator) executeServerRun(parent context.Context, queued store.Scan
 		return store.ScanRun{}, err
 	}
 	if err := c.uploadServerResults(parent, run, results, partialReason); err != nil {
+		if reason := c.scanFenceReason(parent, run); reason != "" {
+			return c.finishPartial(parent, run, reason)
+		}
 		return c.finishFailed(parent, run, "scanner_error")
 	}
 	return c.currentRun(parent, run.ID, run)
+}
+
+func (c *Coordinator) watchRunFence(ctx context.Context, run store.ScanRun, cancel context.CancelFunc, reasons chan<- string) {
+	interval := c.FenceInterval
+	if interval <= 0 {
+		interval = defaultFenceInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reason := c.scanFenceReason(ctx, run)
+			if reason == "" {
+				continue
+			}
+			cancel()
+			reasons <- reason
+			return
+		}
+	}
+}
+
+func (c *Coordinator) scanFenceReason(ctx context.Context, run store.ScanRun) string {
+	if c == nil || c.Store == nil {
+		return "scanner_unavailable"
+	}
+	currentRun, err := c.Store.GetScanRun(ctx, run.ID)
+	if err != nil {
+		return ""
+	}
+	now := c.clock()
+	if currentRun.LeaseExpiresAt == nil || !now.Before(*currentRun.LeaseExpiresAt) {
+		return "scanner_unavailable"
+	}
+	if !run.AssignmentExpiresAt.IsZero() && !now.Before(run.AssignmentExpiresAt) {
+		return "deadline"
+	}
+	scope, err := c.Store.GetScope(ctx, run.ScopeID)
+	if err != nil {
+		return ""
+	}
+	scanPolicy, err := c.Store.ScanPolicy(ctx, run.ScopeID)
+	if err != nil {
+		return ""
+	}
+	if !scope.Enabled || !scanPolicy.Enabled || scanPolicy.Revision != run.ScopeRevision {
+		return "policy_changed"
+	}
+	if currentRun.CancellationRequested {
+		return "cancelled"
+	}
+	workspace, err := c.Store.Workspace(ctx)
+	if err != nil {
+		return ""
+	}
+	if workspace.RecoveryMode || workspace.DiscoveryPaused {
+		return "cancelled"
+	}
+	return ""
 }
 
 func hasSkippedResults(results []ProbeResult) bool {
@@ -443,6 +525,16 @@ func (c *Coordinator) currentRun(ctx context.Context, runID string, fallback sto
 
 func (c *Coordinator) finishFailed(ctx context.Context, run store.ScanRun, errorCode string) (store.ScanRun, error) {
 	if _, err := c.Store.FinalizeScanRun(ctx, run.ID, c.serverID(), run.LeaseEpoch, store.ScanRunPartial, "scanner_unavailable", errorCode); err != nil {
+		return store.ScanRun{}, err
+	}
+	return c.currentRun(ctx, run.ID, run)
+}
+
+func (c *Coordinator) finishPartial(ctx context.Context, run store.ScanRun, reason string) (store.ScanRun, error) {
+	if _, err := c.Store.FinalizeScanRun(ctx, run.ID, c.serverID(), run.LeaseEpoch, store.ScanRunPartial, reason, ""); err != nil {
+		if errors.Is(err, store.ErrConflict) {
+			return c.currentRun(ctx, run.ID, run)
+		}
 		return store.ScanRun{}, err
 	}
 	return c.currentRun(ctx, run.ID, run)
