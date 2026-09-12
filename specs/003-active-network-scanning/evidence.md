@@ -76,7 +76,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## T003 — active scanning contract fixtures
 
 - Requirements: FR-001, FR-004–FR-008, FR-015, FR-018.
-- Date: 2026-09-12 (Europe/London); implementation commit: 9dc4f79.
+- Date: 2026-09-12 (Europe/London); implementation commit: 4f2a489.
 - Added positive fixtures for policy, assignment, result page, candidate, and
   run creation plus negative fixtures for unknown fields, bound overflow,
   unsupported UDP transport, remote identity injection, excluded targets, and
@@ -100,7 +100,7 @@ Never attach credential values, private keys, host-key private material, banners
 
 - Requirements: FR-001, FR-002, FR-003, FR-007, FR-009, FR-010, FR-015,
   FR-019, FR-022.
-- Date: 2026-09-12 (Europe/London); implementation commit: c04bb7e.
+- Date: 2026-09-12 (Europe/London); implementation commit: 9dc4f79.
 - Added versioned migration 11 with disabled-by-default scan policies,
   explicit server/agent vantage assignments, bounded run state and active
   uniqueness, lease fencing, paged result receipts, append-only TCP entry-point
@@ -115,14 +115,13 @@ Never attach credential values, private keys, host-key private material, banners
   disposable PostgreSQL 17 container; and `git diff --check` passed. Running
   migrations twice remains covered by the integration harness. No scan was
   enabled and no real device or credential was used.
-- Remaining limits: operations are intentionally not implemented here. T005
-  must add transaction-safe policy/run/lease/receipt/observation operations and
-  test rollback, replay, active uniqueness, and fencing for both stores.
+- Remaining limits: normalized scan-table parity, concurrent PostgreSQL lease
+  contention, and scanner/result policy validation remain for T005–T009.
 
 ## T005 — scan store authority and fencing
 
 - Requirements: FR-007–FR-009, FR-015, FR-016, FR-018, FR-019, FR-022.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: c04bb7e.
 - Added store operations for disabled-by-default policy materialization and
   expected-revision updates, one active run per scope/vantage pair, owner
   idempotency, lease epochs and expiry re-lease, owner/epoch transition
@@ -138,6 +137,30 @@ Never attach credential values, private keys, host-key private material, banners
   internal/store/scanning.go internal/store/scanning_test.go`; and `git diff
   --check` passed. The full disposable PostgreSQL migration suite had already
   passed in T004; this task's store tests are deterministic in-memory tests.
-- Remaining limits: normalized-table reads/writes, concurrent PostgreSQL
-  lease contention, and scanner/result policy validation belong to T007–T009.
+- Remaining limits: normalized-table reads/writes and concurrent PostgreSQL
+  lease contention remain for T009; scanner/result policy validation remains
+  for T007–T009.
   No scan or device was contacted.
+
+## T006 — bounded scan policy authority
+
+- Requirements: FR-001–FR-006, FR-018.
+- Date: 2026-09-12 (Europe/London); implementation commit: 4c3558c.
+- Added typed TCP entry-point catalog validation with SSH as the only default
+  access-capable entry point and observation-only alternate ports. Added scan
+  policy normalization with safe schedule, rate, concurrency, target, attempt,
+  timeout, deadline, and result-page defaults; attempt multiplication bounds;
+  finite IPv6 prefix enforcement; explicit assigned-agent and server-vantage
+  checks; exclusion, scope, pause, policy-revision, entry-point, and server
+  opt-in pre-probe decisions. Removed a vet-detected self-assignment in the
+  adjacent scan run clone helper.
+- Tests were written first and initially failed because the catalog, policy
+  normalization, assignment, and pre-probe APIs were absent. Exact verification
+  commands and outcomes: `go test ./internal/discovery ./internal/policy -run
+  'Test(DefaultScanCatalog|ScanCatalog|NormalizeScanPolicy|ScanAssignment)'
+  -count=1` passed; `go test ./internal/... -count=1` passed; `go vet
+  ./internal/...` passed; and `git diff --check` passed. No scanner, real
+  network, device, or credential was contacted.
+- Remaining limits: runtime scanner execution, due-run coordination,
+  authenticated result ingestion, and controller/UI wiring remain for T007+
+  and no network scan is claimed by this task.
