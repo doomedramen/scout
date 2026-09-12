@@ -55,7 +55,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## T002 — active scanning contracts
 
 - Requirements: FR-001–FR-008, FR-016, FR-018, FR-021.
-- Date: 2026-09-12 (Europe/London); implementation commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation commit: 4f2a489.
 - Added strict JSON Schema contracts for typed scan policies and entry points,
   bounded runs and result pages, credential-free agent assignments, redacted
   observations, candidate/access detail, scan status, and safe cancellation or
