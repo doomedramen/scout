@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -153,16 +154,45 @@ type ProbePolicy struct {
 	Concurrency     int
 	ProbesPerSecond int
 	TargetBudget    int
+	AttemptBudget   int
 	Timeout         time.Duration
 }
 
 type ProbeResult struct {
-	Address   string        `json:"address"`
-	Port      int           `json:"port"`
-	Reachable bool          `json:"reachable"`
-	Latency   time.Duration `json:"latency"`
-	Reason    string        `json:"reason,omitempty"`
+	Address    string        `json:"address"`
+	Port       int           `json:"port"`
+	Reachable  bool          `json:"reachable"`
+	Outcome    string        `json:"outcome"`
+	Latency    time.Duration `json:"latency"`
+	Reason     string        `json:"reason,omitempty"`
+	ReasonCode string        `json:"reasonCode,omitempty"`
 }
+
+// ProbeOptions contains the small seam needed to test the scanner without
+// opening real connections. The production path uses a net.Dialer and sends
+// no application bytes after the TCP handshake.
+type ProbeOptions struct {
+	DialContext func(context.Context, string, string) (net.Conn, error)
+}
+
+// Scanner is the cancellable boundary shared by server and agent execution.
+// Implementations must keep the supplied target and attempt bounds intact.
+type Scanner interface {
+	Scan(context.Context, []string, ProbePolicy) ([]ProbeResult, error)
+}
+
+type TCPScanner struct {
+	Options ProbeOptions
+}
+
+func (s TCPScanner) Scan(ctx context.Context, addresses []string, policy ProbePolicy) ([]ProbeResult, error) {
+	return ProbeWithOptions(ctx, addresses, policy, s.Options)
+}
+
+const (
+	maxProbePorts    = 64
+	maxProbeAttempts = 16384
+)
 
 func (p ProbePolicy) normalized() (ProbePolicy, error) {
 	if p.Concurrency <= 0 {
@@ -183,11 +213,17 @@ func (p ProbePolicy) normalized() (ProbePolicy, error) {
 	if p.TargetBudget > 4096 {
 		return ProbePolicy{}, errors.New("target budget exceeds limit")
 	}
+	if p.AttemptBudget < 0 || p.AttemptBudget > maxProbeAttempts {
+		return ProbePolicy{}, errors.New("attempt budget exceeds limit")
+	}
 	if p.Timeout <= 0 {
 		p.Timeout = 2 * time.Second
 	}
 	if p.Timeout > 10*time.Second {
 		return ProbePolicy{}, errors.New("probe timeout exceeds limit")
+	}
+	if len(p.Ports) > maxProbePorts {
+		return ProbePolicy{}, errors.New("probe entry-point count exceeds limit")
 	}
 	for _, port := range p.Ports {
 		if port < 1 || port > 65535 {
@@ -197,10 +233,65 @@ func (p ProbePolicy) normalized() (ProbePolicy, error) {
 	if len(p.Ports) == 0 {
 		p.Ports = []int{22}
 	}
+	ports := make([]int, 0, len(p.Ports))
+	seenPorts := map[int]bool{}
+	for _, port := range p.Ports {
+		if seenPorts[port] {
+			continue
+		}
+		seenPorts[port] = true
+		ports = append(ports, port)
+	}
+	p.Ports = ports
 	return p, nil
 }
 
 func Probe(ctx context.Context, addresses []string, policy ProbePolicy) ([]ProbeResult, error) {
+	return ProbeWithOptions(ctx, addresses, policy, ProbeOptions{})
+}
+
+type probeJob struct {
+	address string
+	port    int
+}
+
+type probeRateLimiter struct {
+	interval time.Duration
+	mutex    sync.Mutex
+	next     time.Time
+}
+
+func (l *probeRateLimiter) wait(ctx context.Context) error {
+	l.mutex.Lock()
+	now := time.Now()
+	if l.next.IsZero() || l.next.Before(now) {
+		l.next = now
+	}
+	slot := l.next
+	l.next = l.next.Add(l.interval)
+	l.mutex.Unlock()
+
+	delay := time.Until(slot)
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ProbeWithOptions performs bounded TCP connect checks. It never writes an
+// application payload and returns explicit outcomes for every planned
+// address/port pair, including attempts skipped by the attempt budget.
+func ProbeWithOptions(ctx context.Context, addresses []string, policy ProbePolicy, options ProbeOptions) ([]ProbeResult, error) {
+	if ctx == nil {
+		return nil, errors.New("probe context is nil")
+	}
 	policy, err := policy.normalized()
 	if err != nil {
 		return nil, err
@@ -218,11 +309,43 @@ func Probe(ctx context.Context, addresses []string, policy ProbePolicy) ([]Probe
 			break
 		}
 	}
-	jobs := make(chan struct {
-		address string
-		port    int
-	})
-	results := make(chan ProbeResult, len(unique)*len(policy.Ports))
+	if len(unique) == 0 {
+		return []ProbeResult{}, nil
+	}
+	total, err := probePlanSize(len(unique), len(policy.Ports))
+	if err != nil {
+		return nil, err
+	}
+	if policy.AttemptBudget == 0 {
+		policy.AttemptBudget = total
+		if policy.AttemptBudget > maxProbeAttempts {
+			policy.AttemptBudget = maxProbeAttempts
+		}
+	}
+	if policy.AttemptBudget > total {
+		return nil, errors.New("attempt budget exceeds target and entry-point multiplication")
+	}
+	if policy.AttemptBudget == 0 {
+		return []ProbeResult{}, nil
+	}
+	planned := make([]probeJob, 0, total)
+	for _, address := range unique {
+		for _, port := range policy.Ports {
+			planned = append(planned, probeJob{address: address, port: port})
+		}
+	}
+	jobs := make(chan probeJob, policy.AttemptBudget)
+	results := make(chan ProbeResult, policy.AttemptBudget)
+	for _, job := range planned[:policy.AttemptBudget] {
+		jobs <- job
+	}
+	close(jobs)
+	dialContext := options.DialContext
+	if dialContext == nil {
+		dialer := &net.Dialer{}
+		dialContext = dialer.DialContext
+	}
+	limiter := &probeRateLimiter{interval: time.Second / time.Duration(policy.ProbesPerSecond)}
 	var group sync.WaitGroup
 	for range policy.Concurrency {
 		group.Add(1)
@@ -232,56 +355,50 @@ func Probe(ctx context.Context, addresses []string, policy ProbePolicy) ([]Probe
 				if ctx.Err() != nil {
 					return
 				}
-				started := time.Now()
-				dialer := net.Dialer{Timeout: policy.Timeout}
-				connection, dialErr := dialer.DialContext(ctx, "tcp", net.JoinHostPort(job.address, strconv.Itoa(job.port)))
-				result := ProbeResult{Address: job.address, Port: job.port, Reachable: dialErr == nil, Latency: time.Since(started)}
-				if dialErr != nil {
-					result.Reason = "connection_failed"
+				if err := limiter.wait(ctx); err != nil {
+					return
 				}
+				if ctx.Err() != nil {
+					return
+				}
+				started := time.Now()
+				attemptContext, cancel := context.WithTimeout(ctx, policy.Timeout)
+				connection, dialErr := dialContext(attemptContext, "tcp", net.JoinHostPort(job.address, strconv.Itoa(job.port)))
+				attemptContextErr := attemptContext.Err()
+				cancel()
 				if connection != nil {
 					_ = connection.Close()
 				}
-				results <- result
+				if ctx.Err() != nil {
+					return
+				}
+				outcome, reasonCode := classifyProbeError(dialErr, attemptContextErr)
+				result := ProbeResult{Address: job.address, Port: job.port, Reachable: outcome == "open", Outcome: outcome, Latency: time.Since(started), Reason: reasonCode, ReasonCode: reasonCode}
+				if outcome == "open" {
+					result.Reason = ""
+					result.ReasonCode = ""
+				}
+				select {
+				case results <- result:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 	}
-	interval := time.Second / time.Duration(policy.ProbesPerSecond)
-	last := time.Time{}
-	for _, address := range unique {
-		for _, port := range policy.Ports {
-			if !last.IsZero() {
-				timer := time.NewTimer(time.Until(last.Add(interval)))
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					close(jobs)
-					group.Wait()
-					close(results)
-					return nil, ctx.Err()
-				case <-timer.C:
-				}
-			}
-			select {
-			case jobs <- struct {
-				address string
-				port    int
-			}{address: address, port: port}:
-				last = time.Now()
-			case <-ctx.Done():
-				close(jobs)
-				group.Wait()
-				close(results)
-				return nil, ctx.Err()
-			}
-		}
-	}
-	close(jobs)
-	group.Wait()
-	close(results)
-	result := make([]ProbeResult, 0, len(results))
+	go func() {
+		group.Wait()
+		close(results)
+	}()
+	result := make([]ProbeResult, 0, total)
 	for item := range results {
 		result = append(result, item)
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return result, ctxErr
+	}
+	for _, job := range planned[policy.AttemptBudget:] {
+		result = append(result, ProbeResult{Address: job.address, Port: job.port, Outcome: "skipped", Reason: "bound_attempt_budget", ReasonCode: "bound_attempt_budget"})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Address == result[j].Address {
@@ -290,6 +407,40 @@ func Probe(ctx context.Context, addresses []string, policy ProbePolicy) ([]Probe
 		return result[i].Address < result[j].Address
 	})
 	return result, nil
+}
+
+func probePlanSize(targetCount, portCount int) (int, error) {
+	if targetCount < 0 || portCount < 0 {
+		return 0, errors.New("invalid probe plan")
+	}
+	maxInt := int(^uint(0) >> 1)
+	if portCount != 0 && targetCount > maxInt/portCount {
+		return 0, errors.New("probe plan exceeds limit")
+	}
+	return targetCount * portCount, nil
+}
+
+func classifyProbeError(err error, attemptContextErr error) (string, string) {
+	if err == nil {
+		return "open", ""
+	}
+	if errors.Is(attemptContextErr, context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return "filtered", "timeout"
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) {
+		return "closed", "connection_refused"
+	}
+	if errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.ENETDOWN) || errors.Is(err, syscall.EHOSTDOWN) {
+		return "unreachable", "network_unreachable"
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return "filtered", "timeout"
+	}
+	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+		return "filtered", "source_unavailable"
+	}
+	return "scanner_error", "scanner_error"
 }
 
 func ExpandTargets(ranges, exclusions []string, budget int) ([]string, error) {
