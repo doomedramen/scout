@@ -92,9 +92,9 @@ func (a *App) scopeView(ctx context.Context, scope store.Scope) (scopeResponse, 
 		Revision:        scanPolicy.Revision,
 		Enabled:         scanPolicy.Enabled,
 		ServerEnabled:   scanPolicy.ServerEnabled,
-		AgentIDs:        append([]string(nil), scanPolicy.AgentIDs...),
+		AgentIDs:        append([]string{}, scanPolicy.AgentIDs...),
 		ScheduleSeconds: scanPolicy.ScheduleSeconds,
-		EntryPoints:     append([]store.ScanEntryPoint(nil), scanPolicy.EntryPoints...),
+		EntryPoints:     append([]store.ScanEntryPoint{}, scanPolicy.EntryPoints...),
 		Limits:          scanPolicy.Limits,
 	}}, nil
 }

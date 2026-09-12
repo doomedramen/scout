@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,6 +43,7 @@ type Config struct {
 	Version          string
 	ReleaseTrustFile string
 	ScanCapabilities store.ScanCapabilities
+	ScanDialContext  func(context.Context, string, string) (net.Conn, error)
 }
 
 type persistedIdentity struct {

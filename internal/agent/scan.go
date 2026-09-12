@@ -350,7 +350,7 @@ func (r *Runtime) executeScan(ctx context.Context, assignment ScanAssignment) er
 		deadline = runDeadline
 	}
 	scanContext, cancel := context.WithDeadline(ctx, deadline)
-	results, scanErr := discovery.TCPScanner{}.Scan(scanContext, addresses, probePolicy)
+	results, scanErr := discovery.TCPScanner{Options: discovery.ProbeOptions{DialContext: r.Config.ScanDialContext}}.Scan(scanContext, addresses, probePolicy)
 	contextErr := scanContext.Err()
 	cancel()
 	partialReason := agentScanPartialReason(scanErr, contextErr, ctx.Err())

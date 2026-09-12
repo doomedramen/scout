@@ -305,7 +305,11 @@ func (c *Coordinator) executeServerRun(parent context.Context, queued store.Scan
 		}
 		ports = append(ports, entryPoint.Port)
 	}
-	probePolicy := ProbePolicy{Ports: ports, Concurrency: run.PolicySnapshot.Limits.Concurrency, ProbesPerSecond: run.PolicySnapshot.Limits.ProbesPerSecond, TargetBudget: run.PolicySnapshot.Limits.TargetBudget, AttemptBudget: run.PolicySnapshot.Limits.AttemptBudget, Timeout: time.Duration(run.PolicySnapshot.Limits.TimeoutMilliseconds) * time.Millisecond}
+	attemptBudget := run.PolicySnapshot.Limits.AttemptBudget
+	if attemptBudget > run.AttemptsPlanned {
+		attemptBudget = run.AttemptsPlanned
+	}
+	probePolicy := ProbePolicy{Ports: ports, Concurrency: run.PolicySnapshot.Limits.Concurrency, ProbesPerSecond: run.PolicySnapshot.Limits.ProbesPerSecond, TargetBudget: run.PolicySnapshot.Limits.TargetBudget, AttemptBudget: attemptBudget, Timeout: time.Duration(run.PolicySnapshot.Limits.TimeoutMilliseconds) * time.Millisecond}
 	deadline := c.runDeadline(run)
 	if deadline <= 0 {
 		return c.finishFailed(parent, run, "scanner_error")
