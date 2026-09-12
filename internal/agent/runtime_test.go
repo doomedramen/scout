@@ -5,7 +5,35 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"scout.local/scout/internal/store"
 )
+
+func TestRuntimeUsesConfiguredScanCapabilities(t *testing.T) {
+	defaultRuntime, err := NewRuntime(Config{ServerURL: "http://scout.test", DataDir: filepath.Join(t.TempDir(), "default")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := defaultRuntime.Config.ScanCapabilities; len(got.ScanProtocolVersions) != 1 || got.ScanProtocolVersions[0] != 1 || len(got.ScanTransports) != 1 || got.ScanTransports[0] != store.ScanTransportTCP {
+		t.Fatalf("default scan capabilities = %+v", got)
+	}
+
+	configured := store.ScanCapabilities{ScanProtocolVersions: []int{1, 2}, ScanTransports: []string{store.ScanTransportTCP}}
+	configuredRuntime, err := NewRuntime(Config{ServerURL: "http://scout.test", DataDir: filepath.Join(t.TempDir(), "configured"), ScanCapabilities: configured})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := configuredRuntime.Config.ScanCapabilities; len(got.ScanProtocolVersions) != 2 || got.ScanProtocolVersions[1] != 2 {
+		t.Fatalf("configured scan capabilities = %+v", got)
+	}
+}
+
+func TestRuntimeRejectsInvalidScanCapabilities(t *testing.T) {
+	_, err := NewRuntime(Config{ServerURL: "http://scout.test", DataDir: t.TempDir(), ScanCapabilities: store.ScanCapabilities{ScanProtocolVersions: []int{0}, ScanTransports: []string{store.ScanTransportTCP}}})
+	if err == nil {
+		t.Fatal("invalid scan capabilities were accepted")
+	}
+}
 
 func TestSpoolIsBoundedAndEvictsOldest(t *testing.T) {
 	spool := NewSpool(filepath.Join(t.TempDir(), "spool"), 10, time.Hour)

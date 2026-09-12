@@ -12,6 +12,7 @@ import (
 
 	runtimeagent "scout.local/scout/internal/agent"
 	"scout.local/scout/internal/collector"
+	"scout.local/scout/internal/store"
 )
 
 func main() {
@@ -26,12 +27,14 @@ func main() {
 	root := flag.String("root", "/", "host filesystem root, primarily for tests")
 	interval := flag.Duration("interval", 15*time.Second, "report interval")
 	releaseTrustFile := flag.String("release-trust-file", os.Getenv("SCOUT_RELEASE_TRUST_FILE"), "trusted release public keys")
+	scanProtocolVersion := flag.Int("scan-protocol-version", 1, "supported Scout scan protocol version")
+	scanTransport := flag.String("scan-transport", store.ScanTransportTCP, "supported Scout scan transport")
 	flag.Parse()
 	if !*daemon {
 		printSnapshot()
 		return
 	}
-	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval, ReleaseTrustFile: *releaseTrustFile})
+	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval, ReleaseTrustFile: *releaseTrustFile, ScanCapabilities: store.ScanCapabilities{ScanProtocolVersions: []int{*scanProtocolVersion}, ScanTransports: []string{*scanTransport}}})
 	if err != nil {
 		log.Fatal(err)
 	}

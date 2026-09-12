@@ -31,6 +31,10 @@ if grep -q 'scout.example.invalid\|/usr/local/bin/scout-agent' packaging/linux/a
 	echo "agent service still contains a placeholder installation path" >&2
 	exit 1
 fi
+if ! grep -q 'EnvironmentFile=-/etc/scout/agent.env' packaging/linux/agent.service; then
+	echo "agent service does not load the installer environment" >&2
+	exit 1
+fi
 
 if [[ "${SCOUT_SYSTEMD_LAB:-0}" == "1" ]]; then
 	if [[ "$(uname -s)" != "Linux" ]] || ! command -v systemctl >/dev/null 2>&1; then

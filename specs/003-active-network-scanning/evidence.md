@@ -411,3 +411,25 @@ Never attach credential values, private keys, host-key private material, banners
   not create a device or enrollment job; full per-vantage current projections,
   credential/trust re-evaluation, and owner-facing candidate APIs remain open
   in T023–T028.
+
+## T017 — configurable agent scan capabilities and service wiring
+
+- Requirements: FR-003, FR-007, FR-014, FR-022.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: pending.
+- Agent runtime configuration now carries validated scan protocol and
+  transport capabilities. The CLI exposes `--scan-protocol-version` and
+  `--scan-transport`, defaults to protocol 1/TCP, and reports the configured
+  values in authenticated heartbeats. The service template and generated
+  installer unit load `/etc/scout/agent.env` while retaining the rendered
+  server URL fallback and the protected data directory. Existing control
+  behavior remains backward-compatible: heartbeats without capabilities are
+  accepted as older agents but receive no scan assignment.
+- Exact verification commands and outcomes: `go test ./internal/agent
+  ./apps/agent -count=1`; `scripts/test-first-agent.sh`; `bash -n
+  scripts/install-agent.sh scripts/test-first-agent.sh`; `go vet ./...`;
+  and `git diff --check` passed. Tests cover default/custom capability
+  configuration and invalid capability rejection. No real device, network,
+  or credential was contacted.
+- Remaining limits: native systemd installation and assigned-agent live scan
+  acceptance remain open for T020/T031/T043; the owner scan-policy API and UI
+  remain T018/T019.

@@ -41,6 +41,7 @@ type Config struct {
 	HTTPClient       *http.Client
 	Version          string
 	ReleaseTrustFile string
+	ScanCapabilities store.ScanCapabilities
 }
 
 type persistedIdentity struct {
@@ -89,6 +90,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 	if config.Version == "" {
 		config.Version = AgentVersion
+	}
+	if config.ScanCapabilities.ScanProtocolVersions == nil && config.ScanCapabilities.ScanTransports == nil {
+		config.ScanCapabilities = store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}
+	}
+	if err := store.ValidateScanCapabilities(config.ScanCapabilities); err != nil {
+		return nil, fmt.Errorf("invalid scan capabilities: %w", err)
 	}
 	if err := os.MkdirAll(config.DataDir, 0o700); err != nil {
 		return nil, err
@@ -157,7 +164,7 @@ func (r *Runtime) ReportOnce(ctx context.Context) error {
 	if uptime < 0 {
 		uptime = 0
 	}
-	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}, "capabilities": map[string]any{"scanProtocolVersions": []int{1}, "scanTransports": []string{store.ScanTransportTCP}}})
+	heartbeat, _ := json.Marshal(map[string]any{"bootId": r.bootID, "installedVersion": r.identity.Version, "uptimeSeconds": uptime, "collectorStates": []any{}, "updateState": map[string]string{}, "capabilities": r.Config.ScanCapabilities})
 	_ = r.post(ctx, "/api/v1/agent/v1/heartbeat", heartbeat)
 	_ = r.syncScan(ctx)
 	_ = r.syncUpdate(ctx)

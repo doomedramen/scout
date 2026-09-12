@@ -159,7 +159,7 @@ printf '%s\n' \
     'Type=simple' \
     'User=scout-agent' \
     'Group=scout-agent' \
-    'EnvironmentFile=/etc/scout/agent.env' \
+    'EnvironmentFile=-/etc/scout/agent.env' \
     'ExecStart=/usr/local/libexec/scout-agent --daemon --invitation-file /var/lib/scout/agent/invitation --data-dir /var/lib/scout/agent' \
     'Restart=on-failure' \
     'RestartSec=5s' \
