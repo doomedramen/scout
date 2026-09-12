@@ -218,5 +218,6 @@ func DefaultDescriptors() []Descriptor {
 		{ID: "docker", Provider: "docker", Version: "engine-api-v1", RequiredPermission: []string{"docker:read"}, ConfigSchema: map[string]string{"socketPath": "local unix socket"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second},
 		{ID: "proxmox", Provider: "proxmox", Version: "api-v2", RequiredPermission: []string{"proxmox:cluster-read"}, ConfigSchema: map[string]string{"baseUrl": "https URL", "clusterId": "scoped cluster"}, EntityLimit: 2000, Interval: 30 * time.Second, Deadline: 10 * time.Second},
 		{ID: "smart", Provider: "smart", Version: "smartctl-json-v1", RequiredPermission: []string{"smartctl:read", "block-device:read"}, ConfigSchema: map[string]string{"standbyPolicy": "never wake; smartctl -n standby,0"}, EntityLimit: 64, Interval: 5 * time.Minute, Deadline: 60 * time.Second},
+		{ID: "zfs", Provider: "zfs", Version: "openzfs-fixed-v1", RequiredPermission: []string{"zpool:read", "zfs:read", "zfs:kstat-read"}, ConfigSchema: map[string]string{}, EntityLimit: 1032, Interval: 60 * time.Second, Deadline: 20 * time.Second},
 	}
 }

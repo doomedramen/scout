@@ -1,0 +1,6 @@
+  pool: tank
+ state: ONLINE
+  scan: scrub status from an unsupported future format
+
+  pool: broken
+  scan: scrub repaired 0B in 00:00:01 with 0 errors
