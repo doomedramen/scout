@@ -235,3 +235,47 @@ Never attach credential values, private keys, host-key private material, banners
   passed. No real device, network, or credential was contacted.
 - Remaining limits: scan-table-specific SQL query parity and runtime
   coordinator/executor behavior remain for T010+.
+
+## T010 — bounded scanner contract tests
+
+- Requirements: FR-004–FR-008, FR-018; SC-002, SC-006, SC-007.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: e283149.
+- Tests were written before the scanner API existed. The focused command
+  `go test ./internal/discovery -run 'TestProbe(ClassifiesTCP|HonorsAttempt|ClassifiesTimeout)' -count=1`
+  first failed for the intended missing `AttemptBudget`, `Outcome`,
+  `ProbeOptions`, and `ProbeWithOptions` symbols. The completed tests cover
+  exact literal/prefix exclusion precedence, bounded target expansion,
+  attempt-budget truncation with explicit skipped results, open/closed/
+  filtered/unreachable/scanner-error classification, cancellation, timeout,
+  and a loopback listener that proves no application bytes are written.
+- Exact verification commands and outcomes: `gofmt -w
+  internal/discovery/discovery.go internal/discovery/discovery_test.go`; `go
+  test ./internal/discovery -count=1`; `go vet ./...`; and `git diff --check`
+  passed. The only active listener was a process-local loopback test fixture;
+  RFC 5737 targets used an injected dialer. No real device, network, or
+  credential was contacted.
+- Remaining limits: these are scanner-level tests. Coordinator scheduling,
+  server/agent execution, result paging, and end-to-end packet-boundary
+  evidence remain open in T011–T020.
+
+## T013 — bounded cancellable TCP scanner
+
+- Requirements: FR-004–FR-008, FR-017, FR-018; SC-001, SC-002, SC-006,
+  SC-007.
+- Date: 2026-09-12 (Europe/London); implementation commit: e283149.
+- Added the cancellable `Scanner`/`TCPScanner` boundary and an injectable
+  dial seam for deterministic tests. The production scanner canonicalizes
+  literal addresses, deduplicates ports, caps concurrency/rate/targets/
+  attempts, rejects attempt budgets larger than the planned target/entry-point
+  multiplication, applies a per-attempt timeout, and closes the connection
+  immediately after the TCP handshake. It emits only safe explicit outcomes:
+  `open`, `closed`, `filtered`, `unreachable`, `skipped`, and `scanner_error`,
+  with safe reason codes and no remote error text or payload.
+- Exact verification commands and outcomes: `go test ./internal/discovery
+  -count=1`; `go test ./... -count=1` (including the disposable PostgreSQL
+  integration suite); `go vet ./...`; and `git diff --check` passed. The
+  integration run completed in 54.959 seconds. No scan was enabled and no
+  real device, network, or credential was contacted.
+- Remaining limits: the scanner is not yet called by a durable coordinator or
+  agent runtime, and its results are not yet paged into authenticated scan
+  runs. Those runtime and API tasks remain open.
