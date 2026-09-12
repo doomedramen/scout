@@ -471,6 +471,30 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: candidate discovery presentation and credential actions
   remain open in T023–T031.
 
+## T022 — scan candidate access re-evaluation tests
+
+- Requirements: FR-010–FR-015; SC-003–SC-005, SC-008.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: 467f79c.
+- Tests were written first and initially failed because candidate re-evaluation,
+  safe access-check results, and guarded candidate enrollment were absent. The
+  completed integration coverage keeps a discovered SSH host as a candidate
+  until access is supplied, classifies invalid credentials, insufficient
+  privilege, host-key mismatch, and server-connectivity failure without
+  creating a device or job, then verifies valid credential plus explicit trust
+  produces exactly one device and one enrollment job. Repeating the same
+  re-evaluation remains idempotent. HTTP credential and trust mutations drive
+  the same bounded re-evaluation and responses/jobs contain no secret.
+- Exact verification commands and outcomes: `go test ./tests/integration
+  -run 'Test(CredentialAndTrustMutations|ScanCandidateAccess)' -count=1` and
+  `go test ./... -count=1` passed; `go vet ./...` and `git diff --check` also
+  passed. The first full-suite run caught and removed the old unsafe expectation
+  that a sighting should create an address-only device/job. All fixtures use
+  process-local state and injected verifier outcomes; no real device, network,
+  or credential was contacted.
+- Remaining limits: complete candidate projection/freshness, release and
+  reachability fencing, owner candidate endpoints/UI, and browser journey
+  remain T023–T028.
+
 ## T020 — controlled server and agent scan acceptance
 
 - Requirements: FR-001–FR-009, FR-014–FR-018; SC-001–SC-003, SC-006–SC-008.
