@@ -11,14 +11,18 @@ RUN npm run build -w @scout/web
 
 FROM golang:1.26-alpine AS build
 
-ARG TARGETOS
+ARG TARGETOS=linux
 ARG TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags='-s -w' -o /out/scout-server ./apps/server
+RUN if [ -n "${TARGETARCH}" ]; then \
+      CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags='-s -w' -o /out/scout-server ./apps/server; \
+    else \
+      CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/scout-server ./apps/server; \
+    fi
 RUN mkdir -p /out/agent \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/agent/scout-agent-linux-amd64 ./apps/agent \
     && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o /out/agent/scout-agent-linux-arm64 ./apps/agent
