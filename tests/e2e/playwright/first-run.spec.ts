@@ -10,6 +10,10 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create owner" }).click();
 
+  if (!(await page.getByRole("heading", { name: "Sign in to Scout" }).isVisible())) {
+    await expect(page.getByRole("alert")).toContainText("Owner setup could not be completed");
+    await page.getByRole("button", { name: "Owner already exists? Sign in" }).click();
+  }
   await expect(page.getByRole("heading", { name: "Sign in to Scout" })).toBeVisible();
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();

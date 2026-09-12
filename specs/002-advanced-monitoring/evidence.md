@@ -1151,3 +1151,27 @@ For future results append: task and requirement IDs, commit, date, exact command
   an authorized load lab must still record raw/tiered row counts, measured
   PostgreSQL bytes, p95 latency, evaluator/rollup lag, queue saturation, and
   backpressure before changing defaults or claiming capacity.
+
+## T041 — accessible monitoring journeys and security failures
+
+- Requirements: FR-009, FR-016, FR-019, FR-028, FR-032, FR-035; SC-010, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: 29ca809.
+- Added `tests/e2e/playwright/advanced-monitoring.spec.ts`, a cross-view
+  journey that uses keyboard focus and activation to inspect a fresh failed
+  systemd incident, acknowledge it, follow the service incident link, open a
+  device, select a per-entity disk series, and inspect unavailable samples in
+  the accessible table. The same journey asserts no horizontal page overflow at
+  360px and 1440px viewport widths. The shared chart layout now constrains its
+  grid items so long tabular history remains inside the intended scroll region.
+- Added `tests/integration/monitoring_security_test.go` covering unauthenticated
+  reads, missing CSRF, production recent-MFA enforcement, invalid MFA setup and
+  sign-in codes, session revocation, and write-only encrypted credential
+  responses/listings. Secret material and encrypted envelope fields are asserted
+  absent from API output.
+- Exact verification commands and outcomes: `npx playwright test` passed (7
+  tests, including `tests/e2e/playwright/advanced-monitoring.spec.ts`); `go test
+  ./tests/integration -run 'TestMonitoring(SecurityRejectsUnauthorizedCSRFAndSecretReads|MFARejectsInvalidSecondFactor)' -count=1 -v` passed; `npm run check`; `npm run build`; `npm run format:check`; `gofmt -w tests/integration/monitoring_security_test.go`; and `git diff --check` passed. No production database, credential, real device, or deployment was used.
+- Remaining limits: the browser journey uses deterministic API fixtures for
+  repeatability; live PostgreSQL/MFA and physical systemd/storage permission
+  acceptance remains covered by the separate integration and owner-authorized
+  lab gates.
