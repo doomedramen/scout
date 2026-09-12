@@ -52,7 +52,7 @@ For a local UI/API evaluation using the published image, copy
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quickstart.yaml -o compose.yaml
-docker compose up -d
+docker compose up -d --pull always
 ```
 
 This quickstart is bound to localhost, uses development mode without TLS or

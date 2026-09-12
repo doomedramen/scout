@@ -40,6 +40,9 @@ func TestComposeKeepsListenAndPortMappingConfigurable(t *testing.T) {
 		if strings.Contains(text, "SCOUT_SERVER_BIND") {
 			t.Errorf("%s compose retains the obsolete full host:port variable", name)
 		}
+		if !strings.Contains(text, "pull_policy: always") {
+			t.Errorf("%s compose must pull the configured server image before starting", name)
+		}
 		for _, required := range []string{"restart: unless-stopped", "read_only: true", "no-new-privileges:true", "cap_drop:"} {
 			if !strings.Contains(text, required) {
 				t.Errorf("%s compose missing runtime hardening %q", name, required)

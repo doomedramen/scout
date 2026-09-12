@@ -120,6 +120,9 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
 
   const authenticationMethod = page.getByLabel("SSH authentication");
   await expect(authenticationMethod).toHaveValue("password");
+  await expect(page.getByLabel("SSH username")).toBeVisible();
+  await expect(page.getByLabel("SSH password")).toBeVisible();
+  await expect(page.getByLabel("Secret")).toHaveCount(0);
   await authenticationMethod.selectOption("private_key");
   await expect(page.getByLabel("SSH private key")).toBeVisible();
   await authenticationMethod.selectOption("password");

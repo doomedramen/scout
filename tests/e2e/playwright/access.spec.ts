@@ -32,3 +32,14 @@ test("access errors stay safe and the credential action is keyboard reachable", 
   await expect(alert).not.toContainText(secret);
   await expect(page.locator("body")).not.toContainText(secret);
 });
+
+test("SSH credentials ask for a username and password by default", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/#/access");
+  await expect(page.getByRole("heading", { name: "Resolve prerequisites" })).toBeVisible();
+  await expect(page.getByLabel("Credential type")).toHaveValue("ssh");
+  await expect(page.getByLabel("SSH authentication")).toHaveValue("password");
+  await expect(page.getByLabel("SSH username")).toBeVisible();
+  await expect(page.getByLabel("SSH password")).toBeVisible();
+  await expect(page.getByLabel("Secret")).toHaveCount(0);
+});

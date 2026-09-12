@@ -44,7 +44,7 @@ The shortest setup is:
 ```sh
 mkdir scout && cd scout
 curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.quickstart.yaml -o compose.yaml
-docker compose up -d
+docker compose up -d --pull always
 ```
 
 Compose automatically reads a `.env` file beside `compose.yaml`. To use port
@@ -55,7 +55,7 @@ SCOUT_PORT=8041
 SCOUT_BIND_ADDRESS=0.0.0.0
 ```
 
-Then run `docker compose up -d` and open `http://<server-address>:8041`.
+Then run `docker compose up -d --pull always` and open `http://<server-address>:8041`.
 Binding to `0.0.0.0` exposes this no-TLS quickstart on every host interface;
 use it only on a trusted network protected by a firewall. Omit
 `SCOUT_BIND_ADDRESS` to keep the safer localhost-only default.
@@ -90,6 +90,7 @@ services:
 
   server:
     image: ${SCOUT_IMAGE:-ghcr.io/doomedramen/scout:latest}
+    pull_policy: always
     restart: unless-stopped
     stop_grace_period: 10s
     depends_on:
@@ -130,7 +131,7 @@ named volumes are retained. The container listens on port 8080 internally, so
 a host port conflict only requires setting one variable:
 
 ```sh
-SCOUT_PORT=18080 docker compose up -d
+SCOUT_PORT=18080 docker compose up -d --pull always
 ```
 
 The default image is published at
