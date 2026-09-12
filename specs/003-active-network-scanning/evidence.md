@@ -415,7 +415,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## T017 — configurable agent scan capabilities and service wiring
 
 - Requirements: FR-003, FR-007, FR-014, FR-022.
-- Date: 2026-09-12 (Europe/London); implementation/test commit: pending.
+- Date: 2026-09-12 (Europe/London); implementation/test commit: 523a3bd.
 - Agent runtime configuration now carries validated scan protocol and
   transport capabilities. The CLI exposes `--scan-protocol-version` and
   `--scan-transport`, defaults to protocol 1/TCP, and reports the configured
