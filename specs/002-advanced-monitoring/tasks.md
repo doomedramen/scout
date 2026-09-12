@@ -77,7 +77,7 @@ Independent gate: Expose honest per-field capability and survive collector failu
 Independent gate: All seven journeys pass together against PostgreSQL and published lab conditions.
 
 - [X] T039 Extend backup/restore scripts and tests/integration/monitoring_recovery_test.go to cover all 002 tables, keys, migration generations, aggregate checkpoints and notification no-replay policy (FR-013, FR-024; SC-008).
-- [ ] T040 Create scripts/test-monitoring-load.sh with the documented 100-host expanded series/state workload, year-tier queries, queue saturation and disk pressure; record sizes/latency/lag in specs/002-advanced-monitoring/evidence.md (FR-020, FR-022, FR-023, FR-033, FR-035; SC-001, SC-003, SC-007, SC-011).
+- [X] T040 Create scripts/test-monitoring-load.sh with the documented 100-host expanded series/state workload, year-tier queries, queue saturation and disk pressure; record sizes/latency/lag in specs/002-advanced-monitoring/evidence.md (FR-020, FR-022, FR-023, FR-033, FR-035; SC-001, SC-003, SC-007, SC-011).
 - [ ] T041 Add integrated keyboard/responsive incident-service-history journeys in tests/e2e/advanced-monitoring.spec.ts and final auth/MFA/secret failure cases in tests/integration/monitoring_security_test.go (FR-009, FR-016, FR-019, FR-028, FR-032, FR-035; SC-010, SC-011).
 - [ ] T042 Publish tested support and operations guidance in docs/advanced-monitoring.md, reconcile specs/002-advanced-monitoring/acceptance-matrix.md and evidence.md, and record release gates without claiming untested hardware (FR-024, FR-033, FR-034, FR-035; SC-008, SC-009, SC-011).
 

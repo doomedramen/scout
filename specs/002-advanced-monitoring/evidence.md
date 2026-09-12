@@ -1120,3 +1120,34 @@ For future results append: task and requirement IDs, commit, date, exact command
   the scripts are explicitly opt-in for that operation. A future authorized
   restore run must record PostgreSQL versions, separate key custody, clean
   destination, restored row parity, and owner reconciliation evidence.
+
+## T040 — expanded synthetic monitoring load runner
+
+- Requirements: FR-020, FR-022, FR-023, FR-033, FR-035; SC-001, SC-003,
+  SC-007, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: 2b9427f.
+- Expanded `TestSyntheticLoad100Devices24Hours` to exercise 100 Linux devices,
+  40 numeric series per device, 50 service-state subjects per device, and 24
+  hourly observations. Each batch remains bounded to six hours of that device's
+  workload. It asserts 96,000 samples and 120,000 service observations,
+  queries the one-year-old range through the hourly history tier, and records
+  evaluation/rollup queue lengths, evaluation lag, ingestion duration, p95
+  history latency, and heap allocation. `scripts/test-monitoring-load.sh`
+  also runs the bounded queue-cap and telemetry-backpressure fixtures and can
+  run the SQL storage/recovery checks when given the existing test DSN.
+- Exact verification commands and outcomes: `scripts/test-monitoring-load.sh`
+  passed. The synthetic run reported 100 devices, 40 numeric series, 50
+  service states, 96,000 samples, 120,000 observations, hourly resolution,
+  0s evaluation lag, 38.617s ingest time, 8.565ms p95 history query latency,
+  and 227,905,176 bytes heap allocation. Queue-cap and telemetry-backpressure
+  negative fixtures both passed. `go test ./tests/integration -run
+  TestSyntheticLoad100Devices24Hours -count=1 -v`; `go vet ./...`; `npm run
+  format:check`; `bash -n scripts/test-monitoring-load.sh scripts/test-load.sh`;
+  and `git diff --check` passed. No production database, credential, real
+  device, or deployment was used.
+- Remaining limits: this is a bounded in-memory shape test, not a 15-second
+  30-day, 100-host capacity result and not a live PostgreSQL storage/lag
+  measurement. SQL disk-pressure and recovery evidence remains in T005/T039;
+  an authorized load lab must still record raw/tiered row counts, measured
+  PostgreSQL bytes, p95 latency, evaluator/rollup lag, queue saturation, and
+  backpressure before changing defaults or claiming capacity.
