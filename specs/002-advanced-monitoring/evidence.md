@@ -1063,3 +1063,27 @@ For future results append: task and requirement IDs, commit, date, exact command
   support remains unvalidated under T038. The agent runtime still needs to
   schedule and transmit the sensors/GPU collector results from enrolled hosts;
   this UI evidence does not claim live hardware telemetry delivery.
+
+## T038 — hardware monitoring evidence runner and support matrix
+
+- Requirements: FR-029, FR-030, FR-031, FR-032, FR-034; SC-009, SC-011.
+- Date: 2026-09-12 (Europe/London); implementation commit: `b4a1334`.
+- Added `scripts/test-hardware-monitoring.sh` with a fixture-first default and
+  an explicitly confirmed Linux-only lab path. The lab path requires a
+  timeout utility, reads only fixed hwmon/DRM paths, runs the collector's exact
+  bounded NVIDIA query under a 12-second timeout, suppresses raw identifiers,
+  and performs no sudo, driver load, sysfs write, power change, stress, or
+  hardware mutation. The support matrix now distinguishes fixture-validated
+  sensor/NVIDIA/AMD/Intel parsing from unvalidated live family support.
+- Exact verification commands and outcomes: `scripts/test-hardware-monitoring.sh`
+  passed all sensor/GPU/registry fixture tests and the script syntax check;
+  `bash -n scripts/test-hardware-monitoring.sh` passed; and
+  `SCOUT_HARDWARE_LAB=1 scripts/test-hardware-monitoring.sh` returned the
+  expected status 2 on this macOS development host without contacting host
+  hardware. No production database, credential, real device, or deployment
+  was used.
+- Remaining limits: no owner-authorized Linux sensor/GPU lab was available, so
+  exact kernel, driver, utility, permissions, and device-model results remain
+  live-unvalidated. Fixture results do not advertise NVIDIA, AMD, Intel, or
+  hwmon production support. The agent runtime still needs to schedule and
+  transmit these collector results from enrolled hosts.

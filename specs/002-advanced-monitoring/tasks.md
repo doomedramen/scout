@@ -71,7 +71,7 @@ Independent gate: Expose honest per-field capability and survive collector failu
 - [X] T035 [US7] Add hwmon zero/negative/fault/rename fixtures and implement sensors adapter in internal/collector/sensors/collector.go and internal/collector/sensors/collector_test.go (FR-029, FR-031, FR-032; SC-009, SC-011).
 - [X] T036 [US7] Implement fixed NVIDIA queries and AMD/Intel sysfs GPU adapters with unavailable-field/reset/shared-power fixtures in internal/collector/gpu/collector.go and internal/collector/gpu/collector_test.go (FR-030, FR-031, FR-032; SC-009, SC-011).
 - [X] T037 [US7] Add sensor exclusions, per-field capability labels and GPU/hardware charts in apps/web/src/views/hardware.tsx; allow explicit thresholds without universal thermal defaults (FR-019, FR-029, FR-030, FR-031; SC-009, SC-010).
-- [ ] T038 [US7] Create scripts/test-hardware-monitoring.sh and complete representative sensor/NVIDIA/AMD/Intel results in specs/002-advanced-monitoring/support-matrix.md with timeout/noninterference evidence (FR-029, FR-030, FR-031, FR-032, FR-034; SC-009, SC-011).
+- [X] T038 [US7] Create scripts/test-hardware-monitoring.sh and complete representative sensor/NVIDIA/AMD/Intel results in specs/002-advanced-monitoring/support-matrix.md with timeout/noninterference evidence (FR-029, FR-030, FR-031, FR-032, FR-034; SC-009, SC-011).
 ## Integration and release evidence
 
 Independent gate: All seven journeys pass together against PostgreSQL and published lab conditions.
