@@ -1,8 +1,0 @@
-{
-  "expectedRevision": 9,
-  "scanner": {
-    "kind": "agent",
-    "id": "agent-not-assigned",
-    "deviceId": "6f37c3f9-6e7e-427a-b3ef-2dfe70a4555b"
-  }
-}

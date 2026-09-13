@@ -1,7 +1,10 @@
+.next
 node_modules
-dist
-.turbo
-.env
-go.sum
-package-lock.json
 coverage
+playwright-report
+test-results
+target
+dist
+drizzle/meta
+*.sqlite
+*.sqlite-*

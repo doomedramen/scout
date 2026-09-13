@@ -1,8 +1,0 @@
-{
-  "name": "Owner ntfy",
-  "baseUrl": "https://ntfy.example.test",
-  "topic": "scout_alerts",
-  "token": "tk_example_redacted_in_fixture",
-  "enabled": false,
-  "allowPlainHttp": false
-}

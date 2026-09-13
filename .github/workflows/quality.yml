@@ -1,54 +1,49 @@
-name: Quality
+name: quality
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
-concurrency:
-  group: quality-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  checks:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  web:
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          go-version: "1.26.x"
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24.x"
+          node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm run lint
-      - run: npm test
+      - run: npm run typecheck
+      - run: npm test -- --run
       - run: npm run build
 
-  browser:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  rust:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          go-version: "1.26.x"
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24.x"
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test
-      - name: Upload browser failure evidence
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-failure-${{ github.run_attempt }}
-          path: test-results/
-          retention-days: 7
+          toolchain: 1.96.0
+          target: ${{ matrix.target }}
+          components: rustfmt,clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

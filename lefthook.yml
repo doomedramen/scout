@@ -1,20 +1,15 @@
-min_version: 2.1.12
-
 pre-commit:
-  parallel: false
-  jobs:
-    - name: format staged files
-      run: bash scripts/format-staged.sh
-      fail_text: Staged source files are not formatted; the formatter was unable to complete.
-    - name: lint and typecheck
+  parallel: true
+  commands:
+    format:
+      run: npm run format:check
+    lint:
       run: npm run lint
-    - name: staged diff check
-      run: git diff --cached --check
-
+    unit:
+      run: npm test -- --run
+    rust:
+      run: cargo fmt --all -- --check && cargo clippy --workspace --all-targets -- -D warnings
 pre-push:
-  parallel: false
-  jobs:
-    - name: quality checks
-      run: npm run lint && npm test && npm run build
-    - name: browser checks
-      run: npm run test:e2e:browser
+  commands:
+    quality:
+      run: npm run typecheck && cargo test --workspace && npm test -- --run && npm run build
