@@ -864,11 +864,12 @@ Never attach credential values, private keys, host-key private material, banners
 - The live segmented packet-capture lab has since passed in the owner-authorized
   Colima Linux VM; see the dated section below. The live older-agent, native
   systemd, hardware, storage, and provider checks remain unclaimed. The
-  controlled 256-address scan is also still open; the lab run below uses a
-  three-target topology.
-- T043 remains open for the live 256-address workload and unvalidated live
-  compatibility checks. T044 is complete for the repository gates and fixture
-  integration scripts listed above.
+  controlled 256-address scan is recorded in the dated QEMU section below;
+  the older-agent, native systemd, hardware, storage, and provider checks
+  remain unclaimed.
+- T043 remains open for the unvalidated live compatibility checks and the
+  complete quickstart workload matrix. T044 is complete for the repository
+  gates and fixture integration scripts listed above.
 
 ## Live segmented Docker lab in the Linux VM
 
@@ -904,3 +905,44 @@ Never attach credential values, private keys, host-key private material, banners
   filesystem verification could complete, so the VM was force-stopped and was
   left stopped. This is an environment cleanup limitation, not a Scout test
   result. The retained artifacts were never copied into the repository.
+
+## Owner-authorized QEMU segmented 256-address workload
+
+- Requirements: FR-001–FR-022; SC-001, SC-002, SC-003, SC-006, SC-007,
+  SC-008, and SC-010; validation date: 2026-09-13 (Europe/London);
+  implementation/test commit: `a0d6f10`.
+- The guarded lab ran in the disposable `scout-v1-lab` Lima QEMU VM on the
+  host, using Ubuntu 26.04 arm64, Docker 29.8.0, three isolated Docker
+  bridges, bridge-scoped `tcpdump`, and a disposable PostgreSQL 17 container.
+  The server and an enrolled scan-capable agent each had an intentional
+  private bridge; an adjacent private bridge was not assigned to any scope.
+- Command used:
+  `limactl shell scout-v1-lab -- bash -lc 'cd /Users/martin/Developer/scout && SCOUT_ACTIVE_DISCOVERY_LAB=1 SCOUT_ACTIVE_DISCOVERY_LAB_CONFIRM=YES SCOUT_ACTIVE_DISCOVERY_LAB_256=1 SCOUT_ACTIVE_DISCOVERY_LAB_KEEP=1 SCOUT_ACTIVE_DISCOVERY_LAB_PORT=18092 bash scripts/test-active-discovery.sh'`.
+  The harness used only disposable private lab ranges and no production
+  endpoint, device, credential, or deployment.
+- The three-target server/agent journey passed again inside the same run:
+  server-only and agent-only scopes reported `needs_credentials`, the agent
+  enrolled once, server-target and agent-target captures each recorded one
+  authorized SYN, the excluded target recorded zero SYNs, and the adjacent
+  unauthorized bridge recorded zero SYNs.
+- The bounded server workload planned 255 targets: a `/24` was configured
+  with one excluded address, so the 256-address range produced 255 eligible
+  targets. Actual scan outcomes were `open=2`, `closed=3`,
+  `filtered=249`, `unreachable=1`, `skipped=0`, and `scannerError=0`.
+  The two open SSH observations projected to exactly two non-excluded,
+  actionable access candidates; stale, excluded, and non-actionable records
+  were not counted. The extra open endpoint was an isolated lab endpoint,
+  not a real LAN host.
+- Exact run summary: `Server workload: 255 planned targets; open=2;
+  closed=3; actionable access candidates=2.` The final harness assertions,
+  focused Go tests, integration check, and packet-boundary checks passed.
+  Retained VM-local artifacts were under `/tmp/scout-active-discovery.MjGuay`;
+  no packet payloads or credentials were copied into the repository.
+- This proves the bounded scan target budget, exclusion enforcement,
+  actionable access projection, and segmented server/agent packet boundary in
+  the disposable Linux lab. It does not claim production-LAN coverage,
+  native-systemd installation, older-agent compatibility, provider/hardware/
+  storage compatibility, power-loss recovery, or live 100-device capacity.
+- T043 remains open until the remaining quickstart compatibility and full
+  workload cases are validated or explicitly removed from scope. The live
+  256-address row in `acceptance-matrix.md` is passed by this bounded run.
