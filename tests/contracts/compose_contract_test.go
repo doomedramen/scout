@@ -15,7 +15,8 @@ func TestComposeKeepsListenAndPortMappingConfigurable(t *testing.T) {
 	quickstartText := string(quickstart)
 	for _, required := range []string{
 		`${SCOUT_BIND_ADDRESS:-127.0.0.1}:${SCOUT_PORT:-8080}:8080`,
-		`SCOUT_LISTEN: "0.0.0.0:8080"`,
+		`SCOUT_LISTEN: "127.0.0.1:8081"`,
+		`SCOUT_API_ORIGIN: http://127.0.0.1:8081`,
 	} {
 		if !strings.Contains(quickstartText, required) {
 			t.Errorf("quickstart compose missing %q", required)

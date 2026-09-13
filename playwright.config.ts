@@ -30,8 +30,9 @@ export default defineConfig({
           timeout: 120_000,
         },
         {
+          // Exercise recovery when a deployment's explicit origin is stale but its listener is correct.
           command:
-            "SCOUT_API_ORIGIN=http://127.0.0.1:18082 HOSTNAME=127.0.0.1 PORT=18081 npm run start --workspace=@scout/web",
+            "SCOUT_API_ORIGIN=http://127.0.0.1:18083 SCOUT_LISTEN=127.0.0.1:18082 HOSTNAME=127.0.0.1 PORT=18081 npm run start --workspace=@scout/web",
           url: `${baseURL}/api/status`,
           reuseExistingServer: false,
           timeout: 120_000,

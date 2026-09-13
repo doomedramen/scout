@@ -22,8 +22,9 @@ npm run dev
 ```
 
 The setup command creates a private, ignored .env only when it does not exist.
-The development server uses 127.0.0.1:8080 and the Vite UI uses the printed
-local URL. The database volume is named and is preserved by npm run db:down.
+The Go API uses its configured internal listener and the Next.js UI uses the
+printed local URL. The database volume is named and is preserved by npm run
+db:down.
 Development startup uses in-memory state when no database is available; do
 not mistake that mode for a durable deployment.
 

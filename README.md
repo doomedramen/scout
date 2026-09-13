@@ -82,7 +82,9 @@ use it only on a trusted network protected by a firewall. Omit
 If the server will install agents on other hosts, also set
 `SCOUT_PUBLIC_ORIGIN` to the URL those hosts can reach, for example
 `SCOUT_PUBLIC_ORIGIN=http://192.168.1.242:8041`. The internal listener remains
-`0.0.0.0:8080`; changing `SCOUT_PORT` changes only the host-side port mapping.
+`127.0.0.1:8081` and the Next.js UI listens on container port `8080`; changing
+`SCOUT_PORT` changes only the host-side UI mapping. Do not set `SCOUT_LISTEN`
+to the host port.
 
 The equivalent Compose file, for direct copy/paste, is:
 
