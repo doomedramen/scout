@@ -11,6 +11,7 @@ import {
   type ScanStatus,
   type TopologyNode,
 } from "@/lib/api";
+import type { NetworkRouteData } from "../../app/lib/route-data";
 import {
   formatScanTime,
   humanizeScanValue,
@@ -44,22 +45,24 @@ function confidenceLabel(value: number): string {
 }
 
 export function NetworkView({
+  initialData,
   onSelect,
   onCandidateSelect,
 }: {
+  initialData?: NetworkRouteData;
   onSelect: (device: Device) => void;
   onCandidateSelect: (candidate: Candidate) => void;
 }) {
-  const [nodes, setNodes] = useState<TopologyNode[]>([]);
-  const [relationships, setRelationships] = useState<Relationship[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [nodes, setNodes] = useState<TopologyNode[]>(() => initialData?.nodes ?? []);
+  const [relationships, setRelationships] = useState<Relationship[]>(() => initialData?.relationships ?? []);
+  const [candidates, setCandidates] = useState<Candidate[]>(() => initialData?.candidates ?? []);
   const [scanStatuses, setScanStatuses] = useState<Record<string, ScanStatus>>({});
   const [candidateState, setCandidateState] = useState("");
   const [candidateQuery, setCandidateQuery] = useState("");
   const [nodeQuery, setNodeQuery] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "map">("map");
-  const [error, setError] = useState("");
-  const [candidateError, setCandidateError] = useState("");
+  const [error, setError] = useState(() => initialData?.topologyError ?? "");
+  const [candidateError, setCandidateError] = useState(() => initialData?.candidateError ?? "");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -70,6 +73,7 @@ export function NetworkView({
   }, []);
 
   useEffect(() => {
+    if (initialData && retry === 0) return;
     let cancelled = false;
     setError("");
     api
@@ -129,7 +133,7 @@ export function NetworkView({
           if (!cancelled)
             setCandidateError(caught instanceof APIError ? caught.message : "Could not load found devices");
         });
-    void loadCandidates();
+    if (!initialData || retry > 0) void loadCandidates();
     const timer = window.setInterval(loadCandidates, 5000);
     return () => {
       cancelled = true;

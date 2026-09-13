@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NotificationMenu } from "@/components/notification-menu";
 import { api, type Candidate, type Device, type Status } from "@/lib/api";
+import type { RouteData } from "../app/lib/route-data";
 
 type Page =
   | "Overview"
@@ -50,6 +51,7 @@ type AppProps = {
   initialAuth: "signedOut" | "signedIn";
   initialStatus: Status | null;
   initialStatusError: boolean;
+  initialData: RouteData | null;
 };
 
 const pages = [
@@ -172,7 +174,7 @@ const UpdatesView = dynamic(() => import("@/views/updates").then(({ UpdatesView 
   loading: viewLoading,
 });
 
-export default function App({ route, initialAuth, initialStatus, initialStatusError }: AppProps) {
+export default function App({ route, initialAuth, initialStatus, initialStatusError, initialData }: AppProps) {
   const router = useRouter();
   const routeKey = route.join("/");
   const previousRouteKey = useRef(routeKey);
@@ -501,6 +503,7 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
             )}
             {page === "Overview" && (
               <OverviewView
+                initialData={initialData?.kind === "overview" ? initialData : undefined}
                 onNavigate={(next) => navigate(next)}
                 onSelect={openDevice}
                 onOpenAccess={openAccess}
@@ -526,7 +529,12 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
                   </div>
                 )
               ) : (
-                <SystemsView query={query} onQuery={setQuery} onSelect={openDevice} />
+                <SystemsView
+                  query={query}
+                  onQuery={setQuery}
+                  onSelect={openDevice}
+                  initialData={initialData?.kind === "systems" ? initialData : undefined}
+                />
               ))}
             {page === "Incidents" && (
               <IncidentsView
@@ -535,7 +543,13 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
                 onFocusConsumed={() => setIncidentFocus("")}
               />
             )}
-            {page === "Network" && <NetworkView onSelect={openDevice} onCandidateSelect={openCandidate} />}
+            {page === "Network" && (
+              <NetworkView
+                onSelect={openDevice}
+                onCandidateSelect={openCandidate}
+                initialData={initialData?.kind === "network" ? initialData : undefined}
+              />
+            )}
             {page === "Notifications" && <NotificationsView />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}

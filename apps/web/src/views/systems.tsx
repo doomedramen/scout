@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { isActionableAccessCandidate } from "@/lib/access";
 import { api, APIError, type Candidate, type Device } from "@/lib/api";
+import type { SystemsRouteData } from "../../app/lib/route-data";
 
 function Meter({ value }: { value: number }) {
   return (
@@ -95,18 +96,20 @@ function candidateDevice(candidate: Candidate): Device {
 }
 
 export function SystemsView({
+  initialData,
   query,
   onQuery,
   onSelect,
 }: {
+  initialData?: SystemsRouteData;
   query: string;
   onQuery: (value: string) => void;
   onSelect: (device: Device) => void;
 }) {
-  const [items, setItems] = useState<Device[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [items, setItems] = useState<Device[]>(() => initialData?.devices ?? []);
+  const [candidates, setCandidates] = useState<Candidate[]>(() => initialData?.candidates ?? []);
+  const [loading, setLoading] = useState(!initialData);
+  const [error, setError] = useState(() => initialData?.error ?? "");
   const [retry, setRetry] = useState(0);
   const [health, setHealth] = useState("");
   const [monitoringState, setMonitoringState] = useState("");
@@ -135,7 +138,7 @@ export function SystemsView({
           if (!cancelled && initial) setLoading(false);
         });
     };
-    load(true);
+    if (!initialData || retry > 0 || query || health || monitoringState) load(true);
     const timer = window.setInterval(() => load(false), 5000);
     return () => {
       cancelled = true;

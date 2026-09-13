@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { isActionableAccessCandidate, uniqueAccessCandidates } from "@/lib/access";
 import { api, APIError, type Candidate, type Device, type Incident } from "@/lib/api";
+import type { OverviewRouteData } from "../../app/lib/route-data";
 
 type OverviewState = "online" | "offline" | "needs-access" | "revoked";
 
@@ -91,23 +92,30 @@ function sourceMessage(caught: unknown, fallback: string): string {
 }
 
 export function OverviewView({
+  initialData,
   onNavigate,
   onSelect,
   onOpenAccess,
   onIncident,
 }: {
+  initialData?: OverviewRouteData;
   onNavigate: (page: "Systems" | "Incidents" | "Network" | "Access") => void;
   onSelect: (device: Device) => void;
   onOpenAccess: (candidate: Candidate) => void;
   onIncident: (incidentId: string) => void;
 }) {
-  const [data, setData] = useState<FleetData>({ devices: [], candidates: [], incidents: [] });
-  const [sourceErrors, setSourceErrors] = useState<FleetSourceErrors>({});
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<FleetData>(() =>
+    initialData
+      ? { devices: initialData.devices, candidates: initialData.candidates, incidents: initialData.incidents }
+      : { devices: [], candidates: [], incidents: [] },
+  );
+  const [sourceErrors, setSourceErrors] = useState<FleetSourceErrors>(() => initialData?.sourceErrors ?? {});
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (initialData && retry === 0) return;
     let cancelled = false;
     setLoading(true);
     setError("");

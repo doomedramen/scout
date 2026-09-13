@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import App, { type Route } from "../../src/App";
-import { getShellData } from "../lib/server-api";
+import { getRouteData, getShellData } from "../lib/server-api";
 
 const sections = new Set([
   "overview",
@@ -22,12 +22,14 @@ export default async function Page({ params }: { params: Promise<{ route?: strin
   const { route = [] } = await params;
   if (route.length > 0 && !sections.has(route[0])) notFound();
   const shell = await getShellData();
+  const initialData = shell.auth === "signedIn" ? await getRouteData(route) : null;
   return (
     <App
       route={route as Route}
       initialAuth={shell.auth}
       initialStatus={shell.status}
       initialStatusError={shell.statusError}
+      initialData={initialData}
     />
   );
 }
