@@ -26,6 +26,15 @@ func main() {
 	dataDir := flag.String("data-dir", os.Getenv("SCOUT_AGENT_DATA_DIR"), "agent data directory")
 	root := flag.String("root", "/", "host filesystem root, primarily for tests")
 	interval := flag.Duration("interval", 15*time.Second, "report interval")
+	renewalLeadTime := 7 * 24 * time.Hour
+	if raw := os.Getenv("SCOUT_RENEWAL_LEAD_TIME"); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			log.Fatalf("invalid SCOUT_RENEWAL_LEAD_TIME: %v", err)
+		}
+		renewalLeadTime = parsed
+	}
+	renewalLead := flag.Duration("renewal-lead-time", renewalLeadTime, "renew certificates this long before expiry")
 	releaseTrustFile := flag.String("release-trust-file", os.Getenv("SCOUT_RELEASE_TRUST_FILE"), "trusted release public keys")
 	scanProtocolVersion := flag.Int("scan-protocol-version", 1, "supported Scout scan protocol version")
 	scanTransport := flag.String("scan-transport", store.ScanTransportTCP, "supported Scout scan transport")
@@ -34,7 +43,7 @@ func main() {
 		printSnapshot()
 		return
 	}
-	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval, ReleaseTrustFile: *releaseTrustFile, ScanCapabilities: store.ScanCapabilities{ScanProtocolVersions: []int{*scanProtocolVersion}, ScanTransports: []string{*scanTransport}}})
+	runtime, err := runtimeagent.NewRuntime(runtimeagent.Config{ServerURL: *server, InvitationFile: *invitationFile, DataDir: *dataDir, Root: *root, Interval: *interval, RenewalLeadTime: *renewalLead, ReleaseTrustFile: *releaseTrustFile, ScanCapabilities: store.ScanCapabilities{ScanProtocolVersions: []int{*scanProtocolVersion}, ScanTransports: []string{*scanTransport}}})
 	if err != nil {
 		log.Fatal(err)
 	}
