@@ -78,6 +78,38 @@ func TestScanPolicyRevisionAndDisabledDefault(t *testing.T) {
 	}
 }
 
+func TestDisablingScopeFencesActiveScanRun(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	run, err := s.CreateScanRun(ctx, scanRunFixture(scope, policy, "scope-disable", s.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedScope := scope
+	updatedScope.Enabled = false
+	updatedScope, err = s.UpdateScope(ctx, scope.ID, scope.Revision, updatedScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedScope.Enabled {
+		t.Fatalf("scope remained enabled after disable: %+v", updatedScope)
+	}
+	currentPolicy, err := s.ScanPolicy(ctx, scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if currentPolicy.Enabled {
+		t.Fatalf("scan policy remained enabled after scope disable: %+v", currentPolicy)
+	}
+	fenced, err := s.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fenced.State != ScanRunCancelled || fenced.FinishedAt == nil || !fenced.CancellationRequested {
+		t.Fatalf("scope disable left scan run active: %+v", fenced)
+	}
+}
+
 func TestScanRunsEnforceActiveUniquenessAndIdempotency(t *testing.T) {
 	ctx := context.Background()
 	s, scope, policy := newScanFixture(t)

@@ -721,3 +721,23 @@ Never attach credential values, private keys, host-key private material, banners
 - Remaining limits: T029/T030 still need the complete multi-vantage and
   restart/unreachable matrix, and T031/T032 remain open pending the broader
   authority/recovery audit.
+
+## Multi-vantage authority and pause fencing completion
+
+- Requirements: FR-002–FR-004, FR-007, FR-009, FR-014–FR-018, FR-022;
+  implementation/test commits: 87b258d, c4f1126.
+- T029 coverage passes for explicit agent assignment, site mismatch after
+  device movement, missing or older scan capability, authenticated result
+  submission without run authority, revoked and decommissioned scanners, and
+  desired-state responses with no all-scope leakage.
+- T030 coverage passes for queued, leased, active/dialing, and uploading
+  cancellation fences, late-result rejection, pause scheduling suppression,
+  server restart re-lease, unreachable-scanner recovery, and authenticated
+  pause acknowledgement. Scope disablement now has a regression test proving
+  active work becomes terminally cancelled and scan policy is disabled.
+- Exact verification: `go test ./internal/control ./internal/discovery
+  ./internal/policy ./internal/store ./tests/integration -count=1` passed;
+  integration package completed in 40.0 seconds. `git diff --check` and
+  formatting checks remain required at next commit gate. No live device,
+  production network, or production credential was contacted.
+- T029–T032 are complete. T033–T044 remain open.
