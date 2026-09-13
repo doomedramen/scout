@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"scout.local/scout/internal/store"
 )
@@ -129,6 +130,22 @@ func TestScanPolicyAndOnDemandRoutes(t *testing.T) {
 	}
 	if !strings.Contains(status.Body, `"lastRun":{"id":"`+run.ID+`"`) {
 		t.Fatalf("scan status did not project the queued run: %s", status.Body)
+	}
+	var statusBody struct {
+		NextScheduledAt *time.Time `json:"nextScheduledAt"`
+		Vantages        []struct {
+			LastCompletedAt *time.Time `json:"lastCompletedAt"`
+			NextScheduledAt *time.Time `json:"nextScheduledAt"`
+			ActiveRun       *struct {
+				ID string `json:"id"`
+			} `json:"activeRun"`
+		} `json:"vantages"`
+	}
+	if err := json.Unmarshal([]byte(status.Body), &statusBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(statusBody.Vantages) != 1 || statusBody.Vantages[0].ActiveRun == nil || statusBody.Vantages[0].ActiveRun.ID != run.ID || statusBody.Vantages[0].NextScheduledAt == nil || statusBody.NextScheduledAt == nil {
+		t.Fatalf("scan status omitted per-vantage progress/schedule: %+v", statusBody)
 	}
 	runList := getRequest(t, client, server.URL+"/api/v1/scan-runs?scopeId="+scope.ID+"&limit=1", login.Cookies, nil)
 	if runList.Code != http.StatusOK || !strings.Contains(runList.Body, `"id":"`+run.ID+`"`) || strings.Contains(runList.Body, "policySnapshot") {

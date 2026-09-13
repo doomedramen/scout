@@ -30,13 +30,25 @@
       "maxItems": 17,
       "items": {
         "type": "object",
-        "required": ["scanner", "state", "assigned", "capabilities", "lastSeen"],
+        "required": [
+          "scanner",
+          "state",
+          "assigned",
+          "capabilities",
+          "lastSeen",
+          "lastCompletedAt",
+          "nextScheduledAt",
+          "activeRun"
+        ],
         "properties": {
           "scanner": { "$ref": "scan-common.json#/$defs/scanner" },
           "state": { "type": "string", "enum": ["available", "stale", "revoked", "decommissioned", "unsupported"] },
           "assigned": { "type": "boolean" },
           "capabilities": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 64 } },
-          "lastSeen": { "type": ["string", "null"], "format": "date-time" }
+          "lastSeen": { "type": ["string", "null"], "format": "date-time" },
+          "lastCompletedAt": { "type": ["string", "null"], "format": "date-time" },
+          "nextScheduledAt": { "type": ["string", "null"], "format": "date-time" },
+          "activeRun": { "anyOf": [{ "$ref": "scan-run.json" }, { "type": "null" }] }
         },
         "additionalProperties": false
       }

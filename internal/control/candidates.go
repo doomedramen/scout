@@ -192,7 +192,7 @@ func (a *App) listCandidateEntryPoints(w http.ResponseWriter, r *http.Request) {
 		writeMappedError(w, r, store.ErrInvalid)
 		return
 	}
-	limit, err := queryLimit(r)
+	limit, err := scanQueryLimit(r)
 	if err != nil {
 		writeMappedError(w, r, err)
 		return
@@ -206,6 +206,18 @@ func (a *App) listCandidateEntryPoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, entryPointObservationPage(observations))
+}
+
+func scanQueryLimit(r *http.Request) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if raw == "" {
+		return defaultScanAPIPageSize, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > maxScanAPIPageSize {
+		return 0, store.ErrInvalid
+	}
+	return value, nil
 }
 
 func (a *App) reevaluateCandidate(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +294,7 @@ func filterCandidates(items []store.Candidate, r *http.Request) (candidateFilter
 	if err != nil {
 		return candidateFilterResult{}, err
 	}
-	limit, err := queryLimit(r)
+	limit, err := scanQueryLimit(r)
 	if err != nil {
 		return candidateFilterResult{}, err
 	}

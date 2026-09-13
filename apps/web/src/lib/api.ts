@@ -222,6 +222,9 @@ export type ScanVantage = {
   assigned: boolean;
   capabilities: string[];
   lastSeen: string | null;
+  lastCompletedAt: string | null;
+  nextScheduledAt: string | null;
+  activeRun: ScanRun | null;
 };
 
 export type ScanCoverageState = "current" | "partial" | "stale" | "contradicted" | "unknown";

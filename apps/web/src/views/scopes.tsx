@@ -397,6 +397,10 @@ export function ScopesView() {
                                 Capabilities: {scanVantageCapabilities(vantage)} · Freshness:{" "}
                                 {scanVantageFreshness(vantage)}
                               </small>
+                              <small>
+                                Last completed {formatScanTime(vantage.lastCompletedAt)} · next scheduled{" "}
+                                {formatScanTime(vantage.nextScheduledAt)}
+                              </small>
                             </div>
                           ))}
                         </div>

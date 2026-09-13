@@ -604,11 +604,14 @@ type scanStatusResponse struct {
 }
 
 type scanVantageResponse struct {
-	Scanner      scanScannerResponse `json:"scanner"`
-	State        string              `json:"state"`
-	Assigned     bool                `json:"assigned"`
-	Capabilities []string            `json:"capabilities"`
-	LastSeen     *time.Time          `json:"lastSeen"`
+	Scanner         scanScannerResponse `json:"scanner"`
+	State           string              `json:"state"`
+	Assigned        bool                `json:"assigned"`
+	Capabilities    []string            `json:"capabilities"`
+	LastSeen        *time.Time          `json:"lastSeen"`
+	LastCompletedAt *time.Time          `json:"lastCompletedAt"`
+	NextScheduledAt *time.Time          `json:"nextScheduledAt"`
+	ActiveRun       *scanRunResponse    `json:"activeRun"`
 }
 
 type scanRetentionResponse struct {
@@ -622,6 +625,61 @@ type scanQueueResponse struct {
 	ActiveRuns   int  `json:"activeRuns"`
 	PendingPages int  `json:"pendingPages"`
 	Backpressure bool `json:"backpressure"`
+}
+
+type scanVantageRunProjection struct {
+	active          *store.ScanRun
+	latestScheduled *store.ScanRun
+	latestTerminal  *store.ScanRun
+}
+
+func projectScanVantageRuns(runs []store.ScanRun, scannerKind, scannerID string) scanVantageRunProjection {
+	var result scanVantageRunProjection
+	for index := range runs {
+		run := runs[index]
+		if run.ScannerKind != scannerKind || run.ScannerID != scannerID {
+			continue
+		}
+		if result.latestScheduled == nil || scanRunScheduledAfter(run, *result.latestScheduled) {
+			copy := run
+			result.latestScheduled = &copy
+		}
+		if isScanRunActive(run.State) && (result.active == nil || scanRunScheduledAfter(run, *result.active)) {
+			copy := run
+			result.active = &copy
+		}
+		if isScanRunTerminal(run.State) && run.FinishedAt != nil && (result.latestTerminal == nil || run.FinishedAt.After(*result.latestTerminal.FinishedAt)) {
+			copy := run
+			result.latestTerminal = &copy
+		}
+	}
+	return result
+}
+
+func scanRunScheduledAfter(left, right store.ScanRun) bool {
+	if left.ScheduledAt.Equal(right.ScheduledAt) {
+		return left.ID > right.ID
+	}
+	return left.ScheduledAt.After(right.ScheduledAt)
+}
+
+func nextScanVantageSchedule(projection scanVantageRunProjection, now time.Time, scopeID, scannerKind, scannerID string, schedule time.Duration) *time.Time {
+	if schedule <= 0 {
+		return nil
+	}
+	if projection.latestScheduled == nil {
+		value := now
+		return &value
+	}
+	if !isScanRunTerminal(projection.latestScheduled.State) && projection.latestScheduled.ScheduledAt.After(now) {
+		value := projection.latestScheduled.ScheduledAt
+		return &value
+	}
+	next := discovery.NextScanScheduleAt(projection.latestScheduled.ScheduledAt, scopeID, scannerKind, scannerID, schedule)
+	if next.Before(now) {
+		next = now
+	}
+	return &next
 }
 
 func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
@@ -647,24 +705,29 @@ func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
 	now := a.Store.Now()
 	var latestTerminal *store.ScanRun
 	var latestScheduled *store.ScanRun
+	var latestActive *store.ScanRun
 	for index := range runs.Items {
 		run := runs.Items[index]
-		if latestScheduled == nil || run.ScheduledAt.After(latestScheduled.ScheduledAt) {
+		if latestScheduled == nil || scanRunScheduledAfter(run, *latestScheduled) {
 			copy := run
 			latestScheduled = &copy
-			view := a.scanRunResponse(r.Context(), run)
-			status.LastRun = &view
 		}
-		if isScanRunActive(run.State) {
-			if status.ActiveRun == nil {
-				view := a.scanRunResponse(r.Context(), run)
-				status.ActiveRun = &view
-			}
+		if isScanRunActive(run.State) && (latestActive == nil || scanRunScheduledAfter(run, *latestActive)) {
+			copy := run
+			latestActive = &copy
 		}
 		if isScanRunTerminal(run.State) && run.FinishedAt != nil && (latestTerminal == nil || run.FinishedAt.After(*latestTerminal.FinishedAt)) {
 			copy := run
 			latestTerminal = &copy
 		}
+	}
+	if latestScheduled != nil {
+		view := a.scanRunResponse(r.Context(), *latestScheduled)
+		status.LastRun = &view
+	}
+	if latestActive != nil {
+		view := a.scanRunResponse(r.Context(), *latestActive)
+		status.ActiveRun = &view
 	}
 	if latestTerminal != nil {
 		status.LastCompletedAt = cloneTime(latestTerminal.FinishedAt)
@@ -680,21 +743,25 @@ func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		status.CoverageState = "unknown"
 	}
-	if scanPolicy.ServerEnabled && status.Enabled {
-		next := now
-		if latestScheduled != nil {
-			next = discovery.NextScanScheduleAt(latestScheduled.ScheduledAt, scope.ID, "server", a.CoordinatorServerID(), time.Duration(scanPolicy.ScheduleSeconds)*time.Second)
-			if next.Before(now) {
-				next = now
-			}
-		}
-		status.NextScheduledAt = &next
+	schedule := time.Duration(scanPolicy.ScheduleSeconds) * time.Second
+	var nextSchedule *time.Time
+	serverVantage := a.serverVantageStatus(scanPolicy, status.Enabled)
+	serverProjection := projectScanVantageRuns(runs.Items, "server", a.CoordinatorServerID())
+	serverVantage = a.withScanVantageRunStatus(r.Context(), serverVantage, serverProjection, now, scope.ID, schedule, status.Enabled)
+	status.Vantages = append(status.Vantages, serverVantage)
+	if serverVantage.NextScheduledAt != nil {
+		nextSchedule = serverVantage.NextScheduledAt
 	}
-	status.Vantages = append(status.Vantages, a.serverVantageStatus(scanPolicy, status.Enabled))
 	for _, agentID := range scanPolicy.AgentIDs {
 		vantage := a.agentVantageStatus(r.Context(), scope, agentID, now)
+		projection := projectScanVantageRuns(runs.Items, "agent", agentID)
+		vantage = a.withScanVantageRunStatus(r.Context(), vantage, projection, now, scope.ID, schedule, status.Enabled)
 		status.Vantages = append(status.Vantages, vantage)
+		if vantage.NextScheduledAt != nil && (nextSchedule == nil || vantage.NextScheduledAt.Before(*nextSchedule)) {
+			nextSchedule = vantage.NextScheduledAt
+		}
 	}
+	status.NextScheduledAt = cloneTime(nextSchedule)
 	candidates, err := a.Store.ListCandidates(r.Context(), scope.ID, "")
 	if err != nil {
 		writeMappedError(w, r, err)
@@ -724,6 +791,20 @@ func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
 	status.Retention = scanRetentionResponse{EvidenceBefore: &evidenceBefore, RunsBefore: &runsBefore, LagSeconds: cleanup.LagSeconds, Blocked: cleanup.Blocked || workspace.TelemetryBackpressure}
 	status.Queue = scanQueueResponse{ActiveRuns: activeCount, PendingPages: 0, Backpressure: workspace.TelemetryBackpressure}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (a *App) withScanVantageRunStatus(ctx context.Context, vantage scanVantageResponse, projection scanVantageRunProjection, now time.Time, scopeID string, schedule time.Duration, enabled bool) scanVantageResponse {
+	if projection.latestTerminal != nil {
+		vantage.LastCompletedAt = cloneTime(projection.latestTerminal.FinishedAt)
+	}
+	if projection.active != nil {
+		view := a.scanRunResponse(ctx, *projection.active)
+		vantage.ActiveRun = &view
+	}
+	if vantage.Assigned && enabled {
+		vantage.NextScheduledAt = nextScanVantageSchedule(projection, now, scopeID, vantage.Scanner.Kind, vantage.Scanner.ID, schedule)
+	}
+	return vantage
 }
 
 func isScanRunActive(state string) bool {
