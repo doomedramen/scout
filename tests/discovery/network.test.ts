@@ -7,6 +7,7 @@ import {
   hostAddresses,
   parseDarwinDefaultRoute,
   parseLinuxDefaultRoute,
+  parseLinuxProcRoute,
 } from "@/lib/discovery/network";
 import { scanHosts } from "@/lib/discovery/scanner";
 
@@ -25,6 +26,15 @@ describe("default-route discovery", () => {
         "   route to: default\n destination: default\n       gateway: 192.168.1.1\n     interface: en0\n",
       ),
     ).toEqual({ interfaceName: "en0", gateway: "192.168.1.1", sourceAddress: null });
+  });
+
+  it("parses Linux proc routes when iproute2 is not installed", () => {
+    expect(
+      parseLinuxProcRoute(
+        "Iface Destination Gateway Flags RefCnt Use Metric Mask MTU Window IRTT\n" +
+          "eth0 00000000 0101A8C0 0003 0 0 100 00000000 0 0 0 0\n",
+      ),
+    ).toEqual({ interfaceName: "eth0", gateway: "192.168.1.1", sourceAddress: null });
   });
 
   it("caps broad networks at their containing /24 and preserves narrower prefixes", () => {

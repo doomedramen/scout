@@ -14,6 +14,7 @@ describe("agent installer", () => {
       serverUrl: "https://scout.example.test:18443",
       callbackUrl: "http://192.0.2.5:18443",
       invitation: "oti-with-'-quote",
+      requireHttpTrustPin: true,
     });
     const filename = path.join(tmpdir(), `scout-installer-${randomUUID()}.sh`);
     writeFileSync(filename, script, { mode: 0o700 });
@@ -28,5 +29,20 @@ describe("agent installer", () => {
     expect(script).toContain("SCOUT_OTI=${SCOUT_OTI:-'oti-with-'\\''-quote'}");
     expect(script).toContain("systemctl enable --now scout-agent.service");
     expect(script).toContain("launchctl bootstrap system");
+    expect(script).toContain("SCOUT_TRUST_PIN");
+    expect(script).toContain("SCOUT_REQUIRE_TRUST_PIN=1");
+  });
+
+  it("requires the out-of-band server pin before an HTTP manual bootstrap", () => {
+    const script = renderInstallerScript({
+      serverUrl: "http://scout.example.test:8080",
+      callbackUrl: "http://scout.example.test:8080",
+      invitation: "oti",
+      requireHttpTrustPin: true,
+    });
+
+    expect(script).toContain('case "$SCOUT_SERVER_URL" in');
+    expect(script).toContain('fail "SCOUT_TRUST_PIN is required for HTTP bootstrap"');
+    expect(script).toContain("/api/v1/bootstrap/fingerprint");
   });
 });

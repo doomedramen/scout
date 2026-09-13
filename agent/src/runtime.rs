@@ -1,16 +1,20 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
+use tokio::net::TcpStream;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::collector::{HostCollector, SysinfoHostCollector};
 use crate::identity::{load_or_create, Identity};
 use crate::protocol::{
-    sign_request, EnrollmentRequest, EnrollmentResponse, HeartbeatPayload, TelemetryPayload,
+    sign_request, verify_task, EnrollmentRequest, EnrollmentResponse, HeartbeatPayload,
+    HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope, TelemetryPayload,
 };
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
@@ -31,6 +35,8 @@ struct EnrollmentState {
     server_url: String,
     agent_id: String,
     system_id: String,
+    #[serde(default)]
+    control_public_key: Option<String>,
 }
 
 impl AgentConfig {
@@ -89,7 +95,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         .context("build HTTP client")?;
     let enrollment =
         load_enrollment(&state_path).filter(|state| state.server_url == config.server_url);
-    let enrollment = match enrollment {
+    let mut enrollment = match enrollment {
         Some(state) => state,
         None => {
             let invitation = config.invitation.as_deref().ok_or_else(|| {
@@ -102,8 +108,12 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     };
 
     let mut collector = SysinfoHostCollector::new();
-    send_heartbeat(&client, &identity, &enrollment, 0, 0).await?;
+    let response = send_heartbeat(&client, &identity, &enrollment, 0, 0).await?;
+    apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
     send_telemetry(&client, &identity, &enrollment, &mut collector, 0).await?;
+    if let Some(task) = response.task {
+        process_task(&client, &identity, &enrollment, task).await?;
+    }
     if config.once {
         return Ok(());
     }
@@ -117,8 +127,18 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => return Ok(()),
             _ = heartbeat.tick() => {
-                if let Err(error) = send_heartbeat(&client, &identity, &enrollment, 0, 0).await {
-                    eprintln!("scout-agent heartbeat failed: {error:#}");
+                match send_heartbeat(&client, &identity, &enrollment, 0, 0).await {
+                    Ok(response) => {
+                        if let Err(error) = apply_heartbeat_response(&state_path, &mut enrollment, &response) {
+                            eprintln!("scout-agent state save failed: {error:#}");
+                        }
+                        if let Some(task) = response.task {
+                            if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
+                                eprintln!("scout-agent task failed: {error:#}");
+                            }
+                        }
+                    }
+                    Err(error) => eprintln!("scout-agent heartbeat failed: {error:#}"),
                 }
             }
             _ = telemetry.tick() => {
@@ -161,7 +181,22 @@ async fn enroll(
         server_url: config.server_url.clone(),
         agent_id: response.agent_id,
         system_id: response.system_id,
+        control_public_key: Some(response.control_public_key),
     })
+}
+
+fn apply_heartbeat_response(
+    state_path: &std::path::Path,
+    enrollment: &mut EnrollmentState,
+    response: &HeartbeatResponse,
+) -> Result<()> {
+    if !response.control_public_key.is_empty()
+        && enrollment.control_public_key.as_deref() != Some(response.control_public_key.as_str())
+    {
+        enrollment.control_public_key = Some(response.control_public_key.clone());
+        save_enrollment(state_path, enrollment).context("save control-plane key")?;
+    }
+    Ok(())
 }
 
 async fn send_heartbeat(
@@ -170,7 +205,7 @@ async fn send_heartbeat(
     enrollment: &EnrollmentState,
     task_generation: u64,
     release_sequence: u64,
-) -> Result<()> {
+) -> Result<HeartbeatResponse> {
     let payload = HeartbeatPayload {
         agent_id: enrollment.agent_id.clone(),
         observed_at: timestamp(),
@@ -186,7 +221,10 @@ async fn send_heartbeat(
         "/api/agent/v1/heartbeat",
         body,
     )
+    .await?
+    .json::<HeartbeatResponse>()
     .await
+    .context("decode heartbeat response")
 }
 
 async fn send_telemetry(
@@ -213,6 +251,75 @@ async fn send_telemetry(
         body,
     )
     .await
+    .map(|_| ())
+}
+
+async fn process_task(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &EnrollmentState,
+    task: TaskEnvelope,
+) -> Result<()> {
+    let control_key = enrollment
+        .control_public_key
+        .as_deref()
+        .ok_or_else(|| anyhow!("server task verification key is not enrolled"))?;
+    if task.agent_id != enrollment.agent_id || !verify_task(&task, control_key, Utc::now()) {
+        return Err(anyhow!("server task envelope is invalid or expired"));
+    }
+
+    let semaphore = Arc::new(Semaphore::new(64));
+    let mut handles = Vec::with_capacity(task.payload.addresses.len());
+    for address in &task.payload.addresses {
+        let address = address.clone();
+        let permit = semaphore.clone().acquire_owned().await?;
+        let port = task.payload.port;
+        handles.push(tokio::spawn(async move {
+            let outcome = match tokio::time::timeout(
+                Duration::from_millis(800),
+                TcpStream::connect((address.as_str(), port)),
+            )
+            .await
+            {
+                Ok(Ok(_)) => "open",
+                Ok(Err(_)) => "closed",
+                Err(_) => "timeout",
+            };
+            drop(permit);
+            ScanResult {
+                address,
+                port,
+                outcome: outcome.to_string(),
+                mac_address: None,
+                fingerprint: None,
+            }
+        }));
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        results.push(handle.await?);
+    }
+    results.sort_by(|left, right| left.address.cmp(&right.address));
+    let payload = ScanTaskResult {
+        task_id: task.task_id.clone(),
+        agent_id: enrollment.agent_id.clone(),
+        generation: task.generation,
+        payload_digest: task.payload_digest,
+        results,
+    };
+    let body = serde_json::to_string(&payload)?;
+    let path = format!("/api/agent/v1/tasks/{}/result", task.task_id);
+    send_signed(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        &path,
+        body,
+    )
+    .await?;
+    Ok(())
 }
 
 async fn send_signed(
@@ -222,7 +329,7 @@ async fn send_signed(
     agent_id: &str,
     path: &str,
     body: String,
-) -> Result<()> {
+) -> Result<reqwest::Response> {
     let timestamp = Utc::now().timestamp().to_string();
     let request_id = Uuid::new_v4().to_string();
     let signature = sign_request(
@@ -238,7 +345,7 @@ async fn send_signed(
     headers.insert("x-scout-timestamp", HeaderValue::from_str(&timestamp)?);
     headers.insert("x-scout-request-id", HeaderValue::from_str(&request_id)?);
     headers.insert("x-scout-signature", HeaderValue::from_str(&signature)?);
-    client
+    let response = client
         .post(format!("{server_url}{path}"))
         .headers(headers)
         .header("content-type", "application/json")
@@ -248,7 +355,7 @@ async fn send_signed(
         .context("send signed agent request")?
         .error_for_status()
         .context("signed agent request was rejected")?;
-    Ok(())
+    Ok(response)
 }
 
 fn load_enrollment(path: &std::path::Path) -> Option<EnrollmentState> {

@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     serverUrl,
     callbackUrl: serverUrl,
     invitation: "",
+    requireHttpTrustPin: true,
   });
   return new Response(script, {
     headers: {

@@ -10,6 +10,7 @@ describe("SQLite foundation", () => {
     expect(first.sqlite.prepare("SELECT version FROM schema_migration").all()).toEqual([
       { version: 1 },
       { version: 2 },
+      { version: 3 },
     ]);
     first.sqlite.close();
 

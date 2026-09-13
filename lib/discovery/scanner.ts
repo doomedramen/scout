@@ -8,6 +8,9 @@ export type ProbeResult = {
   address: string;
   port: number;
   outcome: ProbeOutcome;
+  /** Optional identity evidence supplied by an agent vantage point. */
+  macAddress?: string | null;
+  fingerprint?: string | null;
 };
 
 export type ScanOptions = {

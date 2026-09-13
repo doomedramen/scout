@@ -45,10 +45,12 @@ export function renderInstallerScript(input: {
   serverUrl: string;
   callbackUrl: string;
   invitation: string;
+  requireHttpTrustPin?: boolean;
 }): string {
   const serverUrl = shellQuote(input.serverUrl);
   const callbackUrl = shellQuote(input.callbackUrl);
   const invitation = shellQuote(input.invitation);
+  const requireHttpTrustPin = input.requireHttpTrustPin === true ? "1" : "0";
   const lines = [
     "#!/bin/sh",
     "set -eu",
@@ -57,6 +59,8 @@ export function renderInstallerScript(input: {
     "SCOUT_CALLBACK_URL=${SCOUT_CALLBACK_URL:-" + callbackUrl + "}",
     "SCOUT_OTI=${SCOUT_OTI:-" + invitation + "}",
     "SCOUT_PRIVILEGE_FILE=${SCOUT_PRIVILEGE_FILE:-}",
+    `SCOUT_REQUIRE_TRUST_PIN=${requireHttpTrustPin}`,
+    "SCOUT_TRUST_PIN=${SCOUT_TRUST_PIN:-}",
     "",
     "fail() {",
     "  printf '%s\\n' \"scout-agent installer: $1\" >&2",
@@ -79,6 +83,20 @@ export function renderInstallerScript(input: {
     "",
     'if [ -z "$SCOUT_SERVER_URL" ] || [ -z "$SCOUT_OTI" ]; then',
     '  fail "server URL and one-time invitation are required"',
+    "fi",
+    "",
+    'if [ "$SCOUT_REQUIRE_TRUST_PIN" = 1 ]; then',
+    '  case "$SCOUT_SERVER_URL" in',
+    "    http://*)",
+    '      [ -n "$SCOUT_TRUST_PIN" ] || fail "SCOUT_TRUST_PIN is required for HTTP bootstrap"',
+    '      trust_response="${TMPDIR:-/tmp}/scout-trust.$$"',
+    '      fetch_to "$SCOUT_SERVER_URL/api/v1/bootstrap/fingerprint" "$trust_response" || \\',
+    '        fail "could not read the Scout bootstrap fingerprint"',
+    '      expected_pin=$(sed -n \'s/.*"fingerprint":"\\([^"]*\\)".*/\\1/p\' "$trust_response")',
+    '      rm -f "$trust_response"',
+    '      [ "$expected_pin" = "$SCOUT_TRUST_PIN" ] || fail "Scout bootstrap fingerprint does not match SCOUT_TRUST_PIN"',
+    "      ;;",
+    "  esac",
     "fi",
     "",
     'preflight="${TMPDIR:-/tmp}/scout-preflight.$$"',

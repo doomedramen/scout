@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 
 export type DefaultRoute = {
@@ -78,6 +79,33 @@ export function parseLinuxDefaultRoute(output: string): DefaultRoute | null {
   };
 }
 
+/** Parse Linux's proc route table when the minimal server image has no `ip`. */
+export function parseLinuxProcRoute(output: string): DefaultRoute | null {
+  const line = output
+    .split(/\r?\n/)
+    .slice(1)
+    .map((candidate) => candidate.trim())
+    .map((candidate) => candidate.split(/\s+/))
+    .find(
+      (fields) =>
+        fields.length >= 4 &&
+        fields[1] === "00000000" &&
+        (Number.parseInt(fields[3], 16) & 2) !== 0,
+    );
+  if (!line?.[0] || !line[2]) return null;
+
+  const gatewayValue = Number.parseInt(line[2], 16);
+  if (!Number.isFinite(gatewayValue)) return null;
+  const gateway = numberToIpv4(
+    (((gatewayValue & 0xff) << 24) |
+      (((gatewayValue >>> 8) & 0xff) << 16) |
+      (((gatewayValue >>> 16) & 0xff) << 8) |
+      ((gatewayValue >>> 24) & 0xff)) >>>
+      0,
+  );
+  return { interfaceName: line[0], gateway, sourceAddress: null };
+}
+
 export function parseDarwinDefaultRoute(output: string): DefaultRoute | null {
   const gateway = output.match(/^\s*gateway:\s*(\S+)/m)?.[1] ?? null;
   const interfaceName = output.match(/^\s*interface:\s*(\S+)/m)?.[1];
@@ -150,7 +178,14 @@ function routeOutput(): { route: DefaultRoute | null; routeKind: "linux" | "darw
       routeKind: "linux",
     };
   } catch {
-    return { route: null, routeKind: "linux" };
+    try {
+      return {
+        route: parseLinuxProcRoute(fs.readFileSync("/proc/net/route", "utf8")),
+        routeKind: "linux",
+      };
+    } catch {
+      return { route: null, routeKind: "linux" };
+    }
   }
 }
 

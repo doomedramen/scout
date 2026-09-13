@@ -1,6 +1,7 @@
 import { enrollInput } from "@/lib/server/agent-protocol";
 import { EnrollmentError, enrollAgent } from "@/lib/server/invitations";
 import { jsonError } from "@/lib/server/http";
+import { controlPublicKey } from "@/lib/server/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
         serverTime: new Date().toISOString(),
         heartbeatIntervalSeconds: 15,
         telemetryIntervalSeconds: 30,
+        controlPublicKey: controlPublicKey(),
       },
       { headers: { "Cache-Control": "no-store" } },
     );

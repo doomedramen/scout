@@ -108,18 +108,71 @@ function reconcileOne(
   segmentId: string,
   result: ProbeResult,
   now: number,
+  source: "server-scan" | "agent-scan",
 ): void {
-  const existing = sqlite
+  let existing = sqlite
     .prepare(
       `
-        SELECT s.id
+        SELECT s.id, ae.fingerprint AS fingerprint
         FROM system s
         INNER JOIN system_address sa ON sa.system_id = s.id
+        LEFT JOIN access_evidence ae
+          ON ae.system_id = s.id
+          AND ae.method = 'ssh'
+          AND ae.address = sa.address
+          AND ae.port = sa.port
         WHERE s.segment_id = ? AND sa.address = ? AND sa.port = ?
         LIMIT 1
       `,
     )
-    .get(segmentId, result.address, result.port) as { id: string } | undefined;
+    .get(segmentId, result.address, result.port) as
+    { id: string; fingerprint: string | null } | undefined;
+
+  if (
+    existing &&
+    result.outcome === "open" &&
+    result.fingerprint &&
+    existing.fingerprint &&
+    existing.fingerprint !== result.fingerprint
+  ) {
+    // An address can be reused. Preserve the old record as a quarantine
+    // blocker, but never attach a new host key to it.
+    sqlite
+      .prepare(
+        "UPDATE access_evidence SET outcome = 'quarantined', expires_at = ?, observed_at = ? WHERE system_id = ? AND method = 'ssh' AND address = ? AND port = ?",
+      )
+      .run(now, now, existing.id, result.address, result.port);
+    sqlite
+      .prepare("UPDATE system SET status = 'blocked', updated_at = ? WHERE id = ?")
+      .run(now, existing.id);
+    existing = undefined;
+  }
+
+  if (!existing && result.outcome === "open" && result.macAddress) {
+    const sameMac = sqlite
+      .prepare(
+        `
+          SELECT s.id, ae.fingerprint AS fingerprint
+          FROM system s
+          INNER JOIN access_evidence ae ON ae.system_id = s.id
+          WHERE s.segment_id = ?
+            AND ae.method = 'ssh'
+            AND ae.mac_address = ?
+            AND ae.outcome = 'open'
+            AND ae.expires_at > ?
+          ORDER BY ae.observed_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(segmentId, result.macAddress, now) as
+      { id: string; fingerprint: string | null } | undefined;
+    if (
+      sameMac &&
+      (!result.fingerprint || !sameMac.fingerprint || sameMac.fingerprint === result.fingerprint)
+    ) {
+      existing = sameMac;
+    }
+  }
 
   if (!existing && result.outcome !== "open") return;
 
@@ -142,10 +195,12 @@ function reconcileOne(
     .prepare(
       `
         INSERT INTO access_evidence
-          (id, system_id, method, address, port, outcome, source, observed_at, expires_at)
-        VALUES (?, ?, 'ssh', ?, ?, ?, 'server-scan', ?, ?)
+          (id, system_id, method, address, port, outcome, fingerprint, mac_address, source, observed_at, expires_at)
+        VALUES (?, ?, 'ssh', ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(system_id, method, address, port) DO UPDATE SET
           outcome = excluded.outcome,
+          fingerprint = excluded.fingerprint,
+          mac_address = excluded.mac_address,
           source = excluded.source,
           observed_at = excluded.observed_at,
           expires_at = excluded.expires_at
@@ -157,6 +212,9 @@ function reconcileOne(
       result.address,
       result.port,
       result.outcome,
+      result.fingerprint ?? null,
+      result.macAddress ?? null,
+      source,
       now,
       result.outcome === "open" ? now + EVIDENCE_TTL_MS : now,
     );
@@ -174,10 +232,11 @@ export function reconcileScanResults(
   segmentId: string,
   results: ProbeResult[],
   now = Date.now(),
+  source: "server-scan" | "agent-scan" = "server-scan",
 ): void {
   const { sqlite } = getDatabase();
   const reconcile = sqlite.transaction(() => {
-    for (const result of results) reconcileOne(sqlite, segmentId, result, now);
+    for (const result of results) reconcileOne(sqlite, segmentId, result, now, source);
     sqlite
       .prepare("UPDATE network_segment SET last_scan_at = ?, updated_at = ? WHERE id = ?")
       .run(now, now, segmentId);
@@ -221,6 +280,22 @@ export async function discoverNow(
       cidr: segment.cidr,
       lastScanAt: new Date(segment.lastScanAt).toISOString(),
       reason: null,
+    };
+    setDiscoveryState(next, startedAt);
+    return next;
+  }
+
+  // Once a healthy enrolled agent is available on this segment, it becomes
+  // the single scanning vantage point. The dynamic import avoids coupling the
+  // discovery module to the task module during startup initialization.
+  const { ensureSegmentScanTask } = await import("@/lib/server/scanning");
+  const delegated = ensureSegmentScanTask(segment.id, startedAt);
+  if (delegated) {
+    const next = {
+      status: "scanning" as const,
+      cidr: segment.cidr,
+      lastScanAt: segment.lastScanAt ? new Date(segment.lastScanAt).toISOString() : null,
+      reason: `Scanner agent ${delegated.scanner.agentId} is working on this segment.`,
     };
     setDiscoveryState(next, startedAt);
     return next;

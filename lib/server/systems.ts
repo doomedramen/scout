@@ -23,6 +23,7 @@ export type SystemSummary = {
   status: SystemState;
   lastSeenAt: string | null;
   addresses: string[];
+  macAddresses: string[];
   accessMethods: string[];
   agent: {
     id: string;
@@ -53,6 +54,7 @@ type SystemRow = {
   storedStatus: string;
   lastSeenAt: number | null;
   addressList: string | null;
+  macAddressList: string | null;
   accessMethodList: string | null;
   agentId: string | null;
   platform: string | null;
@@ -111,6 +113,7 @@ function toSummary(row: SystemRow, now: number): SystemSummary {
     status: effectiveState(row, now),
     lastSeenAt: asDate(row.lastSeenAt),
     addresses: splitList(row.addressList),
+    macAddresses: splitList(row.macAddressList),
     accessMethods: splitList(row.accessMethodList),
     agent,
   };
@@ -127,6 +130,7 @@ function fleetRows(sqlite: SqliteDatabase, now: number): SystemRow[] {
           s.status AS storedStatus,
           s.last_seen_at AS lastSeenAt,
           GROUP_CONCAT(DISTINCT sa.address || ':' || sa.port) AS addressList,
+          GROUP_CONCAT(DISTINCT ae.mac_address) AS macAddressList,
           GROUP_CONCAT(DISTINCT CASE WHEN ae.outcome = 'open' AND ae.expires_at > ? THEN ae.method END) AS accessMethodList,
           a.id AS agentId,
           a.platform,
@@ -214,6 +218,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
           s.excluded,
           s.last_seen_at AS lastSeenAt,
           GROUP_CONCAT(DISTINCT sa.address || ':' || sa.port) AS addressList,
+          GROUP_CONCAT(DISTINCT ae.mac_address) AS macAddressList,
           GROUP_CONCAT(DISTINCT CASE WHEN ae.outcome = 'open' AND ae.expires_at > ? THEN ae.method END) AS accessMethodList,
           a.id AS agentId,
           a.platform,

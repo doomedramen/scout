@@ -222,6 +222,14 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS invitation_system_idx ON agent_invitation(system_id);
     `,
   },
+  {
+    version: 3,
+    sql: `
+      ALTER TABLE scan_task ADD COLUMN payload TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE scan_task ADD COLUMN signature TEXT NOT NULL DEFAULT '';
+      ALTER TABLE scan_task ADD COLUMN issued_at INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: Database.Database): void {

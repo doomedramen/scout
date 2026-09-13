@@ -1,6 +1,8 @@
 import { heartbeatInput, authenticateAgentRequest } from "@/lib/server/agent-protocol";
 import { getDatabase } from "@/lib/server/db";
 import { jsonError } from "@/lib/server/http";
+import { getPendingTaskEnvelope } from "@/lib/server/tasks";
+import { controlPublicKey } from "@/lib/server/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +36,12 @@ export async function POST(request: Request) {
     );
   if (changed.changes !== 1) return jsonError("Agent identity is not authorized.", 401);
   return Response.json(
-    { ok: true, serverTime: new Date(now).toISOString() },
+    {
+      ok: true,
+      serverTime: new Date(now).toISOString(),
+      controlPublicKey: controlPublicKey(),
+      task: getPendingTaskEnvelope(identity.agentId, now),
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

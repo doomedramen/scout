@@ -40,6 +40,20 @@ docker compose up -d
 `SCOUT_PUBLIC_URL` is optional, but should be set to the HTTPS URL or reachable
 LAN URL that installed agents will use to call Scout.
 
+## Install the host helper
+
+The optional `scout` helper keeps the Compose definition current as well as the
+image. Install it on the Linux host that runs Docker:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/packaging/host/scout \
+  -o /usr/local/bin/scout
+chmod 0755 /usr/local/bin/scout
+```
+
+It uses `/opt/scout` by default. Set `SCOUT_DIR` when the instance lives
+elsewhere.
+
 ## Operations
 
 ```bash
@@ -48,6 +62,22 @@ docker compose up -d
 docker compose ps
 docker compose logs --tail=200 scout
 ```
+
+With the host helper:
+
+```bash
+scout status
+scout logs --tail=200 scout
+scout update
+scout backup /safe/location/scout-backup.scoutbak
+scout restore /safe/location/scout-backup.scoutbak
+```
+
+`scout update` downloads and validates the current Compose definition before
+pulling the image. Backups are passphrase-encrypted and include SQLite plus the
+persistent authentication, credential, and control-signing keys. Restore keeps
+the previous data files and pauses discovery and installation until the owner
+reviews the restored instance in Settings.
 
 Keep the data volume and the persistent keys together when backing up or moving
 an instance. Do not reuse a production data directory for tests. HTTPS through
@@ -65,7 +95,10 @@ npm run lint
 npm run typecheck
 npm test -- --run
 cargo test --workspace
+npm run agent:build
 ```
 
 The Rust workspace contains the native `scout-agent`. The server image embeds
 the signed release artifacts; there is intentionally no separate agent image.
+`npm run agent:build` prepares the local Linux amd64 artifact before a local
+container build.

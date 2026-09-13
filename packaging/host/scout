@@ -57,8 +57,10 @@ run_ops() {
   operation=$1
   archive=$2
   passphrase=$3
-  printf '%s\n' "$passphrase" | compose run --rm --no-deps -v "$PWD:/backup" \
-    --entrypoint node scout /usr/local/bin/scout-ops.mjs "$operation" "/backup/$archive"
+  archive_directory=$(CDPATH= cd -- "$(dirname "$archive")" && pwd)
+  archive_name=$(basename "$archive")
+  printf '%s\n' "$passphrase" | compose run --rm --no-deps -v "$archive_directory:/backup" \
+    --entrypoint node scout /usr/local/bin/scout-ops.mjs "$operation" "/backup/$archive_name"
 }
 
 require_docker
@@ -90,7 +92,7 @@ case "$command" in
       compose start scout || true
       die "Backup failed."
     fi
-    compose start scout
+    compose up -d --wait
     printf 'scout: backup written to %s\n' "$PWD/$archive"
     ;;
   restore)
@@ -104,7 +106,7 @@ case "$command" in
       compose start scout || true
       die "Restore failed; the existing data was left in place."
     fi
-    compose start scout
+    compose up -d --wait
     printf 'scout: restore validated; review the instance before enabling work\n'
     ;;
   status)
@@ -120,9 +122,26 @@ case "$command" in
     ensure_compose
     compose logs --no-color scout | grep 'Scout owner setup token' || die "No unused setup token is visible in the logs."
     ;;
-  trust-pin)
+trust-pin)
     ensure_compose
-    compose logs --no-color scout | grep 'bootstrap fingerprint' || die "No bootstrap fingerprint is available yet."
+    public_url=${SCOUT_PUBLIC_URL:-}
+    if [ -z "$public_url" ] && [ -f "$SCOUT_DIR/.env" ]; then
+      public_url=$(sed -n 's/^SCOUT_PUBLIC_URL=//p' "$SCOUT_DIR/.env" | tail -n 1)
+      public_url=${public_url#\"}
+      public_url=${public_url%\"}
+      public_url=${public_url#\'}
+      public_url=${public_url%\'}
+    fi
+    public_url=${public_url%/}
+    if [ -z "$public_url" ]; then
+      port=${SCOUT_PORT:-8080}
+      if [ -f "$SCOUT_DIR/.env" ]; then
+        configured_port=$(sed -n 's/^SCOUT_PORT=//p' "$SCOUT_DIR/.env" | tail -n 1)
+        [ -n "$configured_port" ] && port=$configured_port
+      fi
+      public_url="http://127.0.0.1:$port"
+    fi
+    curl -fsSL "$public_url/api/v1/bootstrap/fingerprint" || die "No bootstrap fingerprint is available."
     ;;
   *)
     die "Usage: scout {up|update|backup|restore|status|logs|setup-token|trust-pin}"

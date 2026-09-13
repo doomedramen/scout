@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -43,4 +43,15 @@ export function credentialKey(): Buffer {
 
 export function controlSigningKey(): Buffer {
   return persistentKey("control-signing.key");
+}
+
+/**
+ * A stable, out-of-band identity for the Scout HTTP bootstrap endpoint.
+ *
+ * This is deliberately derived from the persistent control key rather than a
+ * per-process value. It is not a replacement for HTTPS; it gives a trusted LAN
+ * operator a value they can compare before allowing an HTTP installer to run.
+ */
+export function bootstrapFingerprint(): string {
+  return `SHA256:${createHash("sha256").update(controlSigningKey()).digest("base64url")}`;
 }

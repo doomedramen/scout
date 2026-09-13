@@ -50,6 +50,12 @@ export default async function SystemPage({ params }: { params: Promise<{ systemI
                 <dt className="text-muted-foreground">Addresses</dt>
                 <dd className="mt-1">{system.addresses.join(", ") || "Not reported"}</dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">MAC addresses</dt>
+                <dd className="mt-1 font-mono text-xs">
+                  {system.macAddresses.join(", ") || "Not reported"}
+                </dd>
+              </div>
             </dl>
           </CardContent>
         </Card>

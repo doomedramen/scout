@@ -29,6 +29,7 @@ describe("signed agent protocol", () => {
     const response = await heartbeat(request);
 
     expect(response.status).toBe(200);
+    expect((await response.clone().json()).task).toBeNull();
     expect(heartbeatInput.parse(payload)).toEqual(payload);
     expect(
       fixture.sqlite
