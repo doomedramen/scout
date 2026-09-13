@@ -314,13 +314,6 @@ func testAgentVantageScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leased, err := repository.LeaseScanRun(ctx, queued.ID, agentIdentity.ID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.StartScanRun(ctx, queued.ID, agentIdentity.ID, leased.LeaseEpoch); err != nil {
-		t.Fatal(err)
-	}
 	if err := runtime.RunOnce(ctx); err != nil {
 		t.Fatal(err)
 	}

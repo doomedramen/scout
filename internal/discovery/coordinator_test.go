@@ -161,6 +161,47 @@ func TestCoordinatorDoesNotScheduleWhileDiscoveryIsPaused(t *testing.T) {
 	}
 }
 
+func TestCoordinatorSchedulesAndLeasesAssignedAgentRun(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 9, 12, 16, 30, 0, 0, time.UTC)
+	repository := store.NewMemory()
+	repository.SetClock(func() time.Time { return now })
+	site, err := repository.CreateSite(ctx, store.Site{Name: "scheduled-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := repository.CreateDevice(ctx, store.Device{SiteID: site.ID, DisplayName: "scheduled-agent", Platform: "linux", Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const agentID = "scheduled-agent-1"
+	if err := repository.CreateAgentIdentity(ctx, store.AgentIdentity{ID: agentID, DeviceID: device.ID, ExpiresAt: now.Add(time.Hour), Capabilities: store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}}); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := repository.CreateScope(ctx, store.Scope{SiteID: site.ID, Ranges: []string{"192.0.2.10"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy, err := repository.ScanPolicy(ctx, scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanPolicy.AgentIDs = []string{agentID}
+	scanPolicy.ScheduleSeconds = 60
+	if _, err := repository.UpdateScanPolicy(ctx, scope.ID, scanPolicy.Revision, scanPolicy); err != nil {
+		t.Fatal(err)
+	}
+
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{})
+	created, err := coordinator.ScheduleDue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || created[0].ScannerKind != "agent" || created[0].ScannerID != agentID || created[0].State != store.ScanRunLeased || created[0].LeaseOwner != agentID || created[0].LeaseEpoch != 1 {
+		t.Fatalf("assigned agent schedule was not leased: %+v", created)
+	}
+}
+
 func TestCoordinatorReleasesExpiredLeaseAfterRestart(t *testing.T) {
 	ctx := context.Background()
 	repository, _, _, now := coordinatorFixture(t)

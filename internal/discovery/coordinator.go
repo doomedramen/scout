@@ -84,11 +84,11 @@ func NextScanScheduleAt(base time.Time, scopeID, scannerKind, scannerID string, 
 	return base.Add(schedule).Add(ScanScheduleJitter(scopeID, scannerKind, scannerID, schedule))
 }
 
-// ScheduleDue materializes at most one queued run for each enabled,
-// server-enabled scope. The first run is immediate; later runs use stable
-// identity-derived jitter after the configured interval.
+// ScheduleDue materializes at most one run for each enabled scope/vantage
+// pair. Server runs remain queued for this coordinator; agent runs are leased
+// to their assigned identity and handed off through desired state.
 func (c *Coordinator) ScheduleDue(ctx context.Context) ([]store.ScanRun, error) {
-	if c == nil || c.Store == nil {
+	if c == nil || c.Store == nil || c.Policy == nil {
 		return nil, store.ErrInvalid
 	}
 	workspace, err := c.Store.Workspace(ctx)
@@ -102,7 +102,6 @@ func (c *Coordinator) ScheduleDue(ctx context.Context) ([]store.ScanRun, error) 
 	if err != nil {
 		return nil, err
 	}
-	now := c.clock()
 	created := []store.ScanRun{}
 	for _, scope := range scopes {
 		if !scope.Enabled {
@@ -112,48 +111,93 @@ func (c *Coordinator) ScheduleDue(ctx context.Context) ([]store.ScanRun, error) 
 		if policyErr != nil {
 			return nil, policyErr
 		}
-		if !scanPolicy.Enabled || !scanPolicy.ServerEnabled {
+		if !scanPolicy.Enabled {
 			continue
 		}
-		vantageID := c.serverID()
-		runs, listErr := c.Store.ListScanRuns(ctx, store.ScanRunQuery{ScopeID: scope.ID, ScannerID: vantageID, Limit: 500})
-		if listErr != nil {
-			return nil, listErr
-		}
-		var latest *store.ScanRun
-		active := false
-		for index := range runs.Items {
-			run := runs.Items[index]
-			if latest == nil {
-				copy := run
-				latest = &copy
+		if scanPolicy.ServerEnabled {
+			run, due, scheduleErr := c.scheduleVantage(ctx, scope, scanPolicy, "server", c.serverID(), false)
+			if scheduleErr != nil {
+				return nil, scheduleErr
 			}
-			if isActiveScanRun(run.State) {
-				active = true
-				break
+			if due {
+				created = append(created, run)
 			}
 		}
-		if active {
-			continue
+		for _, agentID := range scanPolicy.AgentIDs {
+			agent, agentErr := c.Store.Agent(ctx, agentID)
+			if agentErr != nil {
+				continue
+			}
+			decision, decisionErr := c.Policy.ValidateScanVantage(ctx, scope.ID, policy.ScanVantage{Kind: "agent", ID: agentID, DeviceID: agent.DeviceID})
+			if decisionErr != nil || !decision.Allowed {
+				continue
+			}
+			run, due, scheduleErr := c.scheduleVantage(ctx, scope, scanPolicy, "agent", agentID, true)
+			if scheduleErr != nil {
+				return nil, scheduleErr
+			}
+			if due {
+				created = append(created, run)
+			}
 		}
-		schedule := time.Duration(scanPolicy.ScheduleSeconds) * time.Second
-		scheduledAt := now
-		if latest != nil {
-			scheduledAt = NextScanScheduleAt(latest.ScheduledAt, scope.ID, "server", vantageID, schedule)
-		}
-		if scheduledAt.After(now) {
-			continue
-		}
-		run, materializeErr := c.materializeRun(ctx, scope, scanPolicy, vantageID, scheduledAt)
-		if errors.Is(materializeErr, store.ErrConflict) {
-			continue
-		}
-		if materializeErr != nil {
-			return nil, materializeErr
-		}
-		created = append(created, run)
 	}
 	return created, nil
+}
+
+func (c *Coordinator) scheduleVantage(ctx context.Context, scope store.Scope, scanPolicy store.ScanPolicy, scannerKind, scannerID string, leaseAgent bool) (store.ScanRun, bool, error) {
+	runs, err := c.Store.ListScanRuns(ctx, store.ScanRunQuery{ScopeID: scope.ID, ScannerID: scannerID, Limit: 500})
+	if err != nil {
+		return store.ScanRun{}, false, err
+	}
+	now := c.clock()
+	var latest *store.ScanRun
+	for index := range runs.Items {
+		run := runs.Items[index]
+		if latest == nil {
+			copy := run
+			latest = &copy
+		}
+		if !isActiveScanRun(run.State) {
+			continue
+		}
+		if leaseAgent && (run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt)) {
+			claimed, claimErr := c.Store.LeaseScanRun(ctx, run.ID, scannerID, c.leaseDuration(run))
+			if errors.Is(claimErr, store.ErrConflict) {
+				return store.ScanRun{}, false, nil
+			}
+			if claimErr != nil {
+				return store.ScanRun{}, false, claimErr
+			}
+			return claimed, true, nil
+		}
+		return store.ScanRun{}, false, nil
+	}
+	schedule := time.Duration(scanPolicy.ScheduleSeconds) * time.Second
+	scheduledAt := now
+	if latest != nil {
+		scheduledAt = NextScanScheduleAt(latest.ScheduledAt, scope.ID, scannerKind, scannerID, schedule)
+	}
+	if scheduledAt.After(now) {
+		return store.ScanRun{}, false, nil
+	}
+	run, err := c.materializeRun(ctx, scope, scanPolicy, scannerKind, scannerID, scheduledAt)
+	if errors.Is(err, store.ErrConflict) {
+		return store.ScanRun{}, false, nil
+	}
+	if err != nil {
+		return store.ScanRun{}, false, err
+	}
+	if !leaseAgent {
+		return run, true, nil
+	}
+	claimed, err := c.Store.LeaseScanRun(ctx, run.ID, scannerID, c.leaseDuration(run))
+	if errors.Is(err, store.ErrConflict) {
+		return store.ScanRun{}, false, nil
+	}
+	if err != nil {
+		return store.ScanRun{}, false, err
+	}
+	return claimed, true, nil
 }
 
 func isActiveScanRun(state string) bool {
@@ -189,7 +233,7 @@ func boundedAttemptPlan(targetCount, entryPointCount int) (int, error) {
 	return planned, nil
 }
 
-func (c *Coordinator) materializeRun(ctx context.Context, scope store.Scope, scanPolicy store.ScanPolicy, scannerID string, scheduledAt time.Time) (store.ScanRun, error) {
+func (c *Coordinator) materializeRun(ctx context.Context, scope store.Scope, scanPolicy store.ScanPolicy, scannerKind, scannerID string, scheduledAt time.Time) (store.ScanRun, error) {
 	addresses, err := ExpandTargets(scope.Ranges, scope.Exclusions, scanPolicy.Limits.TargetBudget)
 	if err != nil {
 		return store.ScanRun{}, err
@@ -206,7 +250,7 @@ func (c *Coordinator) materializeRun(ctx context.Context, scope store.Scope, sca
 	return c.Store.CreateScanRun(ctx, store.ScanRun{
 		ScopeID:             scope.ID,
 		ScopeRevision:       scanPolicy.Revision,
-		ScannerKind:         "server",
+		ScannerKind:         scannerKind,
 		ScannerID:           scannerID,
 		Trigger:             "schedule",
 		ScheduledAt:         scheduledAt,

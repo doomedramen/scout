@@ -130,13 +130,6 @@ func TestAgentDesiredStateOnlyIncludesAssignedCompatibleScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leased, err := repository.LeaseScanRun(ctx, run.ID, agentID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.StartScanRun(ctx, run.ID, agentID, leased.LeaseEpoch); err != nil {
-		t.Fatal(err)
-	}
 	application, err := NewApp(repository, nil, Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -164,8 +157,15 @@ func TestAgentDesiredStateOnlyIncludesAssignedCompatibleScan(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &desired); err != nil {
 		t.Fatal(err)
 	}
-	if len(desired.DiscoveryPolicy) != 0 || desired.ScanAssignment == nil || desired.ScanAssignment.RunID != run.ID || desired.ScanAssignment.ScopeID != scope.ID || desired.ScanAssignment.LeaseEpoch != leased.LeaseEpoch || len(desired.ScanAssignment.Ranges) != 1 || desired.ScanAssignment.EntryPoints[0].AccessMethod != store.ScanAccessSSH {
+	if len(desired.DiscoveryPolicy) != 0 || desired.ScanAssignment == nil || desired.ScanAssignment.RunID != run.ID || desired.ScanAssignment.ScopeID != scope.ID || desired.ScanAssignment.LeaseEpoch < 1 || len(desired.ScanAssignment.Ranges) != 1 || desired.ScanAssignment.EntryPoints[0].AccessMethod != store.ScanAccessSSH {
 		t.Fatalf("unexpected compatible desired state: %+v", desired)
+	}
+	claimed, err := repository.GetScanRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.State != store.ScanRunRunning || claimed.LeaseOwner != agentID {
+		t.Fatalf("desired state did not claim agent scan: %+v", claimed)
 	}
 	if strings.Contains(response.Body.String(), "credential") || strings.Contains(response.Body.String(), "trust") {
 		t.Fatalf("scan assignment leaked access material: %s", response.Body)

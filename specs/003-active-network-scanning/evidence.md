@@ -759,3 +759,27 @@ Never attach credential values, private keys, host-key private material, banners
   --check` passed. No live device, production network, or production credential
   was contacted.
 - T033 is complete. T034–T044 remain open.
+
+## Agent handoff and segmented lab harness
+
+- Requirements: FR-002–FR-009, FR-014, FR-017, FR-018; SC-001, SC-002,
+  SC-007, SC-008, SC-010; implementation/test commit pending.
+- A queued assigned-agent run is now claimed and started by the authenticated
+  agent desired-state request. The coordinator also materializes and leases
+  scheduled agent runs per explicit scope assignment; server runs remain owned
+  by the server coordinator. Red-first coverage proves the previous queued-run
+  failure and the corrected desired-state, on-demand, and scheduled paths.
+- `scripts/test-active-discovery.sh` now runs fixture checks by default and
+  fails closed for live mode unless Linux, Docker, bridge-scoped tcpdump,
+  passwordless capture permission, and explicit owner confirmation exist. Live
+  mode builds local server/agent binaries, uses three Docker `--internal`
+  bridges, creates server-only, agent-only, closed, excluded, and adjacent
+  targets, runs authenticated scans, and asserts packet-level SYN counts.
+- Exact verification: `bash -n scripts/test-active-discovery.sh` passed;
+  `bash scripts/test-active-discovery.sh` passed in fixture mode; targeted
+  desired-state and agent integration tests passed; `go test ./internal/control
+  ./internal/discovery ./internal/agent ./tests/integration -count=1` passed;
+  `go vet ./internal/control ./internal/discovery ./internal/agent` passed;
+  `git diff --check` passed. Live Linux lab execution remains T043. No live
+  device, production network, or production credential was contacted.
+- T034 is complete. T035–T044 remain open.

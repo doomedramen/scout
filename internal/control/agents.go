@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -187,7 +188,7 @@ func (a *App) scanAssignmentForAgent(ctx context.Context, agent store.AgentIdent
 	}
 	now := a.Store.Now()
 	for _, run := range page.Items {
-		if run.ScannerKind != "agent" || run.ScannerID != agent.ID || run.State != store.ScanRunLeased && run.State != store.ScanRunRunning && run.State != store.ScanRunUploading || run.CancellationRequested || run.AssignmentExpiresAt.IsZero() || !now.Before(run.AssignmentExpiresAt) || run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt) {
+		if run.ScannerKind != "agent" || run.ScannerID != agent.ID || run.State != store.ScanRunQueued && run.State != store.ScanRunLeased && run.State != store.ScanRunRunning && run.State != store.ScanRunUploading || run.CancellationRequested || run.AssignmentExpiresAt.IsZero() || !now.Before(run.AssignmentExpiresAt) {
 			continue
 		}
 		currentPolicy, policyErr := a.Store.ScanPolicy(ctx, run.ScopeID)
@@ -199,6 +200,36 @@ func (a *App) scanAssignmentForAgent(ctx context.Context, agent store.AgentIdent
 			return nil, decisionErr
 		}
 		if !decision.Allowed {
+			continue
+		}
+		if run.State == store.ScanRunQueued {
+			duration := run.AssignmentExpiresAt.Sub(now)
+			if duration <= 0 {
+				continue
+			}
+			claimed, claimErr := a.Store.LeaseScanRun(ctx, run.ID, agent.ID, duration)
+			if errors.Is(claimErr, store.ErrConflict) {
+				continue
+			}
+			if claimErr != nil {
+				return nil, claimErr
+			}
+			run = claimed
+		}
+		if run.State == store.ScanRunLeased {
+			if run.LeaseOwner != agent.ID || run.LeaseEpoch < 1 || run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt) {
+				continue
+			}
+			started, startErr := a.Store.StartScanRun(ctx, run.ID, agent.ID, run.LeaseEpoch)
+			if errors.Is(startErr, store.ErrConflict) {
+				continue
+			}
+			if startErr != nil {
+				return nil, startErr
+			}
+			run = started
+		}
+		if run.State != store.ScanRunRunning && run.State != store.ScanRunUploading || run.LeaseOwner != agent.ID || run.LeaseEpoch < 1 || run.LeaseExpiresAt == nil || !now.Before(*run.LeaseExpiresAt) {
 			continue
 		}
 		return map[string]any{
