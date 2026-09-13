@@ -763,7 +763,7 @@ Never attach credential values, private keys, host-key private material, banners
 ## Agent handoff and segmented lab harness
 
 - Requirements: FR-002–FR-009, FR-014, FR-017, FR-018; SC-001, SC-002,
-  SC-007, SC-008, SC-010; implementation/test commit pending.
+  SC-007, SC-008, SC-010; implementation/test commit: 40ecba3.
 - A queued assigned-agent run is now claimed and started by the authenticated
   agent desired-state request. The coordinator also materializes and leases
   scheduled agent runs per explicit scope assignment; server runs remain owned
