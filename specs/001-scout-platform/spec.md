@@ -72,7 +72,7 @@ As the owner, I can inspect systems quickly, open host charts, and explore a net
 2. **Given** a selected time range, **When** observations are missing or a collector was unavailable, **Then** charts show gaps and units rather than invented zeroes or an uninterrupted healthy line.
 3. **Given** a graph relationship, **When** I inspect it, **Then** its type, source, observation time, age, and confidence are visible; a logical relationship is not presented as confirmed physical cabling.
 4. **Given** conflicting identity evidence or overlapping addresses in different sites, **When** observations are reconciled, **Then** unrelated devices are not silently merged, and manual corrections remain auditable.
-5. **Given** loading, an empty workspace, a failed request, or demo mode, **When** the view renders, **Then** the state and appropriate next action are clear; demo observations never enter operational history or trigger actions.
+5. **Given** loading, an empty workspace, or a failed request, **When** the view renders, **Then** the state and appropriate next action are clear; the interface never fabricates operational observations.
 
 ### User Story 5 - Maintain agents across connected and isolated networks (Priority: P1)
 
@@ -179,7 +179,7 @@ As the owner, I can stop managing a machine without Scout immediately reinstalli
 - **FR-016**: Each topology relationship MUST expose its type, source, observation time, expiry, and confidence. Logical, inferred, and confirmed physical relationships MUST be distinguishable.
 - **FR-017**: Device reconciliation MUST use contextual evidence beyond address alone, preserve multiple observation sources, flag ambiguous identities, and audit owner corrections.
 - **FR-018**: The interface MUST provide readable compact system rows and charts, a separate network view, keyboard navigation, visible focus, non-color status labels, reduced-motion support, and usable layouts from 360 to 1440 CSS pixels.
-- **FR-019**: Loading, empty, failed, stale, offline, unsupported, and missing-access states MUST be distinguishable. Demo mode MUST be visibly labeled and isolated from operational storage and actions.
+- **FR-019**: Loading, empty, failed, stale, offline, unsupported, and missing-access states MUST be distinguishable. The interface MUST NOT fabricate operational devices, measurements, or topology.
 
 #### Agent updates
 

@@ -18,29 +18,6 @@ import {
   scanCoverageLabel,
   scanVantageLabel,
 } from "@/lib/scan-status";
-import { demoDevices, type Device as DemoDevice } from "@/demo";
-
-function demoDevice(item: DemoDevice, index: number): Device {
-  const observedAt = new Date().toISOString();
-  return {
-    id: "demo-" + index,
-    displayName: item.name,
-    platform: "linux",
-    architecture: "amd64",
-    addresses: [item.address],
-    lifecycle: "enrolled",
-    agentVersion: item.version === "—" ? undefined : item.version,
-    availability: item.status === "Offline" ? "offline" : "online",
-    metricFreshness: {},
-    currentMetrics: {
-      "cpu.utilization": { value: item.cpu, unit: "percent", availability: "current", observedAt },
-      "memory.used_percent": { value: item.memory, unit: "percent", availability: "current", observedAt },
-      "filesystem.used_percent": { value: item.disk, unit: "percent", availability: "current", observedAt },
-    },
-    collectorStates: [],
-    revision: 1,
-  };
-}
 
 function nodeDevice(node: TopologyNode): Device {
   return {
@@ -67,11 +44,9 @@ function confidenceLabel(value: number): string {
 }
 
 export function NetworkView({
-  demo,
   onSelect,
   onCandidateSelect,
 }: {
-  demo: boolean;
   onSelect: (device: Device) => void;
   onCandidateSelect: (candidate: Candidate) => void;
 }) {
@@ -95,10 +70,6 @@ export function NetworkView({
   }, []);
 
   useEffect(() => {
-    if (demo) {
-      setError("");
-      return;
-    }
     let cancelled = false;
     setError("");
     api
@@ -114,10 +85,10 @@ export function NetworkView({
     return () => {
       cancelled = true;
     };
-  }, [demo, retry]);
+  }, [retry]);
 
   useEffect(() => {
-    if (demo || !candidates.length) {
+    if (!candidates.length) {
       setScanStatuses({});
       return;
     }
@@ -142,14 +113,9 @@ export function NetworkView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [candidates, demo]);
+  }, [candidates]);
 
   useEffect(() => {
-    if (demo) {
-      setCandidates([]);
-      setCandidateError("");
-      return;
-    }
     let cancelled = false;
     const loadCandidates = () =>
       api
@@ -169,16 +135,9 @@ export function NetworkView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, retry]);
+  }, [retry]);
 
-  const visibleNodes = demo
-    ? demoDevices.map((item, index) => ({
-        id: "demo-" + index,
-        label: item.name,
-        addresses: [item.address],
-        availability: item.status.toLowerCase(),
-      }))
-    : nodes;
+  const visibleNodes = nodes;
   const nodeLabels = useMemo(
     () => new Map(visibleNodes.map((node) => [node.id, node.label ?? node.id])),
     [visibleNodes],
@@ -193,23 +152,7 @@ export function NetworkView({
     );
   }, [nodeQuery, visibleNodes]);
 
-  const demoRelationships: Relationship[] = demo
-    ? [
-        {
-          id: "demo-edge-1",
-          fromEntity: "demo-0",
-          toEntity: "demo-1",
-          type: "logical-membership",
-          confidence: 0.98,
-          projectionRevision: 1,
-          evidenceIds: ["demo-observation"],
-          observedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          source: "illustrative-fixture",
-        },
-      ]
-    : relationships;
-  const shownRelationships = demo ? demoRelationships : relationships;
+  const shownRelationships = relationships;
   const shownCandidates = useMemo(() => {
     const query = candidateQuery.trim().toLowerCase();
     return candidates.filter((candidate) => {
@@ -228,17 +171,14 @@ export function NetworkView({
           <ShieldCheck size={13} />
           Evidence-backed
         </Badge>
-        {demo && <span>Illustrative</span>}
-        {!demo && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Refresh topology"
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            <RefreshCw size={16} />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Refresh topology"
+          onClick={() => setRetry((value) => value + 1)}
+        >
+          <RefreshCw size={16} />
+        </Button>
       </div>
       <div className="network-view-controls">
         <div className="network-view-toggle" role="group" aria-label="Network view">
@@ -288,41 +228,37 @@ export function NetworkView({
                 </Badge>
                 <h2 id="found-devices-heading">Found devices</h2>
               </div>
-              <Badge variant="outline">{demo ? 0 : candidates.length}</Badge>
+              <Badge variant="outline">{candidates.length}</Badge>
             </div>
-            {!demo && (
-              <div className="filter-row candidate-filters">
-                <label>
-                  Search found devices
-                  <input
-                    value={candidateQuery}
-                    onChange={(event) => setCandidateQuery(event.target.value)}
-                    placeholder="Address or hostname"
-                  />
-                </label>
-                <label>
-                  State
-                  <select value={candidateState} onChange={(event) => setCandidateState(event.target.value)}>
-                    <option value="">All states</option>
-                    <option value="needs_credentials">Needs credentials</option>
-                    <option value="needs_host_trust">Needs host trust</option>
-                    <option value="needs_privilege">Needs privilege</option>
-                    <option value="needs_server_connectivity">Needs server connectivity</option>
-                    <option value="queued">Queued</option>
-                    <option value="enrolling">Enrolling</option>
-                    <option value="enrolled">Enrolled</option>
-                    <option value="unsupported">Unsupported service</option>
-                    <option value="stale">Stale evidence</option>
-                  </select>
-                </label>
-              </div>
-            )}
+            <div className="filter-row candidate-filters">
+              <label>
+                Search found devices
+                <input
+                  value={candidateQuery}
+                  onChange={(event) => setCandidateQuery(event.target.value)}
+                  placeholder="Address or hostname"
+                />
+              </label>
+              <label>
+                State
+                <select value={candidateState} onChange={(event) => setCandidateState(event.target.value)}>
+                  <option value="">All states</option>
+                  <option value="needs_credentials">Needs credentials</option>
+                  <option value="needs_host_trust">Needs host trust</option>
+                  <option value="needs_privilege">Needs privilege</option>
+                  <option value="needs_server_connectivity">Needs server connectivity</option>
+                  <option value="queued">Queued</option>
+                  <option value="enrolling">Enrolling</option>
+                  <option value="enrolled">Enrolled</option>
+                  <option value="unsupported">Unsupported service</option>
+                  <option value="stale">Stale evidence</option>
+                </select>
+              </label>
+            </div>
             {candidateError ? (
               <div className="empty-inline" role="alert">
                 {candidateError}
               </div>
-            ) : demo ? (
-              <p className="empty-inline">Found-device evidence is hidden in demo mode.</p>
             ) : shownCandidates.length ? (
               <div className="candidate-list" role="list" aria-label="Found devices">
                 {shownCandidates.map((candidate) => (
@@ -385,13 +321,12 @@ export function NetworkView({
           <div className={`network-observed ${viewMode}`}>
             <div className="map-root">
               <NetworkIcon size={22} />
-              <strong>{demo ? "Lab network" : "Scout network"}</strong>
+              <strong>Scout network</strong>
               <span>{shownNodes.length} observed devices</span>
             </div>
             <div className="map-devices" role="list" aria-label="Topology nodes">
               {shownNodes.map((node) => {
-                const index = visibleNodes.findIndex((item) => item.id === node.id);
-                const selected = demo ? demoDevice(demoDevices[index], index) : nodeDevice(node);
+                const selected = nodeDevice(node);
                 return (
                   <button key={node.id} onClick={() => onSelect(selected)} role="listitem">
                     <Server size={20} aria-hidden="true" />
@@ -465,9 +400,7 @@ export function NetworkView({
           </section>
           <div className="evidence-list" aria-label="Topology interpretation">
             <p>
-              {demo
-                ? "Demo relationship evidence is isolated and labeled. It never enters operational storage."
-                : "Owner corrections remain separate from observed evidence; expired relationships disappear from this view."}
+              Owner corrections remain separate from observed evidence; expired relationships disappear from this view.
             </p>
           </div>
         </>

@@ -33,7 +33,7 @@ Independent test: protected setup and one native Linux agent reports real measur
 - [X] T013 [US1] Turn apps/agent/ into a persistent daemon with durable identity, reporting/heartbeat loops, bounded disk spool, jittered retry and explicit snapshot command compatibility; add packaging/linux/agent.service (FR-003, FR-005, FR-033).
 - [X] T014 [US1] Implement atomic batch deduplication, partitioned measurement storage, freshness calculation, heartbeat and basic device/history queries in internal/telemetry/ and internal/control/; test replay, clock skew and counter gaps (FR-004, FR-005, FR-006).
 - [X] T015 [US1] Wire protected setup/sign-in and first-agent enrollment views in apps/web/src/views/setup.tsx and apps/web/src/lib/api.ts, including token-file instructions and secret-safe errors (FR-001, FR-002, FR-019).
-- [X] T016 [US1] Replace fixture-only inventory/current host readings with authenticated queries in apps/web/src/views/systems.tsx and apps/web/src/views/device.tsx while retaining isolated demo mode (FR-004, FR-005, FR-015, FR-019).
+- [X] T016 [US1] Replace fixture-only inventory/current host readings with authenticated queries in apps/web/src/views/systems.tsx and apps/web/src/views/device.tsx; production views never fabricate operational data (FR-004, FR-005, FR-015, FR-019).
 - [ ] T017 [US1] Create scripts/test-first-agent.sh and record real systemd-host setup, renewal/revocation, restart persistence and loss-of-contact evidence against SC-001, SC-002 and SC-012.
 
 ## Phase 4: US7 — Self-hosting and recovery (P1)
@@ -91,7 +91,7 @@ Independent test: deterministic real-storage fixture including gaps, conflicting
 - [X] T046 [US4] Implement bounded historical queries/aggregation and all filter fields in internal/control/devices.go and internal/telemetry/query.go; preserve gaps, units and min/max through downsampling (FR-015).
 - [X] T047 [US4] Complete shadcn host charts, time selection, service state, inventory filters and API error/retry behavior in apps/web/src/views/device.tsx and apps/web/src/views/systems.tsx (FR-015, FR-019).
 - [X] T048 [US4] Implement topology graph plus equivalent keyboard-accessible list/evidence inspector in apps/web/src/views/network.tsx; keep logical/physical confidence distinct (FR-016, FR-017, FR-018).
-- [ ] T049 [US4] Verify dark UI at 360/1440 pixels, chart keyboard tooltips, meaningful status text, reduced motion, no-data/error states and demo isolation in tests/e2e/monitoring.spec.ts; record SC-006 and SC-007 (FR-018, FR-019).
+- [ ] T049 [US4] Verify dark UI at 360/1440 pixels, chart keyboard tooltips, meaningful status text, reduced motion, no-data/error states and absence of fabricated data in tests/e2e/monitoring.spec.ts; record SC-006 and SC-007 (FR-018, FR-019).
 
 ## Phase 9: US6 — Extensible service collectors (P2)
 

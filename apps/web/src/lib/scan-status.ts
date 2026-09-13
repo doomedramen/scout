@@ -1,4 +1,4 @@
-import type { Device, ScanStatus, ScanVantage } from "@/lib/api";
+import type { Device, ScanRun, ScanStatus, ScanVantage } from "@/lib/api";
 
 export function humanizeScanValue(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -44,4 +44,32 @@ export function scanActiveRunLabel(status: ScanStatus | undefined): string | nul
   if (!run) return null;
   if (run.cancellationRequested) return "Cancellation requested; waiting for the scanner to acknowledge.";
   return `Active ${humanizeScanValue(run.state)} run · ${run.attemptsCompleted}/${run.attemptsPlanned} attempts`;
+}
+
+export function scanRunOutcomeSummary(run: ScanRun | null | undefined): string {
+  if (!run) return "none reported";
+  const counts = run.outcomeCounts;
+  return [
+    `open ${counts.open}`,
+    `closed ${counts.closed}`,
+    `filtered ${counts.filtered}`,
+    `unreachable ${counts.unreachable}`,
+    `skipped ${counts.skipped}`,
+    `scanner errors ${counts.scannerError}`,
+  ].join(" · ");
+}
+
+export function scanRunSummaryLabel(run: ScanRun | null | undefined): string {
+  if (!run) return "No scan has completed yet.";
+  const timestamp = run.finishedAt ?? run.scheduledAt;
+  return `${humanizeScanValue(run.state)} · ${formatScanTime(timestamp)} · ${run.attemptsCompleted}/${run.attemptsPlanned} attempts`;
+}
+
+export function scanStatusNote(status: ScanStatus | undefined): string | null {
+  const run = status?.lastRun;
+  if (run?.errorCode) return `Error: ${humanizeScanValue(run.errorCode)}`;
+  if (run?.partialReason) return `Partial: ${humanizeScanValue(run.partialReason)}`;
+  if (status?.coverageState === "stale") return "Evidence is stale until a complete run succeeds.";
+  if (status?.coverageState === "unknown") return "No scan evidence has been completed yet.";
+  return null;
 }

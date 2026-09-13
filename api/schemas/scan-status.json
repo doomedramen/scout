@@ -9,6 +9,7 @@
     "lastCompletedAt",
     "nextScheduledAt",
     "activeRun",
+    "lastRun",
     "vantages",
     "coverageState",
     "partialReason",
@@ -23,6 +24,7 @@
     "lastCompletedAt": { "type": ["string", "null"], "format": "date-time" },
     "nextScheduledAt": { "type": ["string", "null"], "format": "date-time" },
     "activeRun": { "anyOf": [{ "$ref": "scan-run.json" }, { "type": "null" }] },
+    "lastRun": { "anyOf": [{ "$ref": "scan-run.json" }, { "type": "null" }] },
     "vantages": {
       "type": "array",
       "maxItems": 17,

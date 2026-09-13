@@ -9,7 +9,10 @@ import {
   humanizeScanValue,
   scanActiveRunLabel,
   scanCoverageLabel,
+  scanRunOutcomeSummary,
+  scanRunSummaryLabel,
   scanStatusIsPaused,
+  scanStatusNote,
   scanVantageCapabilities,
   scanVantageFreshness,
   scanVantageLabel,
@@ -367,6 +370,22 @@ export function ScopesView() {
                         {scanActiveRunLabel(scanStatuses[scope.id]) && (
                           <small>{scanActiveRunLabel(scanStatuses[scope.id])}</small>
                         )}
+                        <div className="scope-run-summary" aria-label="Latest scan summary">
+                          <small>
+                            <strong>Last run</strong> · {scanRunSummaryLabel(scanStatuses[scope.id].lastRun)}
+                          </small>
+                          <small>
+                            <strong>Outcome counts</strong> · {scanRunOutcomeSummary(scanStatuses[scope.id].lastRun)}
+                          </small>
+                          {scanStatusNote(scanStatuses[scope.id]) && (
+                            <small>{scanStatusNote(scanStatuses[scope.id])}</small>
+                          )}
+                        </div>
+                        <small>
+                          Retention lag {scanStatuses[scope.id].retention.lagSeconds}s
+                          {scanStatuses[scope.id].retention.blocked ? " · cleanup blocked by retained evidence" : ""} ·
+                          queue {scanStatuses[scope.id].queue.activeRuns} active
+                        </small>
                         <div className="scope-vantages" aria-label="Assigned scan vantages">
                           {scanStatuses[scope.id].vantages.map((vantage) => (
                             <div className="scope-vantage" key={`${vantage.scanner.kind}:${vantage.scanner.id}`}>

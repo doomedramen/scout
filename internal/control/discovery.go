@@ -594,6 +594,7 @@ type scanStatusResponse struct {
 	LastCompletedAt        *time.Time            `json:"lastCompletedAt"`
 	NextScheduledAt        *time.Time            `json:"nextScheduledAt"`
 	ActiveRun              *scanRunResponse      `json:"activeRun"`
+	LastRun                *scanRunResponse      `json:"lastRun"`
 	Vantages               []scanVantageResponse `json:"vantages"`
 	CoverageState          string                `json:"coverageState"`
 	PartialReason          *string               `json:"partialReason"`
@@ -651,6 +652,8 @@ func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
 		if latestScheduled == nil || run.ScheduledAt.After(latestScheduled.ScheduledAt) {
 			copy := run
 			latestScheduled = &copy
+			view := a.scanRunResponse(r.Context(), run)
+			status.LastRun = &view
 		}
 		if isScanRunActive(run.State) {
 			if status.ActiveRun == nil {
@@ -711,9 +714,14 @@ func (a *App) scanStatus(w http.ResponseWriter, r *http.Request) {
 			activeCount++
 		}
 	}
-	evidenceBefore := now.Add(-30 * 24 * time.Hour)
-	runsBefore := now.Add(-90 * 24 * time.Hour)
-	status.Retention = scanRetentionResponse{EvidenceBefore: &evidenceBefore, RunsBefore: &runsBefore, LagSeconds: 0, Blocked: workspace.TelemetryBackpressure}
+	cleanup, err := a.Store.ScanCleanupStatus(r.Context(), now)
+	if err != nil {
+		writeMappedError(w, r, err)
+		return
+	}
+	evidenceBefore := cleanup.EvidenceBefore
+	runsBefore := cleanup.RunsBefore
+	status.Retention = scanRetentionResponse{EvidenceBefore: &evidenceBefore, RunsBefore: &runsBefore, LagSeconds: cleanup.LagSeconds, Blocked: cleanup.Blocked || workspace.TelemetryBackpressure}
 	status.Queue = scanQueueResponse{ActiveRuns: activeCount, PendingPages: 0, Backpressure: workspace.TelemetryBackpressure}
 	writeJSON(w, http.StatusOK, status)
 }

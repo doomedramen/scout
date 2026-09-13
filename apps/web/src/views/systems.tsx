@@ -1,21 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowUpRight,
-  Cpu,
-  HardDrive,
-  MemoryStick,
-  Network,
-  Radio,
-  Search,
-  Server,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ArrowUpRight, Cpu, HardDrive, MemoryStick, Network, Search, Server, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { api, APIError, type Candidate, type Device } from "@/lib/api";
-import { demoDevices, type Device as DemoDevice } from "@/demo";
 
 const candidateAccessStates = new Set([
   "discovered",
@@ -113,51 +102,18 @@ function candidateDevice(candidate: Candidate): Device {
   };
 }
 
-function demoToLive(item: DemoDevice, index: number): Device {
-  const observedAt = new Date().toISOString();
-  return {
-    id: "demo-" + index,
-    displayName: item.name,
-    platform: "linux",
-    architecture: "amd64",
-    lifecycle: "enrolled",
-    addresses: [item.address],
-    agentVersion: item.version === "—" ? undefined : item.version,
-    availability: item.status === "Offline" ? "offline" : "online",
-    metricFreshness: {},
-    currentMetrics: {
-      "cpu.utilization": { value: item.cpu, unit: "percent", availability: "current", observedAt },
-      "memory.used_percent": { value: item.memory, unit: "percent", availability: "current", observedAt },
-      "filesystem.used_percent": { value: item.disk, unit: "percent", availability: "current", observedAt },
-      "network.receive_rate": {
-        value: item.network * 1024,
-        unit: "bytes_per_second",
-        availability: "current",
-        observedAt,
-      },
-      "network.transmit_rate": { value: 0, unit: "bytes_per_second", availability: "current", observedAt },
-    },
-    collectorStates: [],
-    revision: 1,
-  };
-}
-
 export function SystemsView({
-  demo,
   query,
   onQuery,
   onSelect,
-  onSetup,
 }: {
-  demo: boolean;
   query: string;
   onQuery: (value: string) => void;
   onSelect: (device: Device) => void;
-  onSetup: () => void;
 }) {
   const [items, setItems] = useState<Device[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [loading, setLoading] = useState(!demo);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [health, setHealth] = useState("");
@@ -165,10 +121,6 @@ export function SystemsView({
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
-    if (demo) {
-      setLoading(false);
-      return;
-    }
     let cancelled = false;
     setError("");
     const params = new URLSearchParams();
@@ -197,10 +149,9 @@ export function SystemsView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, health, monitoringState, query, retry]);
+  }, [health, monitoringState, query, retry]);
 
   const devices = useMemo(() => {
-    if (demo) return demoDevices.map(demoToLive);
     // Pending invitation records are useful inventory state. Keep them visible as "Needs access"
     // so an owner can resume setup after a refresh instead of losing the recovery path.
     const realDevices = items;
@@ -213,7 +164,7 @@ export function SystemsView({
       .map(candidateDevice);
     const realIDs = new Set(realDevices.map((device) => device.id));
     return [...realDevices, ...provisionalDevices.filter((device) => !realIDs.has(device.id))];
-  }, [candidates, demo, health, items, monitoringState]);
+  }, [candidates, health, items, monitoringState]);
   const filtered = useMemo(
     () =>
       devices.filter((device) =>
@@ -274,66 +225,60 @@ export function SystemsView({
               onChange={(event) => onQuery(event.target.value)}
             />
           </div>
-          {!demo && (
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetTrigger asChild>
-                <Button type="button" variant="outline" className="system-filter-trigger">
-                  <SlidersHorizontal size={15} />
-                  Filters{secondaryFilterCount ? ` (${secondaryFilterCount})` : ""}
+          <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <SheetTrigger asChild>
+              <Button type="button" variant="outline" className="system-filter-trigger">
+                <SlidersHorizontal size={15} />
+                Filters{secondaryFilterCount ? ` (${secondaryFilterCount})` : ""}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="filter-sheet">
+              <SheetHeader>
+                <SheetTitle>System filters</SheetTitle>
+              </SheetHeader>
+              <div className="filter-sheet-fields">
+                <label>
+                  Health
+                  <select aria-label="Health filter" value={health} onChange={(event) => setHealth(event.target.value)}>
+                    <option value="">All health</option>
+                    <option value="healthy">Healthy</option>
+                    <option value="degraded">Degraded</option>
+                    <option value="offline">Offline</option>
+                    <option value="needs_access">Needs access</option>
+                    <option value="revoked">Revoked</option>
+                  </select>
+                </label>
+                <label>
+                  Monitoring
+                  <select
+                    aria-label="Monitoring filter"
+                    value={monitoringState}
+                    onChange={(event) => setMonitoringState(event.target.value)}
+                  >
+                    <option value="">All monitoring</option>
+                    <option value="monitored">Monitored</option>
+                    <option value="unmonitored">Unmonitored</option>
+                    <option value="revoked">Revoked</option>
+                  </select>
+                </label>
+              </div>
+              <SheetFooter>
+                <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>
+                  Clear filters
                 </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="filter-sheet">
-                <SheetHeader>
-                  <SheetTitle>System filters</SheetTitle>
-                </SheetHeader>
-                <div className="filter-sheet-fields">
-                  <label>
-                    Health
-                    <select
-                      aria-label="Health filter"
-                      value={health}
-                      onChange={(event) => setHealth(event.target.value)}
-                    >
-                      <option value="">All health</option>
-                      <option value="healthy">Healthy</option>
-                      <option value="degraded">Degraded</option>
-                      <option value="offline">Offline</option>
-                      <option value="needs_access">Needs access</option>
-                      <option value="revoked">Revoked</option>
-                    </select>
-                  </label>
-                  <label>
-                    Monitoring
-                    <select
-                      aria-label="Monitoring filter"
-                      value={monitoringState}
-                      onChange={(event) => setMonitoringState(event.target.value)}
-                    >
-                      <option value="">All monitoring</option>
-                      <option value="monitored">Monitored</option>
-                      <option value="unmonitored">Unmonitored</option>
-                      <option value="revoked">Revoked</option>
-                    </select>
-                  </label>
-                </div>
-                <SheetFooter>
-                  <Button type="button" variant="ghost" onClick={clearFilters} disabled={!hasFilters}>
-                    Clear filters
-                  </Button>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
-          )}
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
       {loading ? (
         <div className="empty" role="status">
-          <Radio size={30} />
+          <Server size={30} />
           <h2>Loading systems</h2>
         </div>
       ) : error ? (
         <div className="empty" role="alert">
-          <Radio size={30} />
+          <Server size={30} />
           <h2>Systems unavailable</h2>
           <p>{error}</p>
           <Button variant="outline" onClick={() => setRetry((value) => value + 1)}>
@@ -366,10 +311,7 @@ export function SystemsView({
                     <Network aria-hidden="true" />
                     Network
                   </th>
-                  <th>
-                    <Radio aria-hidden="true" />
-                    State
-                  </th>
+                  <th>State</th>
                   <th>
                     <span className="sr-only">Details</span>
                   </th>
@@ -385,29 +327,21 @@ export function SystemsView({
           {!filtered.length && (
             <div className="empty">
               <div className="empty-icon">
-                <Radio size={30} />
+                <Server size={30} />
               </div>
               <h2>{hasFilters ? "No matching systems" : "No systems monitored"}</h2>
-              {!hasFilters && <p>Connect a Linux agent to add the first system.</p>}
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (hasFilters) {
-                    clearFilters();
-                  } else {
-                    onSetup();
-                  }
-                }}
-              >
-                {hasFilters ? "Clear filters" : "Agent setup"} <ArrowUpRight size={14} />
-              </Button>
-              {!hasFilters && !demo && <small>Operational data stays separate from demo mode.</small>}
+              {!hasFilters && (
+                <p>Found systems appear after a network scan. Use + in the top navigation to add one manually.</p>
+              )}
+              {hasFilters && (
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear filters <ArrowUpRight size={14} />
+                </Button>
+              )}
             </div>
           )}
           <div className="table-footer">
-            <span>
-              {filtered.length} systems{demo ? " · illustrative data" : ""}
-            </span>
+            <span>{filtered.length} systems</span>
           </div>
         </>
       )}

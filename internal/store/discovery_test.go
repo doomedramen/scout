@@ -67,6 +67,84 @@ func TestCandidatesDeduplicateAndPreserveExclusions(t *testing.T) {
 	}
 }
 
+func TestScanHistoryCleanupPreservesUnresolvedEvidenceAndResumesInBatches(t *testing.T) {
+	ctx := context.Background()
+	s, scope, policy := newScanFixture(t)
+	now := s.Now()
+	old := now.Add(-31 * 24 * time.Hour)
+	veryOld := now.Add(-91 * 24 * time.Hour)
+	protectedRun := ScanRun{
+		ID: "protected-scan-run", ScopeID: scope.ID, ScopeRevision: policy.Revision, ScannerKind: "server", ScannerID: "control-server-1",
+		Trigger: "schedule", State: ScanRunCompleted, ScheduledAt: veryOld, FinishedAt: timePtr(veryOld.Add(time.Minute)), AssignmentExpiresAt: veryOld.Add(10 * time.Minute),
+		PolicySnapshot: ScanPolicySnapshot{Ranges: scope.Ranges, Exclusions: scope.Exclusions, EntryPoints: policy.EntryPoints, Limits: policy.Limits}, TargetsPlanned: 1, AttemptsPlanned: 1,
+	}
+	removableRun := protectedRun
+	removableRun.ID = "removable-scan-run"
+	removableRun.FinishedAt = timePtr(veryOld.Add(2 * time.Minute))
+	protectedObservation := EntryPointObservation{
+		ID: "protected-observation", RunID: protectedRun.ID, PageOrdinal: 0, ScopeID: scope.ID, ScopeRevision: policy.Revision,
+		ScannerKind: "server", ScannerID: protectedRun.ScannerID, Address: "192.0.2.10", Transport: ScanTransportTCP, Port: 22,
+		EntryPointID: policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: old, ReceivedAt: old, ExpiresAt: old.Add(24 * time.Hour), Actionable: true,
+	}
+	removableObservation := protectedObservation
+	removableObservation.ID = "removable-observation"
+	removableObservation.RunID = removableRun.ID
+	removableObservation.Address = "192.0.2.11"
+	candidate := Candidate{ID: "candidate-with-open-request", ScopeID: scope.ID, SiteID: scope.SiteID, Address: protectedObservation.Address, Source: "active-scan", State: "needs_credentials", FirstSeen: old, LastSeen: old, ExpiresAt: old.Add(15 * time.Minute), EvidenceIDs: []string{protectedObservation.ID}}
+	request := AccessRequest{ID: "open-request", CandidateID: candidate.ID, DeviceID: candidate.ID, ScopeID: scope.ID, AccessMethod: ScanAccessSSH, Endpoint: "192.0.2.10:22", EntryPointObservationID: protectedObservation.ID, ReasonCode: "missing_credentials", State: "open", LastAttempt: old, SafeDetails: map[string]string{"target": "192.0.2.10:22"}}
+	if err := s.mutate(ctx, func(state *State) error {
+		state.ScanRuns[protectedRun.ID] = protectedRun
+		state.ScanRuns[removableRun.ID] = removableRun
+		state.ScanResultReceipts[scanReceiptKey(protectedRun.ID, 0)] = ScanResultReceipt{RunID: protectedRun.ID, PageOrdinal: 0, ContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", AcceptedAt: old, ResultCount: 1, IsFinal: true}
+		state.ScanResultReceipts[scanReceiptKey(removableRun.ID, 0)] = ScanResultReceipt{RunID: removableRun.ID, PageOrdinal: 0, ContentHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", AcceptedAt: old, ResultCount: 1, IsFinal: true}
+		state.EntryPointObservations[protectedObservation.ID] = protectedObservation
+		state.EntryPointObservations[removableObservation.ID] = removableObservation
+		state.Candidates[candidateKey(scope.ID, candidate.Address)] = candidate
+		state.AccessRequests[request.ID] = request
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := s.CleanupScanHistory(ctx, now, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ObservationsDeleted != 1 || first.ReceiptsDeleted != 0 || first.RunsDeleted != 0 || !first.MoreWork {
+		t.Fatalf("first cleanup batch = %+v, want one evidence deletion and more work", first)
+	}
+	second, err := s.CleanupScanHistory(ctx, now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ObservationsDeleted != 0 || second.ReceiptsDeleted != 1 || second.RunsDeleted != 1 || second.MoreWork || !second.Blocked {
+		t.Fatalf("resumed cleanup batch = %+v", second)
+	}
+	if _, err := s.GetEntryPointObservation(ctx, protectedObservation.ID); err != nil {
+		t.Fatalf("unresolved-request evidence was deleted: %v", err)
+	}
+	if _, err := s.GetScanRun(ctx, protectedRun.ID); err != nil {
+		t.Fatalf("run holding unresolved evidence was deleted: %v", err)
+	}
+	if _, err := s.GetCandidate(ctx, candidate.ID); err != nil {
+		t.Fatalf("candidate was deleted during cleanup: %v", err)
+	}
+	requests, err := s.ListAccessRequestsForCandidate(ctx, candidate.ID)
+	if err != nil || len(requests) != 1 || requests[0].State != "open" {
+		t.Fatalf("open request after cleanup = %+v err=%v", requests, err)
+	}
+	if _, err := s.GetEntryPointObservation(ctx, removableObservation.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removable evidence survived cleanup: %v", err)
+	}
+	if _, err := s.GetScanRun(ctx, removableRun.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removable run survived cleanup: %v", err)
+	}
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
+}
+
 func TestCurrentEntryPointFilterKeepsNewestVantageEvidenceAndContradiction(t *testing.T) {
 	ctx := context.Background()
 	s, scope, policy := newScanFixture(t)

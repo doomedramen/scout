@@ -14,26 +14,29 @@ import (
 )
 
 const (
-	DefaultServerVantageID  = "control-server"
-	defaultCoordinatorLease = 30 * time.Second
-	defaultCoordinatorPoll  = 5 * time.Second
-	defaultFenceInterval    = 100 * time.Millisecond
+	DefaultServerVantageID    = "control-server"
+	defaultCoordinatorLease   = 30 * time.Second
+	defaultCoordinatorPoll    = 5 * time.Second
+	defaultCoordinatorCleanup = 5 * time.Minute
+	defaultFenceInterval      = 100 * time.Millisecond
 )
 
 // Coordinator materializes and executes the control-server vantage. Agent
 // runs are deliberately handed off through desired state and are not dialed
 // by this process.
 type Coordinator struct {
-	Store         *store.Store
-	Policy        *policy.Engine
-	Scanner       Scanner
-	ServerID      string
-	Logf          func(string, ...any)
-	LeaseDuration time.Duration
-	RunDeadline   time.Duration
-	PollInterval  time.Duration
-	FenceInterval time.Duration
-	Now           func() time.Time
+	Store           *store.Store
+	Policy          *policy.Engine
+	Scanner         Scanner
+	ServerID        string
+	Logf            func(string, ...any)
+	LeaseDuration   time.Duration
+	RunDeadline     time.Duration
+	PollInterval    time.Duration
+	FenceInterval   time.Duration
+	CleanupInterval time.Duration
+	Now             func() time.Time
+	lastCleanupAt   time.Time
 }
 
 func NewCoordinator(repository *store.Store, engine *policy.Engine, scanner Scanner) *Coordinator {
@@ -327,6 +330,17 @@ func (c *Coordinator) leaseDuration(run store.ScanRun) time.Duration {
 func (c *Coordinator) RunOnce(ctx context.Context) ([]store.ScanRun, error) {
 	if c == nil || c.Store == nil || c.Policy == nil || c.Scanner == nil {
 		return nil, store.ErrInvalid
+	}
+	cleanupInterval := c.CleanupInterval
+	if cleanupInterval <= 0 {
+		cleanupInterval = defaultCoordinatorCleanup
+	}
+	now := c.clock()
+	if c.lastCleanupAt.IsZero() || !now.Before(c.lastCleanupAt.Add(cleanupInterval)) {
+		if _, err := c.Store.CleanupScanHistory(ctx, now, 0); err != nil {
+			return nil, err
+		}
+		c.lastCleanupAt = now
 	}
 	leased, err := c.LeaseDue(ctx)
 	if err != nil {

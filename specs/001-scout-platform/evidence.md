@@ -33,8 +33,10 @@ This file records executed verification only. Planned targets from the specifica
 - T009–T016: protected singleton setup, Argon2id password handling, MFA and
   recovery flows, CSRF/session boundaries, one-use device invitations, CSR
   issuance, Linux host fixtures, durable agent identity, atomic batch replay
-  handling, heartbeat/freshness projection, authenticated inventory queries,
-  and isolated demo UI are implemented and covered by unit/integration tests.
+  handling, heartbeat/freshness projection, and authenticated inventory
+  queries are implemented and covered by unit/integration tests. The
+  fixture-only demo UI has since been removed; production views now show only
+  authenticated operational data and explicit no-data states.
 - First-agent fixture: `./scripts/test-first-agent.sh` passed
   `TestRuntimeEnrollmentPersistenceAndReporting`. A runtime enrolled once,
   persisted its identity with mode `0600`, reported a real collector batch and
@@ -104,16 +106,41 @@ This file records executed verification only. Planned targets from the specifica
   accepted and rejected authentication, transport, secret, trust, worker,
   update, audit, and decommission cases. Production enrollment and updates
   remain disabled by default and still require owner-authorized lab evidence.
-- T063: measured web build output before splitting was 664.85 kB JavaScript
-  (198.88 kB gzip) with a large-chunk warning. Lazy-loading host detail now
-  produces a 326.96 kB initial chunk (98.54 kB gzip) and a 339.19 kB detail
-  chunk (101.55 kB gzip), with no large-chunk warning. A real browser viewport
-  and keyboard journey at both 360px and 1440px remains open.
+- T063: the latest web build produces a 904.82 kB initial JavaScript chunk
+  (268.13 kB gzip) and a 19.36 kB lazy host-detail chunk (6.24 kB gzip), and
+  still reports the existing large-chunk warning. Playwright now covers the
+  manual-agent `+` action and responsive 360px, 768px, and 1440px journeys;
+  dark-mode, reduced-motion, chart-tooltip, and full accessibility review
+  evidence remains open.
 - Still open: T017 native Linux/systemd acceptance, T022 clean-host
   deployment/restore, T030 power-loss VM update stages, T044 live
   second-vantage placement, T049 browser viewport/accessibility journey, T055
   live Docker/Proxmox version and ACL compatibility, T059 full offline
   decommission lab, and T061 live capacity/disk-pressure measurement.
+
+## Current checkpoint: scan history and manual-agent navigation
+
+- T036–T040: `go test ./...` and the targeted store/control/discovery/agent and
+  contract suites passed. Scan status now projects the latest run, including
+  bounded attempt progress and outcome counts. Run list/detail and cancel
+  responses preserve truthful state and redaction. Candidate responses remain
+  bounded and cursor-paginated.
+- Scan cleanup is serialized through the workspace mutation lock, deletes old
+  observations, receipts, and terminal runs in bounded batches, preserves
+  evidence referenced by unresolved access requests, and removes stale
+  projections without deleting candidates or requests. SQL restart and
+  coordinator cleanup tests passed; cleanup lag and blockers are exposed in
+  scan status and the scope view.
+- The authenticated browser suite passed all 8 tests in
+  `tests/e2e/playwright/{access,discovery,first-run}.spec.ts`, including the
+  automatic access journey, unsupported-service handling, scan progress,
+  credential redaction, keyboard activation, and 360/768/1440-pixel layout
+  checks. `npm run check`, `npm run build`, `npm run lint`,
+  `npm run format:check`, `npm test`, and `git diff --check` passed. No
+  production endpoint, device, or credential was contacted.
+- The web console no longer ships the fixture demo mode or `apps/web/src/demo.ts`.
+  The top-bar `+` button is the sole manual-agent entry point and has a
+  descriptive accessible name, title, expanded state, and 44px hit area.
 
 ## Final quality gate and handover
 

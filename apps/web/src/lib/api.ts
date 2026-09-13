@@ -233,6 +233,7 @@ export type ScanStatus = {
   lastCompletedAt: string | null;
   nextScheduledAt: string | null;
   activeRun: ScanRun | null;
+  lastRun: ScanRun | null;
   vantages: ScanVantage[];
   coverageState: ScanCoverageState;
   partialReason: string | null;

@@ -102,8 +102,8 @@ boundary and configure the TLS certificate for the actual hostname.
 
 ## First Linux agent
 
-After owner setup, create a site, then open **Systems → Agent setup**. The
-panel creates a five-minute, device-bound invitation. Discovered Linux targets
+After owner setup, create a site, then open **+ (Add agent manually)** in the
+top navigation. The panel creates a five-minute, device-bound invitation. Discovered Linux targets
 are normally enrolled by the server-local worker after the owner supplies SSH
 access and host trust; the native installer is retained as a recovery path.
 The browser does not install a privileged service itself.

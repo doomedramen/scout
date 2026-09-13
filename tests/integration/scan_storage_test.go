@@ -123,6 +123,109 @@ func TestSQLScanStorageIsIdempotentFencedAndRestartable(t *testing.T) {
 
 }
 
+func TestSQLScanHistoryCleanupIsRestartSafeAndProtectsOpenRequests(t *testing.T) {
+	db := openDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := store.RunMigrations(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 9, 13, 10, 0, 0, 0, time.UTC)
+	old := now.Add(-91 * 24 * time.Hour)
+	repository := store.NewSQL(db)
+	clock := old
+	repository.SetClock(func() time.Time { return clock })
+	site, err := repository.CreateSite(ctx, store.Site{ID: store.NewID(), Name: "sql-retention-" + store.NewID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope, err := repository.CreateScope(ctx, store.Scope{ID: store.NewID(), SiteID: site.ID, Ranges: []string{"198.20.0.0/24"}, AllowedMethods: []string{"tcp"}, Ports: []int{22}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := repository.ScanPolicy(ctx, scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	createOldRun := func(scannerID, address string) (store.ScanRun, store.EntryPointObservation, store.Candidate) {
+		t.Helper()
+		run, runErr := repository.CreateScanRun(ctx, store.ScanRun{
+			ID: store.NewID(), ScopeID: scope.ID, ScopeRevision: policy.Revision, ScannerKind: "server", ScannerID: scannerID,
+			ScheduledAt: old, AssignmentExpiresAt: old.Add(time.Minute), PolicySnapshot: store.ScanPolicySnapshot{Ranges: scope.Ranges, EntryPoints: policy.EntryPoints, Limits: policy.Limits},
+			TargetsPlanned: 1, AttemptsPlanned: 1,
+		})
+		if runErr != nil {
+			t.Fatal(runErr)
+		}
+		leased, leaseErr := repository.LeaseScanRun(ctx, run.ID, scannerID, time.Minute)
+		if leaseErr != nil {
+			t.Fatal(leaseErr)
+		}
+		if _, startErr := repository.StartScanRun(ctx, run.ID, scannerID, leased.LeaseEpoch); startErr != nil {
+			t.Fatal(startErr)
+		}
+		observation := store.EntryPointObservation{ID: store.NewID(), RunID: run.ID, PageOrdinal: 0, ScopeID: scope.ID, ScopeRevision: policy.Revision, ScannerKind: "server", ScannerID: scannerID, Address: address, Transport: store.ScanTransportTCP, Port: 22, EntryPointID: policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: old, ReceivedAt: old, ExpiresAt: old.Add(time.Hour)}
+		receipt := store.ScanResultReceipt{RunID: run.ID, PageOrdinal: 0, ContentHash: scannerID + "-retention-receipt", ResultCount: 1, IsFinal: true, AcceptedAt: old}
+		if _, _, acceptErr := repository.AcceptScanResultPage(ctx, receipt, []store.EntryPointObservation{observation}); acceptErr != nil {
+			t.Fatal(acceptErr)
+		}
+		if _, finalizeErr := repository.FinalizeScanRun(ctx, run.ID, scannerID, leased.LeaseEpoch, store.ScanRunCompleted, "", ""); finalizeErr != nil {
+			t.Fatal(finalizeErr)
+		}
+		candidate, candidateErr := repository.UpsertCandidate(ctx, store.Candidate{ScopeID: scope.ID, Address: address, Source: "active-scan", State: "needs_credentials", EvidenceIDs: []string{observation.ID}})
+		if candidateErr != nil {
+			t.Fatal(candidateErr)
+		}
+		return run, observation, candidate
+	}
+
+	protectedRun, protectedObservation, protectedCandidate := createOldRun("retention-protected", "198.20.0.10")
+	removableRun, removableObservation, _ := createOldRun("retention-removable", "198.20.0.11")
+	if _, err := repository.UpsertAccessRequest(ctx, store.AccessRequest{ID: store.NewID(), DeviceID: protectedCandidate.ID, CandidateID: protectedCandidate.ID, ScopeID: scope.ID, AccessMethod: store.ScanAccessSSH, Endpoint: "198.20.0.10:22", EntryPointObservationID: protectedObservation.ID, ReasonCode: "missing_credentials", State: "open", LastAttempt: old}); err != nil {
+		t.Fatal(err)
+	}
+	clock = now
+
+	first, err := repository.CleanupScanHistory(ctx, now, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ObservationsDeleted != 1 || first.MoreWork != true || !first.Blocked {
+		t.Fatalf("first SQL cleanup batch = %+v", first)
+	}
+	second, err := repository.CleanupScanHistory(ctx, now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ObservationsDeleted != 0 || second.ReceiptsDeleted != 1 || second.RunsDeleted != 1 || second.MoreWork || !second.Blocked {
+		t.Fatalf("second SQL cleanup batch = %+v", second)
+	}
+
+	restarted := store.NewSQL(db)
+	restarted.SetClock(func() time.Time { return now })
+	if _, err := restarted.GetScanRun(ctx, protectedRun.ID); err != nil {
+		t.Fatalf("protected run did not survive restart: %v", err)
+	}
+	if _, err := restarted.GetEntryPointObservation(ctx, protectedObservation.ID); err != nil {
+		t.Fatalf("protected evidence did not survive restart: %v", err)
+	}
+	if _, err := restarted.GetScanRun(ctx, removableRun.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("removable run survived restart: %v", err)
+	}
+	if _, err := restarted.GetEntryPointObservation(ctx, removableObservation.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("removable evidence survived restart: %v", err)
+	}
+	if _, err := restarted.GetCandidate(ctx, protectedCandidate.ID); err != nil {
+		t.Fatalf("candidate was removed by cleanup: %v", err)
+	}
+	requests, err := restarted.ListAccessRequestsForCandidate(ctx, protectedCandidate.ID)
+	if err != nil || len(requests) != 1 || requests[0].State != "open" {
+		t.Fatalf("protected access request after restart = %+v err=%v", requests, err)
+	}
+}
+
 type sqlScanAgentFixture struct {
 	repository *store.Store
 	service    *discovery.Service

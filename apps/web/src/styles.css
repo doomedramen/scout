@@ -109,9 +109,6 @@ button:disabled {
 .topbar-notifications > .notification-trigger-label {
   display: none;
 }
-.mobile-demo-toggle {
-  display: none;
-}
 .avatar {
   display: grid;
   place-items: center;
@@ -3336,6 +3333,17 @@ body {
   color: #9da5b2;
   font-size: 10px;
 }
+.scope-run-summary {
+  display: grid;
+  gap: 3px;
+  padding: 5px 0;
+  border-top: 1px solid #2b3037;
+  border-bottom: 1px solid #2b3037;
+}
+.scope-run-summary strong {
+  font-size: 10px;
+  text-transform: none;
+}
 .scope-vantages {
   display: grid;
   gap: 5px;
@@ -5012,13 +5020,6 @@ body {
   .delivery-row > small {
     max-width: none;
     text-align: left;
-  }
-}
-
-/* Keep the mobile shell compact. Navigation lives in the top-bar sheet. */
-@media (max-width: 1023px) {
-  .mobile-demo-toggle {
-    display: inline-flex;
   }
 }
 

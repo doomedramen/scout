@@ -1,9 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
-  Activity,
   BellRing,
   Bell,
-  CircleHelp,
   Cpu,
   Download,
   HardDrive,
@@ -12,7 +10,7 @@ import {
   LayoutList,
   Menu,
   Network,
-  Radio,
+  Plus,
   ScanSearch,
   ServerCog,
   Settings2,
@@ -123,12 +121,11 @@ const LazyDeviceView = lazy(() => import("@/views/device").then(({ DeviceView })
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "signedOut" | "signedIn">("loading");
   const [page, setPage] = useState<Page>(() => pageFromHash());
-  const [demo, setDemo] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Device | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [incidentFocus, setIncidentFocus] = useState("");
-  const [help, setHelp] = useState(false);
+  const [agentSetupOpen, setAgentSetupOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [manageRulesRequest, setManageRulesRequest] = useState(0);
   const [status, setStatus] = useState<Status | null>(null);
@@ -212,7 +209,6 @@ export default function App() {
       <>
         <header className="topbar auth-topbar">
           <a className="brand" href="/" onClick={(event) => event.preventDefault()}>
-            <Radio size={24} />
             <span>Scout</span>
           </a>
           <Badge variant="outline">{status?.mode ?? "Self-hosted"}</Badge>
@@ -266,13 +262,6 @@ export default function App() {
     if (window.location.hash !== hash) window.history.pushState({}, "", hash);
   }
 
-  function toggleDemo() {
-    setDemo((current) => !current);
-    setSelected(null);
-    setSelectedCandidate(null);
-    setQuery("");
-  }
-
   const detail = pageDetails[page];
   const settingsActive = page === "Settings" || settingsPages.some((name) => name === page);
 
@@ -323,7 +312,6 @@ export default function App() {
             navigate("Overview");
           }}
         >
-          <Radio size={24} />
           <span>Scout</span>
         </a>
         <span className="workspace-name">Personal network</span>
@@ -332,23 +320,14 @@ export default function App() {
           <Button
             variant="ghost"
             size="icon"
-            className="mobile-demo-toggle"
-            aria-label={demo ? "Exit demo" : "Explore demo"}
-            title={demo ? "Exit demo" : "Explore demo"}
-            onClick={toggleDemo}
+            aria-label="Add agent manually"
+            title="Add agent manually"
+            aria-expanded={agentSetupOpen}
+            onClick={() => setAgentSetupOpen(true)}
           >
-            {demo ? <Activity size={18} /> : <Radio size={18} />}
+            <Plus size={18} />
           </Button>
           <NotificationMenu active={page === "Notifications"} onViewAll={() => navigate("Notifications")} />
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Setup information"
-            aria-expanded={help}
-            onClick={() => setHelp(!help)}
-          >
-            <CircleHelp size={18} />
-          </Button>
           <div className="avatar" title="Single-owner workspace">
             O
           </div>
@@ -377,24 +356,10 @@ export default function App() {
             <span>Settings</span>
           </button>
         </nav>
-        <Button variant="outline" size="sm" onClick={toggleDemo}>
-          {demo ? <Activity size={14} /> : <Radio size={14} />}
-          {demo ? "Exit demo" : "Explore demo"}
-        </Button>
       </div>
       <main>
         {status?.recoveryMode && <RecoveryView onChanged={() => window.location.reload()} />}
-        {demo && (
-          <div className="notice demo-notice">
-            <Activity size={15} />
-            <span>
-              Demo workspace. Devices, metrics, and network relationships are illustrative and never enter operational
-              storage.
-            </span>
-            <Badge variant="outline">Sample data</Badge>
-          </div>
-        )}
-        {help && <AgentSetupView onClose={() => setHelp(false)} />}
+        {agentSetupOpen && <AgentSetupView onClose={() => setAgentSetupOpen(false)} />}
         {selectedCandidate && page === "Network" ? (
           <CandidateView selected={selectedCandidate} onBack={() => navigate("Network")} onOpenAccess={openAccess} />
         ) : selected && (page === "Systems" || page === "Network") ? (
@@ -407,7 +372,6 @@ export default function App() {
           >
             <LazyDeviceView
               selected={selected}
-              demo={demo}
               onBack={() => navigate(page)}
               onChanged={setSelected}
               onOpenIncident={openIncident}
@@ -420,12 +384,6 @@ export default function App() {
                 <div>
                   <h1>{detail.title}</h1>
                 </div>
-                {page === "Systems" && (
-                  <Button variant="outline" onClick={() => setHelp(true)}>
-                    <Terminal data-icon="inline-start" />
-                    Agent setup
-                  </Button>
-                )}
                 {page === "Incidents" && (
                   <Button variant="outline" onClick={() => setManageRulesRequest((current) => current + 1)}>
                     <ShieldAlert data-icon="inline-start" />
@@ -435,23 +393,9 @@ export default function App() {
               </div>
             )}
             {page === "Overview" && (
-              <OverviewView
-                demo={demo}
-                onNavigate={(next) => navigate(next)}
-                onSelect={openDevice}
-                onIncident={openIncident}
-                onSetup={() => setHelp(true)}
-              />
+              <OverviewView onNavigate={(next) => navigate(next)} onSelect={openDevice} onIncident={openIncident} />
             )}
-            {page === "Systems" && (
-              <SystemsView
-                demo={demo}
-                query={query}
-                onQuery={setQuery}
-                onSelect={openDevice}
-                onSetup={() => setHelp(true)}
-              />
-            )}
+            {page === "Systems" && <SystemsView query={query} onQuery={setQuery} onSelect={openDevice} />}
             {page === "Incidents" && (
               <IncidentsView
                 focusIncidentId={incidentFocus}
@@ -459,7 +403,7 @@ export default function App() {
                 onFocusConsumed={() => setIncidentFocus("")}
               />
             )}
-            {page === "Network" && <NetworkView demo={demo} onSelect={openDevice} onCandidateSelect={openCandidate} />}
+            {page === "Network" && <NetworkView onSelect={openDevice} onCandidateSelect={openCandidate} />}
             {page === "Notifications" && <NotificationsView />}
             {page === "Scopes" && <ScopesView />}
             {page === "Enrollment" && <EnrollmentView />}

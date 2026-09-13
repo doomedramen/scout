@@ -3,6 +3,7 @@ package control
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,8 +124,23 @@ func TestScanPolicyAndOnDemandRoutes(t *testing.T) {
 	}
 
 	status := getRequest(t, client, server.URL+"/api/v1/scopes/"+scope.ID+"/scan-status", login.Cookies, nil)
-	if status.Code != http.StatusOK || !strings.Contains(status.Body, `"activeRun"`) || !strings.Contains(status.Body, `"vantages"`) {
+	if status.Code != http.StatusOK || !strings.Contains(status.Body, `"activeRun"`) || !strings.Contains(status.Body, `"lastRun"`) || !strings.Contains(status.Body, `"vantages"`) {
 		t.Fatalf("scan status: %d %s", status.Code, status.Body)
+	}
+	if !strings.Contains(status.Body, `"lastRun":{"id":"`+run.ID+`"`) {
+		t.Fatalf("scan status did not project the queued run: %s", status.Body)
+	}
+	runList := getRequest(t, client, server.URL+"/api/v1/scan-runs?scopeId="+scope.ID+"&limit=1", login.Cookies, nil)
+	if runList.Code != http.StatusOK || !strings.Contains(runList.Body, `"id":"`+run.ID+`"`) || strings.Contains(runList.Body, "policySnapshot") {
+		t.Fatalf("scan run list: %d %s", runList.Code, runList.Body)
+	}
+	runDetail := getRequest(t, client, server.URL+"/api/v1/scan-runs/"+run.ID, login.Cookies, nil)
+	if runDetail.Code != http.StatusOK || !strings.Contains(runDetail.Body, `"attemptsCompleted":0`) || !strings.Contains(runDetail.Body, `"outcomeCounts"`) {
+		t.Fatalf("scan run detail: %d %s", runDetail.Code, runDetail.Body)
+	}
+	cancel := postJSON(t, client, server.URL+"/api/v1/scan-runs/"+run.ID+"/cancel", map[string]any{"expectedRevision": scope.Policy.Revision}, login.Cookies, headers)
+	if cancel.Code != http.StatusAccepted || !strings.Contains(cancel.Body, `"state":"cancelled"`) || !strings.Contains(cancel.Body, `"cancellationRequested":true`) {
+		t.Fatalf("scan run cancellation: %d %s", cancel.Code, cancel.Body)
 	}
 
 	policyPatch := doJSONRequest(t, client, http.MethodPatch, server.URL+"/api/v1/scopes/"+scope.ID, map[string]any{
@@ -205,6 +221,19 @@ func TestCandidateRoutesExposeActionableSafeDetail(t *testing.T) {
 	detail := getRequest(t, client, server.URL+"/api/v1/candidates/"+candidate.ID, login.Cookies, nil)
 	if detail.Code != http.StatusOK || !strings.Contains(detail.Body, `"accessRequests"`) || !strings.Contains(detail.Body, `"enrollment":null`) {
 		t.Fatalf("candidate detail: %d %s", detail.Code, detail.Body)
+	}
+	for index := 1; index <= 100; index++ {
+		if _, err := repository.UpsertCandidate(ctx, store.Candidate{ScopeID: scope.ID, Address: fmt.Sprintf("192.0.3.%d", index), State: "discovered", Source: "active-scan"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bounded := getRequest(t, client, server.URL+"/api/v1/candidates?scopeId="+scope.ID+"&limit=100", login.Cookies, nil)
+	var boundedBody struct {
+		Items      []json.RawMessage `json:"items"`
+		NextCursor *string           `json:"nextCursor"`
+	}
+	if bounded.Code != http.StatusOK || json.Unmarshal([]byte(bounded.Body), &boundedBody) != nil || len(boundedBody.Items) != 100 || boundedBody.NextCursor == nil || *boundedBody.NextCursor == "" {
+		t.Fatalf("candidate page was not bounded at 100: %d %+v body=%s", bounded.Code, boundedBody, bounded.Body)
 	}
 	entryPoints := getRequest(t, client, server.URL+"/api/v1/candidates/"+candidate.ID+"/entry-points?limit=1", login.Cookies, nil)
 	if entryPoints.Code != http.StatusOK || !strings.Contains(entryPoints.Body, `"items"`) || !strings.Contains(entryPoints.Body, `"nextCursor"`) {

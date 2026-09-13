@@ -82,22 +82,6 @@ function identifierValues(device: Device, kind: string): string[] {
     .filter((value, index, values) => values.indexOf(value) === index);
 }
 
-function demoSeries(base: number, seed: number): ChartPoint[] {
-  return Array.from({ length: 61 }, (_, index) => ({
-    time: index - 60,
-    value:
-      index === 60
-        ? base
-        : Number(
-            Math.min(
-              97,
-              Math.max(2, base + Math.sin(index * 0.78 + seed) * 5 + (index > 37 && index < 44 ? 24 : 0)),
-            ).toFixed(1),
-          ),
-    availability: "current",
-  }));
-}
-
 function seriesFor(series: MetricSeries[], metric: string, entityId = "host"): MetricSeries | undefined {
   return (
     series.find((item) => item.metric === metric && (item.entityId ?? "host") === entityId) ??
@@ -206,13 +190,11 @@ function colorForMetric(metric: string): string {
 
 export function DeviceView({
   selected,
-  demo,
   onBack,
   onChanged,
   onOpenIncident,
 }: {
   selected: Device;
-  demo: boolean;
   onBack: () => void;
   onChanged?: (device: Device) => void;
   onOpenIncident?: (incidentId: string) => void;
@@ -223,7 +205,7 @@ export function DeviceView({
   const [range, setRange] = useState<RangeKey>("1h");
   const [reload, setReload] = useState(0);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(!demo);
+  const [loading, setLoading] = useState(true);
   const [operationError, setOperationError] = useState("");
   const [operationMessage, setOperationMessage] = useState("");
   const [operationBusy, setOperationBusy] = useState(false);
@@ -250,10 +232,6 @@ export function DeviceView({
   }, [selected]);
 
   useEffect(() => {
-    if (demo) {
-      setLoading(false);
-      return;
-    }
     if (!effectiveDeviceID) {
       setSeries([]);
       setLoading(false);
@@ -279,10 +257,10 @@ export function DeviceView({
     return () => {
       cancelled = true;
     };
-  }, [demo, effectiveDeviceID, reload, selectedRange.maxPoints, selectedRange.minutes]);
+  }, [effectiveDeviceID, reload, selectedRange.maxPoints, selectedRange.minutes]);
 
   useEffect(() => {
-    if (demo || !effectiveDeviceID) return;
+    if (!effectiveDeviceID) return;
     let cancelled = false;
     const loadDevice = () =>
       api
@@ -297,10 +275,9 @@ export function DeviceView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, effectiveDeviceID]);
+  }, [effectiveDeviceID]);
 
   useEffect(() => {
-    if (demo) return;
     let cancelled = false;
     const loadCandidate = () => {
       const request = selectedCandidateID
@@ -322,25 +299,18 @@ export function DeviceView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [demo, selected.id, selectedCandidateID]);
+  }, [selected.id, selectedCandidateID]);
 
   const cpu = currentValue(device, "cpu.utilization");
   const memory = currentValue(device, "memory.used_percent");
   const disk = currentValue(device, "filesystem.used_percent");
   const chartData = useMemo(() => {
-    if (demo) {
-      return {
-        cpu: { data: demoSeries(cpu ?? 0, 1), partial: false } satisfies HistoryData,
-        memory: { data: demoSeries(memory ?? 0, 3), partial: false } satisfies HistoryData,
-        disk: { data: demoSeries(disk ?? 0, 7), partial: false } satisfies HistoryData,
-      };
-    }
     return {
       cpu: historyForSeries(series, "cpu.utilization"),
       memory: historyForSeries(series, "memory.used_percent"),
       disk: historyForSeries(series, "filesystem.used_percent"),
     };
-  }, [cpu, demo, disk, memory, series]);
+  }, [series]);
 
   const diagnosticSeries = useMemo(() => series.filter((item) => !summaryMetrics.has(item.metric)), [series]);
   const diagnosticMetrics = useMemo(
@@ -441,7 +411,7 @@ export function DeviceView({
           >
             {ranges.map((item) => (
               <option key={item.key} value={item.key}>
-                {demo ? item.label + " · demo" : item.label}
+                {item.label}
               </option>
             ))}
           </select>
@@ -471,7 +441,7 @@ export function DeviceView({
         <h2 id="device-summary-heading" className="sr-only">
           Summary
         </h2>
-        {!demo && !hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
+        {!hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
         <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
           <div className="chart-heading">
             <div>
@@ -592,7 +562,7 @@ export function DeviceView({
             </p>
           </div>
         ) : null}
-        {hasAgent && !isDecommissioned && !demo && diagnosticMetrics.length > 0 && (
+        {hasAgent && !isDecommissioned && diagnosticMetrics.length > 0 && (
           <section className="diagnostic-board" aria-labelledby="diagnostic-board-heading">
             <div className="diagnostic-board-heading">
               <div>
@@ -664,7 +634,7 @@ export function DeviceView({
         <h2 id="device-manage-heading" className="sr-only">
           Manage
         </h2>
-        {!demo && !isProvisional && (
+        {!isProvisional && (
           <section className={"danger-panel " + (isDecommissioned ? "danger-panel-muted" : "")}>
             <div className="panel-title">
               {isDecommissioned ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}

@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Clock3,
   Network,
-  Radio,
   RefreshCw,
   Server,
   ShieldAlert,
@@ -15,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, APIError, type Candidate, type Device, type Incident } from "@/lib/api";
-import { demoDevices, type Device as DemoDevice } from "@/demo";
 
 type OverviewState = "online" | "offline" | "needs-access" | "revoked";
 
@@ -27,28 +25,6 @@ type FleetData = {
 
 type FleetSource = "devices" | "candidates" | "incidents";
 type FleetSourceErrors = Partial<Record<FleetSource, string>>;
-
-function demoDevice(item: DemoDevice, index: number): Device {
-  const observedAt = new Date().toISOString();
-  return {
-    id: `demo-${index}`,
-    displayName: item.name,
-    platform: "linux",
-    architecture: "amd64",
-    addresses: [item.address],
-    lifecycle: "enrolled",
-    availability: item.status === "Offline" ? "offline" : "online",
-    agentVersion: item.version === "—" ? undefined : item.version,
-    metricFreshness: {},
-    currentMetrics: {
-      "cpu.utilization": { value: item.cpu, unit: "percent", availability: "current", observedAt },
-      "memory.used_percent": { value: item.memory, unit: "percent", availability: "current", observedAt },
-      "filesystem.used_percent": { value: item.disk, unit: "percent", availability: "current", observedAt },
-    },
-    collectorStates: [],
-    revision: 1,
-  };
-}
 
 async function loadAll<T>(load: (query: string) => Promise<{ items: T[]; nextCursor: string | null }>): Promise<T[]> {
   const all: T[] = [];
@@ -114,32 +90,21 @@ function sourceMessage(caught: unknown, fallback: string): string {
 }
 
 export function OverviewView({
-  demo,
   onNavigate,
   onSelect,
   onIncident,
-  onSetup,
 }: {
-  demo: boolean;
   onNavigate: (page: "Systems" | "Incidents" | "Network" | "Access") => void;
   onSelect: (device: Device) => void;
   onIncident: (incidentId: string) => void;
-  onSetup: () => void;
 }) {
   const [data, setData] = useState<FleetData>({ devices: [], candidates: [], incidents: [] });
   const [sourceErrors, setSourceErrors] = useState<FleetSourceErrors>({});
-  const [loading, setLoading] = useState(!demo);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    if (demo) {
-      setData({ devices: demoDevices.map(demoDevice), candidates: [], incidents: [] });
-      setSourceErrors({});
-      setLoading(false);
-      setError("");
-      return;
-    }
     let cancelled = false;
     setLoading(true);
     setError("");
@@ -174,7 +139,7 @@ export function OverviewView({
     return () => {
       cancelled = true;
     };
-  }, [demo, retry]);
+  }, [retry]);
 
   const devices = useMemo(() => data.devices.filter((device) => device.lifecycle !== "candidate"), [data.devices]);
   const accessCandidates = useMemo(
@@ -216,7 +181,7 @@ export function OverviewView({
     return (
       <section className="overview" aria-busy="true">
         <div className="overview-loading" role="status">
-          <Radio aria-hidden="true" />
+          <Server aria-hidden="true" />
           <strong>Reading fleet health</strong>
           <span>Collecting current device, incident, and access state…</span>
         </div>
@@ -246,15 +211,8 @@ export function OverviewView({
     <section className="overview" aria-labelledby="overview-title">
       <div className="overview-intro">
         <div>
-          <h1 id="overview-title">
-            Fleet status
-            {demo && <Badge variant="outline">Demo</Badge>}
-          </h1>
+          <h1 id="overview-title">Fleet status</h1>
         </div>
-        <Button variant="outline" onClick={onSetup}>
-          <Radio data-icon="inline-start" />
-          Agent setup
-        </Button>
       </div>
 
       {Object.keys(sourceErrors).length > 0 && (
@@ -409,9 +367,9 @@ export function OverviewView({
                 <div className="overview-empty compact">
                   <Server aria-hidden="true" />
                   <span>No systems monitored yet.</span>
-                  <Button variant="outline" size="sm" onClick={onSetup}>
-                    Install first agent
-                  </Button>
+                  <small>
+                    Found systems will appear after a network scan. Use + in the top navigation to add one manually.
+                  </small>
                 </div>
               )
             )}
@@ -467,10 +425,10 @@ export function OverviewView({
           ) : (
             <div className="overview-empty">
               <Server aria-hidden="true" />
-              <span>Install an agent to add a system.</span>
-              <Button variant="outline" onClick={onSetup}>
-                Agent setup
-              </Button>
+              <span>No systems monitored yet.</span>
+              <small>
+                Found systems will appear after a network scan. Use + in the top navigation to add one manually.
+              </small>
             </div>
           )}
         </CardContent>

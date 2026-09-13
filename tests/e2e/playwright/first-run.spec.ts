@@ -25,6 +25,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Explore demo" })).not.toBeVisible();
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: /^Access Credentials/ }).click();
@@ -47,7 +48,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await expect(createdScope.getByRole("button", { name: "Pause scope" })).toBeVisible();
 
   await page.getByRole("button", { name: "Systems" }).click();
-  await page.getByRole("button", { name: "Agent setup" }).first().click();
+  await page.getByRole("button", { name: "Add agent manually" }).click();
   await expect(page.getByRole("heading", { name: "Install the first Linux agent" })).toBeVisible();
   await page.getByRole("button", { name: "Create one-time invitation" }).click();
   await expect(page.getByText("Invitation created. It is single-use and expires in five minutes.")).toBeVisible();
@@ -62,7 +63,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
     await page.getByRole("button", { name: "Close agent setup" }).click();
     await page.reload();
     await expect(page.getByRole("button", { name: "Systems" })).toBeVisible();
-    await page.getByRole("button", { name: "Agent setup" }).first().click();
+    await page.getByRole("button", { name: "Add agent manually" }).click();
     await expect(page.getByRole("heading", { name: "Install the first Linux agent" })).toBeVisible();
     const pendingDevice = page.getByLabel("Existing pending device");
     await expect(pendingDevice).toBeVisible();

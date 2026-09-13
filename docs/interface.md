@@ -28,10 +28,13 @@ On a fresh install, the owner creates their account, enrolls the first agent, se
 
 Credential entry must state which targets can use the credential and what operations it permits. Enrollment shows a concrete target and expected installation changes. Never imply that finding a device proves authority to administer it.
 
-Use demo data only in an explicitly marked demo mode. An empty production install must never show fabricated healthy devices or topology.
+An empty production install must never show fabricated healthy devices or
+topology. Manual agent installation is a recovery action behind the `+` button
+in the top navigation; normal discovered-device enrollment remains automatic
+after scope and access are configured.
 
 ## Navigation and responsive layout
 
-Scout uses four primary destinations, Overview, Systems, Incidents, and Network, with administration and diagnostics grouped under **Settings**. The top-bar bell opens recent delivery activity and links to full notification settings. On phones and narrow tablets the primary destinations open from a burger menu; on wide screens they live in a 208px sidebar.
+Scout uses four primary destinations, Overview, Systems, Incidents, and Network, with administration and diagnostics grouped under **Settings**. The top-bar `+` opens the manual agent recovery flow, while the bell opens recent delivery activity and links to full notification settings. On phones and narrow tablets the primary destinations open from a burger menu; on wide screens they live in a 208px sidebar.
 
 Systems and Network use list-first layouts on small screens. A visible List/Map control switches Network’s observed-device presentation. Device detail opens as a full page with Summary, Metrics, and Manage sections, while filters and short editors use accessible shadcn sheets. Browser hash routes preserve page, device, candidate, and incident selection across refresh and Back navigation.

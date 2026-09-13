@@ -15,6 +15,16 @@ async function signIn(page: Page): Promise<void> {
   expect(signInResponse.status()).toBe(200);
 }
 
+async function openPage(page: Page, name: string): Promise<void> {
+  const desktopLink = page.getByRole("button", { name, exact: true });
+  if (await desktopLink.isVisible()) {
+    await desktopLink.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("button", { name, exact: true }).click();
+}
+
 async function csrfToken(page: Page): Promise<string> {
   const cookie = (await page.context().cookies()).find((item) => item.name === "scout_csrf");
   return cookie ? decodeURIComponent(cookie.value) : "";
@@ -92,6 +102,12 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
     )
     .toBe("needs_credentials");
 
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: /^Scopes Sites/ }).click();
+  const completedScopeRow = page.locator(".scope-row").filter({ hasText: "127.0.0.1" }).last();
+  await expect(completedScopeRow.getByText("Last run")).toBeVisible();
+  await expect(completedScopeRow.getByText("Outcome counts")).toBeVisible();
+
   await page.getByRole("button", { name: "Systems" }).click();
   const provisionalSystemRow = page
     .locator("tbody tr")
@@ -113,6 +129,9 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(foundHost).toHaveCount(1);
   await expect(foundHost.getByText(/Scan coverage:/)).toBeVisible();
   await expect(foundHost.getByText(/Server vantage available/)).toBeVisible();
+  await page.getByLabel("State").selectOption("needs_credentials");
+  await expect(foundHost).toHaveCount(1);
+  await page.getByLabel("State").selectOption("");
   const foundHostButton = foundHost.getByRole("button");
   await foundHostButton.focus();
   await expect(foundHostButton).toBeFocused();
@@ -298,3 +317,27 @@ test("owner keeps unsupported services observable without requesting irrelevant 
   const detail = (await detailResponse.json()) as { accessRequests: unknown[] };
   expect(detail.accessRequests).toHaveLength(0);
 });
+
+for (const viewport of [
+  { width: 360, height: 800 },
+  { width: 768, height: 900 },
+  { width: 1440, height: 1000 },
+]) {
+  test(`scan views remain usable at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await signIn(page);
+    await page.goto("/");
+    const manualAgentButton = page.getByRole("button", { name: "Add agent manually" });
+    await expect(manualAgentButton).toBeVisible();
+    await manualAgentButton.click();
+    await expect(page.getByRole("heading", { name: "Install the first Linux agent" })).toBeVisible();
+    await page.getByRole("button", { name: "Close agent setup" }).click();
+    await openPage(page, "Network");
+    await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+    expect(fitsViewport).toBe(true);
+    await openPage(page, "Settings");
+    await page.getByRole("button", { name: /^Scopes Sites/ }).click();
+    await expect(page.getByRole("heading", { name: "Sites and scopes" })).toBeVisible();
+  });
+}

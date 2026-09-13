@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build a modular Go control plane with PostgreSQL, a native Go agent, isolated enrollment execution, and a constrained native updater. Keep the React/shadcn console and replace demo-only paths incrementally with authenticated data. Deliver owner setup and one real agent first, then recovery, signed updates, scoped access/discovery/enrollment, full topology, service adapters, and decommissioning. Automatic installation is enabled by configured scope and access, not by per-device confirmation.
+Build a modular Go control plane with PostgreSQL, a native Go agent, isolated enrollment execution, and a constrained native updater. Keep the React/shadcn console and replace fixture-only paths with authenticated data. Deliver owner setup and one real agent first, then recovery, signed updates, scoped access/discovery/enrollment, full topology, service adapters, and decommissioning. Automatic installation is enabled by configured scope and access, not by per-device confirmation.
 
 ## Technical Context
 
@@ -34,7 +34,7 @@ Build a modular Go control plane with PostgreSQL, a native Go agent, isolated en
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | Scoped autonomy            | Scope revisions, exclusions, execution revalidation, durable job leases, one active identity per device           | Pass / Pass              |
 | Credentials and identity   | Separate owner sessions, agent mTLS, worker capability, encrypted credentials, independently provisioned keys     | Pass / Pass              |
-| Evidence-based monitoring  | Typed sample availability, observed/received times, provenance, identity reconciliation, explicit demo separation | Pass / Pass              |
+| Evidence-based monitoring  | Typed sample availability, observed/received times, provenance, identity reconciliation, no fabricated operational data | Pass / Pass              |
 | Recoverable lifecycle      | Verified artifacts, journaled updater, previous slot, local startup checks, restore pause                         | Pass / Pass              |
 | Extensible collectors      | Registry and common bounded lifecycle; provider-specific packages                                                 | Pass / Pass              |
 | Self-hosting and usability | Persistent Compose/VM path, backup guide, live UI states, keyboard and viewport checks                            | Pass / Pass              |
@@ -139,7 +139,7 @@ Collector registry uses a common descriptor, detect, collect, and close lifecycl
 
 ### User interface and deployment
 
-Retain shadcn charts and compact inventory styling. Split views and API access from App.tsx, isolate fixtures behind demo mode, add real selection/history ranges, pending/error states, and keyboard graph/list equivalents. Service metrics and topology reuse typed entities rather than adding vendor-specific navigation to the agent core.
+Retain shadcn charts and compact inventory styling. Split views and API access from App.tsx, remove fixture-only product paths, add real selection/history ranges, pending/error states, and keyboard graph/list equivalents. Service metrics and topology reuse typed entities rather than adding vendor-specific navigation to the agent core.
 
 Compose eventually includes the server, PostgreSQL, and optional enroller, with persistent data/release volumes and separately mounted key material. Serve the built UI from the control plane or an explicitly configured same-origin reverse proxy. Expose only required TLS ports; do not mount Docker socket or host root by default. Native agent packaging includes systemd units and documented permissions. Restores enter a persisted recovery mode that pauses installation/updates until the owner reconciles stale authority.
 

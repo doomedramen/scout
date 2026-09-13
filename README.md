@@ -188,7 +188,10 @@ The test creates a disposable owner, site, scope, and agent invitation. Set
 `SCOUT_E2E_URL` and `SCOUT_E2E_SETUP_TOKEN` to point it at a separately managed
 development server; never point it at production.
 
-The UI also runs without a database and reports its actual connection state. Use **Explore demo** to inspect illustrative systems, filtering, host charts, and network membership. Leaving demo clears those fixtures. No network devices are contacted by the UI.
+The UI reports its actual API and database connection state. An empty workspace
+shows real loading, empty, error, and access states; it does not fabricate
+devices or topology. The `+` action in the top navigation opens the manual
+agent recovery flow.
 
 ```sh
 npm run check
@@ -215,10 +218,10 @@ Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS b
 
 ## Install the first Linux agent
 
-Open **Systems → Agent setup** after creating a site. Scout creates a
-device-bound invitation that expires after five minutes, then shows a
-copyable installation recipe. The browser does not install a privileged
-service by itself.
+Use **+ (Add agent manually)** in the top navigation after creating a site.
+Scout creates a device-bound invitation that expires after five minutes, then
+shows a copyable installation recipe. The browser does not install a
+privileged service by itself.
 
 The native recipe is a single-command recovery path for the first agent or a
 host the server cannot reach. Run it on the Linux host Scout should monitor,

@@ -71,6 +71,28 @@ func finishCoordinatorRun(t *testing.T, repository *store.Store, run store.ScanR
 	}
 }
 
+func TestCoordinatorRunsBoundedScanRetentionDuringItsPoll(t *testing.T) {
+	ctx := context.Background()
+	repository, _, scanPolicy, now := coordinatorFixture(t)
+	coordinator := coordinatorFor(repository, coordinatorTestScanner{})
+	old, err := coordinator.ScheduleDue(ctx)
+	if err != nil || len(old) != 1 {
+		t.Fatalf("initial scan: %+v err=%v", old, err)
+	}
+	finishCoordinatorRun(t, repository, old[0])
+	*now = now.Add(store.ScanRunRetention + time.Hour)
+	coordinator.PollInterval = time.Millisecond
+	if _, err := coordinator.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.GetScanRun(ctx, old[0].ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("coordinator did not run scan retention: %v", err)
+	}
+	if scanPolicy.ScheduleSeconds < 60 {
+		t.Fatalf("fixture schedule unexpectedly changed: %+v", scanPolicy)
+	}
+}
+
 func TestCoordinatorSchedulesWithStableJitterOnlyAfterTheInterval(t *testing.T) {
 	ctx := context.Background()
 	repository, scope, scanPolicy, now := coordinatorFixture(t)

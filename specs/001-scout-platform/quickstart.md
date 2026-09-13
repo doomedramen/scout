@@ -44,7 +44,7 @@ The commands below are **future interfaces**, created by the indicated tasks. Do
 | `scripts/test-restore.sh`        | T022        | Backup a populated fixture, restore with correct/missing keys, revoke old sessions, pause stale authorization, reconnect agents without duplication.      |
 | `scripts/test-updates.sh`        | T030        | Verified online/server-only/offline-import upgrades, invalid manifest/key/platform, interruption, startup failure, bounded rollback and trust changes.    |
 | `scripts/test-enrollment.sh`     | T044        | Ten isolated Linux targets, second vantage point, exclusions, access resolution, trust failure, duplicates, pause and expired work.                       |
-| `npm run test:e2e -w @scout/web` | T002 / T049 | Live-backed inventory, history, chart tooltips/gaps, accessible topology/list, demo isolation and 360/1440-pixel layouts.                                 |
+| `npm run test:e2e -w @scout/web` | T002 / T049 | Live-backed inventory, history, chart tooltips/gaps, accessible topology/list, no-data/error states and 360/1440-pixel layouts.                                 |
 | `scripts/test-collectors.sh`     | T055        | Two reference provider majors plus fake third adapter, missing privilege, timeout/malformed responses, redaction, cluster failover and guest association. |
 | `scripts/test-decommission.sh`   | T059        | Revoke, exclude, rediscover, offline reconnect, verified uninstall and explicit re-enable.                                                                |
 | `scripts/test-load.sh`           | T061        | 100-device/24-hour dataset and timed reads/ingestion, queue/buffer limits, disk pressure, retention and sample-loss reports.                              |

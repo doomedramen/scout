@@ -16,6 +16,11 @@ const (
 	ScanAccessSSH      = "ssh"
 	maxScanRunAttempts = 16384
 
+	ScanEvidenceRetention   = 30 * 24 * time.Hour
+	ScanRunRetention        = 90 * 24 * time.Hour
+	defaultScanCleanupBatch = 500
+	maxScanCleanupBatch     = 5000
+
 	ScanRunQueued    = "queued"
 	ScanRunLeased    = "leased"
 	ScanRunRunning   = "running"
@@ -66,6 +71,22 @@ type EntryPointObservationQuery struct {
 type EntryPointObservationPage struct {
 	Items      []EntryPointObservation `json:"items"`
 	NextCursor string                  `json:"nextCursor,omitempty"`
+}
+
+// ScanCleanupReport describes one bounded retention pass and the work that
+// remains after it. Deletion counts are for the pass; blocker and lag fields
+// describe the resulting state so a caller can safely retry after restart.
+type ScanCleanupReport struct {
+	ObservationsDeleted int
+	ReceiptsDeleted     int
+	RunsDeleted         int
+	BlockedObservations int
+	BlockedRuns         int
+	EvidenceBefore      time.Time
+	RunsBefore          time.Time
+	LagSeconds          int64
+	MoreWork            bool
+	Blocked             bool
 }
 
 type scanCursor struct {
@@ -481,6 +502,280 @@ func (s *Store) ListScanRuns(ctx context.Context, query ScanRunQuery) (ScanRunPa
 		return nil
 	})
 	return result, err
+}
+
+// CleanupScanHistory removes expired scan evidence in bounded, restart-safe
+// batches. Unresolved access requests retain their referenced evidence and
+// the run summary that owns it. Candidates, exclusions, and access requests
+// are never deleted by retention.
+func (s *Store) CleanupScanHistory(ctx context.Context, now time.Time, batchSize int) (ScanCleanupReport, error) {
+	if batchSize <= 0 {
+		batchSize = defaultScanCleanupBatch
+	}
+	if batchSize > maxScanCleanupBatch {
+		return ScanCleanupReport{}, ErrInvalid
+	}
+	if now.IsZero() {
+		now = s.Now()
+	}
+	now = now.UTC()
+
+	var report ScanCleanupReport
+	err := s.mutateWithWorkspaceLock(ctx, func(state *State) error {
+		protectedObservations, protectedRuns := scanRetentionBlockers(state)
+		remaining := batchSize
+
+		observations := make([]EntryPointObservation, 0, len(state.EntryPointObservations))
+		for _, observation := range state.EntryPointObservations {
+			if scanObservationRetentionTime(observation).After(now.Add(-ScanEvidenceRetention)) {
+				continue
+			}
+			observations = append(observations, observation)
+		}
+		sort.Slice(observations, func(i, j int) bool {
+			left, right := scanObservationRetentionTime(observations[i]), scanObservationRetentionTime(observations[j])
+			if left.Equal(right) {
+				return observations[i].ID < observations[j].ID
+			}
+			return left.Before(right)
+		})
+		for _, observation := range observations {
+			if _, blocked := protectedObservations[observation.ID]; blocked || remaining == 0 {
+				continue
+			}
+			delete(state.EntryPointObservations, observation.ID)
+			removeObservationFromCurrent(state, observation.ID)
+			removeObservationFromCandidates(state, observation.ID)
+			remaining--
+			report.ObservationsDeleted++
+		}
+
+		receipts := make([]ScanResultReceipt, 0, len(state.ScanResultReceipts))
+		for _, receipt := range state.ScanResultReceipts {
+			if receipt.AcceptedAt.After(now.Add(-ScanEvidenceRetention)) {
+				continue
+			}
+			receipts = append(receipts, receipt)
+		}
+		sort.Slice(receipts, func(i, j int) bool {
+			if receipts[i].AcceptedAt.Equal(receipts[j].AcceptedAt) {
+				if receipts[i].RunID == receipts[j].RunID {
+					return receipts[i].PageOrdinal < receipts[j].PageOrdinal
+				}
+				return receipts[i].RunID < receipts[j].RunID
+			}
+			return receipts[i].AcceptedAt.Before(receipts[j].AcceptedAt)
+		})
+		for _, receipt := range receipts {
+			if remaining == 0 || scanReceiptProtected(state, receipt, protectedRuns) {
+				continue
+			}
+			delete(state.ScanResultReceipts, scanReceiptKey(receipt.RunID, receipt.PageOrdinal))
+			remaining--
+			report.ReceiptsDeleted++
+		}
+
+		runs := make([]ScanRun, 0, len(state.ScanRuns))
+		for _, run := range state.ScanRuns {
+			if !scanRunTerminalStates[run.State] || scanRunRetentionTime(run).After(now.Add(-ScanRunRetention)) {
+				continue
+			}
+			runs = append(runs, run)
+		}
+		sort.Slice(runs, func(i, j int) bool {
+			left, right := scanRunRetentionTime(runs[i]), scanRunRetentionTime(runs[j])
+			if left.Equal(right) {
+				return runs[i].ID < runs[j].ID
+			}
+			return left.Before(right)
+		})
+		for _, run := range runs {
+			if remaining == 0 || runHasRetentionBlocker(run.ID, protectedRuns) || scanRunHasArtifacts(state, run.ID) {
+				continue
+			}
+			delete(state.ScanRuns, run.ID)
+			delete(state.ScanRunLeases, run.ID)
+			remaining--
+			report.RunsDeleted++
+		}
+
+		status := scanCleanupStatus(state, now)
+		report.BlockedObservations = status.BlockedObservations
+		report.BlockedRuns = status.BlockedRuns
+		report.EvidenceBefore = status.EvidenceBefore
+		report.RunsBefore = status.RunsBefore
+		report.LagSeconds = status.LagSeconds
+		report.MoreWork = status.MoreWork
+		report.Blocked = status.Blocked
+		return nil
+	})
+	return report, err
+}
+
+// ScanCleanupStatus reports retention pressure without changing state. It is
+// used by the owner status endpoint after a process restart or a failed batch.
+func (s *Store) ScanCleanupStatus(ctx context.Context, now time.Time) (ScanCleanupReport, error) {
+	if now.IsZero() {
+		now = s.Now()
+	}
+	now = now.UTC()
+	var report ScanCleanupReport
+	err := s.read(ctx, func(state *State) error {
+		report = scanCleanupStatus(state, now)
+		return nil
+	})
+	return report, err
+}
+
+func scanRetentionBlockers(state *State) (map[string]struct{}, map[string]struct{}) {
+	protectedObservations := map[string]struct{}{}
+	for _, request := range state.AccessRequests {
+		if accessRequestIsOpen(request) && request.EntryPointObservationID != "" {
+			protectedObservations[request.EntryPointObservationID] = struct{}{}
+		}
+	}
+	protectedRuns := map[string]struct{}{}
+	for observationID := range protectedObservations {
+		if observation, ok := state.EntryPointObservations[observationID]; ok && observation.RunID != "" {
+			protectedRuns[observation.RunID] = struct{}{}
+		}
+	}
+	return protectedObservations, protectedRuns
+}
+
+func scanCleanupStatus(state *State, now time.Time) ScanCleanupReport {
+	evidenceBefore := now.Add(-ScanEvidenceRetention)
+	runsBefore := now.Add(-ScanRunRetention)
+	protectedObservations, protectedRuns := scanRetentionBlockers(state)
+	status := ScanCleanupReport{EvidenceBefore: evidenceBefore, RunsBefore: runsBefore}
+	var oldest time.Time
+	considerLag := func(value time.Time) {
+		if value.IsZero() || value.After(evidenceBefore) && value.After(runsBefore) {
+			return
+		}
+		if oldest.IsZero() || value.Before(oldest) {
+			oldest = value
+		}
+	}
+
+	for _, observation := range state.EntryPointObservations {
+		observedAt := scanObservationRetentionTime(observation)
+		if observedAt.After(evidenceBefore) {
+			continue
+		}
+		if _, blocked := protectedObservations[observation.ID]; blocked {
+			status.BlockedObservations++
+			considerLag(observedAt)
+			continue
+		}
+		status.MoreWork = true
+		considerLag(observedAt)
+	}
+	for _, receipt := range state.ScanResultReceipts {
+		if receipt.AcceptedAt.After(evidenceBefore) || scanReceiptProtected(state, receipt, protectedRuns) {
+			if !receipt.AcceptedAt.After(evidenceBefore) {
+				considerLag(receipt.AcceptedAt)
+			}
+			continue
+		}
+		status.MoreWork = true
+		considerLag(receipt.AcceptedAt)
+	}
+	for _, run := range state.ScanRuns {
+		finishedAt := scanRunRetentionTime(run)
+		if !scanRunTerminalStates[run.State] || finishedAt.After(runsBefore) {
+			continue
+		}
+		if runHasRetentionBlocker(run.ID, protectedRuns) || scanRunHasArtifacts(state, run.ID) {
+			if runHasRetentionBlocker(run.ID, protectedRuns) {
+				status.BlockedRuns++
+			}
+			considerLag(finishedAt)
+			continue
+		}
+		status.MoreWork = true
+		considerLag(finishedAt)
+	}
+	if status.BlockedObservations > 0 || status.BlockedRuns > 0 {
+		status.Blocked = true
+	}
+	if !oldest.IsZero() {
+		status.LagSeconds = int64(now.Sub(oldest).Seconds())
+		if status.LagSeconds < 0 {
+			status.LagSeconds = 0
+		}
+	}
+	return status
+}
+
+func scanObservationRetentionTime(observation EntryPointObservation) time.Time {
+	if !observation.ReceivedAt.IsZero() {
+		return observation.ReceivedAt
+	}
+	return observation.ObservedAt
+}
+
+func scanRunRetentionTime(run ScanRun) time.Time {
+	if run.FinishedAt != nil {
+		return *run.FinishedAt
+	}
+	if !run.UpdatedAt.IsZero() {
+		return run.UpdatedAt
+	}
+	return run.CreatedAt
+}
+
+func scanReceiptProtected(state *State, receipt ScanResultReceipt, protectedRuns map[string]struct{}) bool {
+	if _, blocked := protectedRuns[receipt.RunID]; blocked {
+		return true
+	}
+	if run, ok := state.ScanRuns[receipt.RunID]; ok && !scanRunTerminalStates[run.State] {
+		return true
+	}
+	return false
+}
+
+func runHasRetentionBlocker(runID string, protectedRuns map[string]struct{}) bool {
+	_, blocked := protectedRuns[runID]
+	return blocked
+}
+
+func scanRunHasArtifacts(state *State, runID string) bool {
+	for _, observation := range state.EntryPointObservations {
+		if observation.RunID == runID {
+			return true
+		}
+	}
+	for _, receipt := range state.ScanResultReceipts {
+		if receipt.RunID == runID {
+			return true
+		}
+	}
+	return false
+}
+
+func removeObservationFromCurrent(state *State, observationID string) {
+	for key, current := range state.EntryPointCurrent {
+		if current.ObservationID == observationID {
+			delete(state.EntryPointCurrent, key)
+		}
+	}
+}
+
+func removeObservationFromCandidates(state *State, observationID string) {
+	for key, candidate := range state.Candidates {
+		if len(candidate.EvidenceIDs) == 0 {
+			continue
+		}
+		filtered := candidate.EvidenceIDs[:0]
+		for _, evidenceID := range candidate.EvidenceIDs {
+			if evidenceID != observationID {
+				filtered = append(filtered, evidenceID)
+			}
+		}
+		candidate.EvidenceIDs = filtered
+		state.Candidates[key] = candidate
+	}
 }
 
 func scanCursorAfter(itemTime time.Time, itemID string, cursor scanCursor) bool {
