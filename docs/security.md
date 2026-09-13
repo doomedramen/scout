@@ -24,6 +24,15 @@ The control plane and enrollment worker are high-value systems. Encryption at re
 - Use verified, versioned artifacts and fixed installation operations. Do not interpolate discovered values into shell commands.
 - Use least-privilege SSH accounts and constrained elevation. Show required permissions before enrollment.
 
+Active discovery is a bounded TCP-connect protocol from the control server or
+an explicitly assigned compatible agent. It does not run nmap, collect banners,
+send application payloads, authenticate, scan UDP, or infer authorization from
+routes or an open port. Each scope revision, vantage identity, exclusion, rate,
+concurrency, target/attempt budget, timeout, and deadline is checked again at
+the execution and result-ingestion boundaries. Pause, revocation, recovery,
+and late-result fences prevent stale scan authority from creating candidates,
+access requests, or enrollment jobs.
+
 ### Credentials
 
 - Prefer short-lived SSH certificates or scoped keys where available; support owner-supplied credentials only through the protected enrollment flow.

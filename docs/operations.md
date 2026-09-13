@@ -47,6 +47,37 @@ do not provision or contact a target. The restore script performs a live
 restore only when SCOUT_RESTORE_LAB=1 is set and all required destination and
 confirmation variables are present.
 
+## Active network scanning
+
+Scanning is opt-in per scope. Before enabling it, review the exact CIDRs or
+literal addresses, exclusions, TCP ports, schedule, target/attempt budget,
+rate, concurrency, timeout, deadline, and assigned vantage points. The server
+vantage is independently enabled; agents receive scan work only when their
+identity, site, lifecycle, and scan capability match an explicit assignment.
+
+The traffic model is intentionally narrow: one bounded TCP connect attempt per
+planned target/entry point from the selected server or agent vantage. Scout
+does not run nmap, fetch banners, send application payloads, authenticate,
+guess passwords, scan UDP, or probe outside exclusions. Results identify the
+scope, scanner, target, port, outcome, and timestamps; they do not include
+remote response bodies. Closed, filtered, unreachable, skipped, and scanner
+error outcomes remain distinct from an open service.
+
+The owner sees queued/running/uploading progress, per-vantage freshness and
+schedule, outcome counts, partial/error/stale coverage, candidate states,
+retention lag, and queue pressure in **Network** and **Settings → Scopes**.
+Pause discovery globally or per scope before changing policy. Queued and
+leased work is cancelled immediately; active holders are fenced at their next
+safe boundary and must acknowledge pause. A scope revision, scanner revocation,
+or recovery event rejects late results and cannot create enrollment work.
+
+Scan observations and result receipts are retained for 30 days; terminal run
+summaries are retained for 90 days. Cleanup runs in bounded, restart-safe
+batches. An unresolved or re-evaluating access request protects its referenced
+observation and owning run, while candidates, exclusions, and access requests
+are never removed by scan retention. Status reports blocked cleanup, lag, and
+backpressure rather than implying complete coverage.
+
 For a local UI/API evaluation using the published image, copy
 `compose.quickstart.yaml` to a new directory and run:
 

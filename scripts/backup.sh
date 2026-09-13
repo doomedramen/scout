@@ -31,11 +31,22 @@ required_002_tables=(
 	notification_destinations notification_deliveries suppression_windows suppression_episodes
 	monitoring_settings retention_previews
 )
+required_003_tables=(
+	scan_policies scan_vantage_assignments scan_runs scan_run_leases scan_result_receipts
+	scan_entry_point_observations scan_entry_point_current scan_candidate_extensions scan_access_request_keys
+)
 required_table_list=$(printf "'%s'," "${required_002_tables[@]}")
 required_table_list=${required_table_list%,}
 monitoring_table_count=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename IN (${required_table_list})" | tr -d '[:space:]')
 if [[ ! "$monitoring_table_count" =~ ^[0-9]+$ || "$monitoring_table_count" -ne "${#required_002_tables[@]}" ]]; then
 	echo "database is missing one or more 002 monitoring tables" >&2
+	exit 2
+fi
+active_scanning_table_list=$(printf "'%s'," "${required_003_tables[@]}")
+active_scanning_table_list=${active_scanning_table_list%,}
+active_scanning_table_count=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename IN (${active_scanning_table_list})" | tr -d '[:space:]')
+if [[ ! "$active_scanning_table_count" =~ ^[0-9]+$ || "$active_scanning_table_count" -ne "${#required_003_tables[@]}" ]]; then
+	echo "database is missing one or more 003 active-scanning tables" >&2
 	exit 2
 fi
 monitoring_state=$(psql "$SCOUT_DATABASE_URL" --tuples-only --no-align --command "SELECT storage_generation || ':' || migration_generation || ':' || phase FROM monitoring_storage_state WHERE singleton=true" | tr -d '[:space:]')
@@ -58,7 +69,7 @@ mv -- "$temporary" "$SCOUT_BACKUP_FILE"
 trap - EXIT
 
 cat >"$metadata_file" <<EOF
-{"format":"scout-postgres-custom","schemaVersion":${schema_version//[[:space:]]/},"keyFingerprint":"$key_fingerprint","createdAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","monitoringTableCount":${#required_002_tables[@]},"monitoringState":"$monitoring_state","migrationCheckpointCount":$migration_checkpoint_count,"monitoringSettingsRevision":$settings_revision}
+{"format":"scout-postgres-custom","schemaVersion":${schema_version//[[:space:]]/},"keyFingerprint":"$key_fingerprint","createdAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","monitoringTableCount":${#required_002_tables[@]},"activeScanningTableCount":${#required_003_tables[@]},"monitoringState":"$monitoring_state","migrationCheckpointCount":$migration_checkpoint_count,"monitoringSettingsRevision":$settings_revision}
 EOF
 chmod 0600 -- "$SCOUT_BACKUP_FILE" "$metadata_file"
 echo "Scout backup created: $SCOUT_BACKUP_FILE"

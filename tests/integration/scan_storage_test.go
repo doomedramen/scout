@@ -123,6 +123,72 @@ func TestSQLScanStorageIsIdempotentFencedAndRestartable(t *testing.T) {
 
 }
 
+func TestSQLScanBackupPreservesEvidenceAndFencesActiveAuthority(t *testing.T) {
+	db := openDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := store.RunMigrations(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture := newSQLScanAgentFixture(t, db, "backup")
+	page := sqlScanPage(fixture)
+	page.Final = false
+	page.Summary = nil
+	if _, duplicate, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, page); err != nil || duplicate {
+		t.Fatalf("SQL non-final scan page: duplicate=%t err=%v", duplicate, err)
+	}
+
+	backup, err := fixture.repository.Backup(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := store.RestoreMemory(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored.SetClock(func() time.Time { return *fixture.now })
+	policyAfterRestore, err := restored.ScanPolicy(ctx, fixture.scope.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(policyAfterRestore.AgentIDs) != 1 || policyAfterRestore.AgentIDs[0] != fixture.scanner.ID {
+		t.Fatalf("scan assignment was not preserved: %+v", policyAfterRestore)
+	}
+	runAfterRestore, err := restored.GetScanRun(ctx, fixture.run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runAfterRestore.State != store.ScanRunCancelled || !runAfterRestore.CancellationRequested || runAfterRestore.LeaseOwner != "" {
+		t.Fatalf("active SQL scan authority was not fenced on restore: %+v", runAfterRestore)
+	}
+	if _, err := restored.LeaseScanRun(ctx, fixture.run.ID, "replacement", time.Minute); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("restored cancelled scan became leaseable: %v", err)
+	}
+	if _, err := restored.ScanResultReceipt(ctx, fixture.run.ID, page.PageOrdinal); err != nil {
+		t.Fatalf("scan receipt was not preserved: %v", err)
+	}
+	observations, err := restored.ListEntryPointObservations(ctx, store.EntryPointObservationQuery{ScopeID: fixture.scope.ID, RunID: fixture.run.ID, Limit: 10})
+	if err != nil || len(observations.Items) != 1 {
+		t.Fatalf("scan evidence was not preserved: %+v err=%v", observations, err)
+	}
+	candidate, err := restored.CandidateByScopeAddress(ctx, fixture.scope.ID, "198.19.0.10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests, err := restored.ListAccessRequestsForCandidate(ctx, candidate.ID)
+	if err != nil || len(requests) != 1 || requests[0].EntryPointObservationID != observations.Items[0].ID {
+		t.Fatalf("candidate/access evidence link was not preserved: candidate=%+v requests=%+v err=%v", candidate, requests, err)
+	}
+	if _, _, err := restoredServiceForScanTest(restored).IngestScanResultPage(ctx, fixture.scanner, page); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("stale result was accepted after restore: %v", err)
+	}
+}
+
+func restoredServiceForScanTest(repository *store.Store) *discovery.Service {
+	return &discovery.Service{Store: repository, Policy: &policy.Engine{Store: repository}, Now: repository.Now}
+}
+
 func TestSQLScanHistoryCleanupIsRestartSafeAndProtectsOpenRequests(t *testing.T) {
 	db := openDatabase(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

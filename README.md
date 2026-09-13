@@ -1,6 +1,6 @@
 # Scout
 
-Scout is a self-hosted server, network, and device monitor. Its planned distributed agents collect metrics, contribute observations to a shared network map, and automatically expand monitoring within owner-configured scopes using supplied access. One agent runs on each device. Machines needing access return to the owner.
+Scout is a self-hosted server, network, and device monitor. Its distributed agents collect metrics, contribute observations to a shared network map, and automatically expand monitoring within owner-configured scopes using supplied access. One agent runs on each device. Machines needing access return to the owner.
 
 ## Product direction
 
@@ -13,6 +13,25 @@ Scout is a self-hosted server, network, and device monitor. Its planned distribu
 - Extend host monitoring through service collectors for hypervisors, container runtimes, and other tools. Docker and Proxmox are initial examples, not an exhaustive list.
 
 The owner configures allowed networks and credentials once. Enrollment proceeds automatically within those boundaries without routine per-device approvals. Newly enrolled agents contribute further discovery observations.
+
+## Network discovery and automatic enrollment
+
+Scout scans only an explicitly enabled owner scope. Each scope names its
+address ranges, exclusions, TCP ports, rate/concurrency/target limits, and
+server or explicitly assigned agent vantage points. A scan performs bounded TCP
+connects only; it does not use nmap, banners, payloads, authentication
+attempts, or vulnerability probes. Every result keeps its scanner provenance
+and becomes stale or partial when a bound, timeout, pause, scanner loss, or
+backpressure prevents complete coverage.
+
+The normal first-run path is: create a site, save a disabled scope, review the
+policy, enable the scope and a vantage, then run **Scan now** or wait for the
+schedule. Found hosts appear in **Systems** and **Network** with their address,
+service evidence, scan state, and a specific next action. An open SSH service
+without access becomes **Needs access**; entering the target username/password
+or private key and separately trusting the host key lets the server-local
+worker install the agent automatically. The manual **+** action remains only
+as a recovery path when the server cannot reach a host.
 
 ## Specification
 

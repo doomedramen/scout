@@ -22,6 +22,7 @@ repository has run the named fixture or an owner-authorized live lab.
 | Release updater | Ed25519, Linux artifact fixtures | Fixture verified | Signature, digest, platform, generation, resume, journal, readiness, and one rollback are covered. |
 | Updater power loss | Disposable Linux VM required | Open | No process termination or power-cut lab was run. |
 | Automatic enrollment | In-process server worker plus disposable Debian Bookworm target | Owner-authorized lab verified | UI-driven SSH discovery, username/password access, host trust, fixed installation, enrollment, online heartbeat, restart persistence, and revocation passed locally on 2026-09-13. A separate second-vantage and native-host acceptance remains open. |
+| Active network scanning | Bounded TCP from control server and explicitly assigned agents | Fixture/integration verified | Policy, exclusions, limits, outcome reconciliation, multi-vantage provenance, pause/revision fencing, retention protection, per-vantage status, and browser states are covered. Live segmented packet capture, scanner-loss lab, and reference workload remain open. |
 | 100-device / 24-hour capacity | Synthetic 100-device, 24-hour sample shape | Synthetic only | T040 exercises 40 numeric series and 50 service states per device: 96,000 samples and 120,000 observations. The in-memory result is not a live PostgreSQL capacity or retention-sizing claim. |
 
 ## Required permissions

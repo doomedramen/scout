@@ -39,18 +39,26 @@ expected_fingerprint=$(sed -n 's/.*"keyFingerprint":"\([^"]*\)".*/\1/p' "$SCOUT_
 [[ -n "$expected_fingerprint" && "$expected_fingerprint" == "$key_fingerprint" ]] || { echo "restore key does not match backup metadata" >&2; exit 2; }
 
 expected_table_count=$(sed -n 's/.*"monitoringTableCount":\([0-9][0-9]*\).*/\1/p' "$SCOUT_BACKUP_FILE.json")
+expected_active_scanning_table_count=$(sed -n 's/.*"activeScanningTableCount":\([0-9][0-9]*\).*/\1/p' "$SCOUT_BACKUP_FILE.json")
 expected_monitoring_state=$(sed -n 's/.*"monitoringState":"\([^"]*\)".*/\1/p' "$SCOUT_BACKUP_FILE.json")
 expected_checkpoint_count=$(sed -n 's/.*"migrationCheckpointCount":\([0-9][0-9]*\).*/\1/p' "$SCOUT_BACKUP_FILE.json")
 expected_settings_revision=$(sed -n 's/.*"monitoringSettingsRevision":\([0-9][0-9]*\).*/\1/p' "$SCOUT_BACKUP_FILE.json")
-[[ "$expected_table_count" =~ ^[0-9]+$ && "$expected_monitoring_state" =~ ^[0-9]+:[0-9]+:(legacy|importing|authoritative)$ && "$expected_checkpoint_count" =~ ^[0-9]+$ && "$expected_settings_revision" =~ ^[0-9]+$ ]] || { echo "backup metadata lacks 002 monitoring coverage" >&2; exit 2; }
+active_scanning_tables=(
+	scan_policies scan_vantage_assignments scan_runs scan_run_leases scan_result_receipts
+	scan_entry_point_observations scan_entry_point_current scan_candidate_extensions scan_access_request_keys
+)
+[[ "$expected_table_count" =~ ^[0-9]+$ && "$expected_active_scanning_table_count" =~ ^[0-9]+$ && "$expected_active_scanning_table_count" -eq "${#active_scanning_tables[@]}" && "$expected_monitoring_state" =~ ^[0-9]+:[0-9]+:(legacy|importing|authoritative)$ && "$expected_checkpoint_count" =~ ^[0-9]+$ && "$expected_settings_revision" =~ ^[0-9]+$ ]] || { echo "backup metadata lacks 002 monitoring or 003 active-scanning coverage" >&2; exit 2; }
 
 pg_restore --clean --if-exists --no-owner --single-transaction --dbname="$SCOUT_RESTORE_DATABASE_URL" "$SCOUT_BACKUP_FILE"
 psql "$SCOUT_RESTORE_DATABASE_URL" --set=ON_ERROR_STOP=1 --command "SELECT 1 FROM scout_schema_migrations LIMIT 1" >/dev/null
 restored_table_count=$(psql "$SCOUT_RESTORE_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename IN ('monitoring_storage_state','monitoring_migration_checkpoints','metric_series','metric_samples','telemetry_receipts','telemetry_sample_ordinals','current_series','metric_aggregates','rollup_work','alert_rules','alert_overrides','alert_evaluations','incidents','incident_transitions','alert_work','notification_destinations','notification_deliveries','suppression_windows','suppression_episodes','monitoring_settings','retention_previews')" | tr -d '[:space:]')
+active_scanning_table_list=$(printf "'%s'," "${active_scanning_tables[@]}")
+active_scanning_table_list=${active_scanning_table_list%,}
+restored_active_scanning_table_count=$(psql "$SCOUT_RESTORE_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname='public' AND tablename IN (${active_scanning_table_list})" | tr -d '[:space:]')
 restored_monitoring_state=$(psql "$SCOUT_RESTORE_DATABASE_URL" --tuples-only --no-align --command "SELECT storage_generation || ':' || migration_generation || ':' || phase FROM monitoring_storage_state WHERE singleton=true" | tr -d '[:space:]')
 restored_checkpoint_count=$(psql "$SCOUT_RESTORE_DATABASE_URL" --tuples-only --no-align --command "SELECT COUNT(*) FROM monitoring_migration_checkpoints WHERE migration_generation=(SELECT migration_generation FROM monitoring_storage_state WHERE singleton=true)" | tr -d '[:space:]')
 restored_settings_revision=$(psql "$SCOUT_RESTORE_DATABASE_URL" --tuples-only --no-align --command "SELECT revision FROM monitoring_settings WHERE singleton=true" | tr -d '[:space:]')
-[[ "$restored_table_count" == "$expected_table_count" && "$restored_monitoring_state" == "$expected_monitoring_state" && "$restored_checkpoint_count" == "$expected_checkpoint_count" && "$restored_settings_revision" == "$expected_settings_revision" ]] || { echo "restored 002 monitoring coverage does not match backup metadata" >&2; exit 2; }
+[[ "$restored_table_count" == "$expected_table_count" && "$restored_active_scanning_table_count" == "$expected_active_scanning_table_count" && "$restored_monitoring_state" == "$expected_monitoring_state" && "$restored_checkpoint_count" == "$expected_checkpoint_count" && "$restored_settings_revision" == "$expected_settings_revision" ]] || { echo "restored 002 monitoring or 003 active-scanning coverage does not match backup metadata" >&2; exit 2; }
 psql "$SCOUT_RESTORE_DATABASE_URL" --set=ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
 UPDATE notification_deliveries
