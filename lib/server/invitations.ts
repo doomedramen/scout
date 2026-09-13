@@ -10,6 +10,13 @@ function hash(value: string): string {
 
 export type AgentInvitation = { id: string; systemId: string; token: string; expiresAt: number };
 
+export type InvitationAuthorization = {
+  id: string;
+  systemId: string;
+  expiresAt: number;
+  consumedAt: number | null;
+};
+
 export function createAgentInvitation(systemId: string, now = Date.now()): AgentInvitation {
   const token = randomBytes(32).toString("hex");
   const id = randomUUID();
@@ -21,6 +28,19 @@ export function createAgentInvitation(systemId: string, now = Date.now()): Agent
     )
     .run(id, systemId, hash(token), expiresAt, now);
   return { id, systemId, token, expiresAt };
+}
+
+export function authorizeAgentInvitation(
+  token: string,
+  now = Date.now(),
+): InvitationAuthorization | null {
+  const { sqlite } = getDatabase();
+  const invitation = sqlite
+    .prepare(
+      "SELECT id, system_id AS systemId, expires_at AS expiresAt, consumed_at AS consumedAt FROM agent_invitation WHERE token_hash = ? AND expires_at > ? LIMIT 1",
+    )
+    .get(hash(token), now) as InvitationAuthorization | undefined;
+  return invitation ?? null;
 }
 
 export type EnrollAgentInput = {

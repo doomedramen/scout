@@ -1,12 +1,14 @@
 import { getDatabase } from "@/lib/server/db";
 import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys";
 import { requestDiscovery } from "@/lib/server/discovery";
+import { processNextEnrollmentJob } from "@/lib/server/enrollment";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const LEASE_RECOVERY_INTERVAL_MS = 30_000;
 
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let started = false;
+let enrollmentRun: Promise<unknown> | undefined;
 
 function writeHeartbeat(now = Date.now()): void {
   const { sqlite } = getDatabase();
@@ -18,6 +20,17 @@ function writeHeartbeat(now = Date.now()): void {
       `,
     )
     .run(String(now), now);
+}
+
+function requestEnrollmentWork(): void {
+  if (enrollmentRun) return;
+  enrollmentRun = processNextEnrollmentJob()
+    .catch((error: unknown) => {
+      console.error("Scout enrollment worker failed", error);
+    })
+    .finally(() => {
+      enrollmentRun = undefined;
+    });
 }
 
 export function recoverExpiredLeases(now = Date.now()): void {
@@ -45,12 +58,14 @@ export function startRuntime(): void {
   recoverExpiredLeases();
   writeHeartbeat();
   requestDiscovery();
+  requestEnrollmentWork();
 
   heartbeatTimer = setInterval(
     () => {
       writeHeartbeat();
       recoverExpiredLeases();
       requestDiscovery();
+      requestEnrollmentWork();
     },
     Math.min(HEARTBEAT_INTERVAL_MS, LEASE_RECOVERY_INTERVAL_MS),
   );
@@ -61,6 +76,7 @@ export function startRuntime(): void {
 export function stopRuntime(): void {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = undefined;
+  enrollmentRun = undefined;
   started = false;
 }
 
