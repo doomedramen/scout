@@ -10,6 +10,7 @@ use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
+use crate::buffer::TelemetryBuffer;
 use crate::collector::{HostCollector, SysinfoHostCollector};
 use crate::identity::{load_or_create, Identity};
 use crate::protocol::{
@@ -108,9 +109,18 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     };
 
     let mut collector = SysinfoHostCollector::new();
+    let telemetry_buffer = TelemetryBuffer::new(config.data_dir.join("telemetry.queue"));
     let response = send_heartbeat(&client, &identity, &enrollment, 0, 0).await?;
     apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
-    send_telemetry(&client, &identity, &enrollment, &mut collector, 0).await?;
+    send_telemetry(
+        &client,
+        &identity,
+        &enrollment,
+        &mut collector,
+        &telemetry_buffer,
+        0,
+    )
+    .await?;
     if let Some(task) = response.task {
         process_task(&client, &identity, &enrollment, task).await?;
     }
@@ -142,7 +152,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                 }
             }
             _ = telemetry.tick() => {
-                if let Err(error) = send_telemetry(&client, &identity, &enrollment, &mut collector, dropped_samples).await {
+                if let Err(error) = send_telemetry(&client, &identity, &enrollment, &mut collector, &telemetry_buffer, dropped_samples).await {
                     dropped_samples = dropped_samples.saturating_add(1);
                     eprintln!("scout-agent telemetry failed: {error:#}");
                 } else {
@@ -232,6 +242,7 @@ async fn send_telemetry(
     identity: &Identity,
     enrollment: &EnrollmentState,
     collector: &mut impl HostCollector,
+    buffer: &TelemetryBuffer,
     dropped_samples: u64,
 ) -> Result<()> {
     let payload = TelemetryPayload {
@@ -241,17 +252,22 @@ async fn send_telemetry(
         dropped_samples,
         host: collector.collect(),
     };
-    let body = serde_json::to_string(&payload)?;
-    send_signed(
-        client,
-        identity,
-        &enrollment.server_url,
-        &enrollment.agent_id,
-        "/api/agent/v1/telemetry",
-        body,
-    )
-    .await
-    .map(|_| ())
+    buffer.enqueue(payload, Utc::now().timestamp_millis())?;
+    for queued in buffer.pending(Utc::now().timestamp_millis())? {
+        let batch_id = queued.batch_id.clone();
+        let body = serde_json::to_string(&queued)?;
+        send_signed(
+            client,
+            identity,
+            &enrollment.server_url,
+            &enrollment.agent_id,
+            "/api/agent/v1/telemetry",
+            body,
+        )
+        .await?;
+        buffer.acknowledge(&batch_id)?;
+    }
+    Ok(())
 }
 
 async fn process_task(

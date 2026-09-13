@@ -3,6 +3,7 @@ import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys"
 import { requestDiscovery } from "@/lib/server/discovery";
 import { processNextEnrollmentJob } from "@/lib/server/enrollment";
 import { authorityPaused } from "@/lib/server/settings";
+import { runTelemetryRetention } from "@/lib/server/telemetry";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const LEASE_RECOVERY_INTERVAL_MS = 30_000;
@@ -10,6 +11,7 @@ const LEASE_RECOVERY_INTERVAL_MS = 30_000;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let started = false;
 let enrollmentRun: Promise<unknown> | undefined;
+let lastRetentionAt = 0;
 
 function writeHeartbeat(now = Date.now()): void {
   const { sqlite } = getDatabase();
@@ -67,6 +69,10 @@ export function startRuntime(): void {
       recoverExpiredLeases();
       requestDiscovery();
       requestEnrollmentWork();
+      if (Date.now() - lastRetentionAt >= 60 * 60 * 1_000) {
+        runTelemetryRetention();
+        lastRetentionAt = Date.now();
+      }
     },
     Math.min(HEARTBEAT_INTERVAL_MS, LEASE_RECOVERY_INTERVAL_MS),
   );
