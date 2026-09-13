@@ -741,3 +741,21 @@ Never attach credential values, private keys, host-key private material, banners
   formatting checks remain required at next commit gate. No live device,
   production network, or production credential was contacted.
 - T029–T032 are complete. T033–T044 remain open.
+
+## Separate multi-vantage evidence and conservative identity
+
+- Requirements: FR-007–FR-009, FR-015, FR-019; implementation/test commits:
+  87b258d, 6daab4c.
+- Reconciliation test now combines same-address open SSH evidence from the
+  server and assigned agent into one candidate while retaining two provenance
+  records, two evidence IDs, one deduplicated access request, and no inferred
+  device identity.
+- Store tests retain entry-point observations/current projections by scanner
+  identity. Topology tests cap address-only relationship confidence and skip
+  decommissioned inventory; no address-only path creates or merges devices.
+- Exact verification: `go test ./internal/discovery -run
+  'TestReconcileScanObservationsMergesVantagesAndDeduplicatesAccess|TestReconcileScanObservationKeepsCandidateWhenLaterProbeContradictsIt'
+  -count=1` passed; `go test ./internal/topology -count=1` passed; `git diff
+  --check` passed. No live device, production network, or production credential
+  was contacted.
+- T033 is complete. T034–T044 remain open.

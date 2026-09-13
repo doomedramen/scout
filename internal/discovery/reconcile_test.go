@@ -183,12 +183,12 @@ func TestReconcileScanObservationsMergesVantagesAndDeduplicatesAccess(t *testing
 	observations := []store.EntryPointObservation{
 		{
 			ID: "observation-agent-1", ScopeID: fixture.scope.ID, ScopeRevision: fixture.policy.Revision,
-			ScannerKind: "agent", ScannerID: "agent-scan-1", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
+			ScannerKind: "server", ScannerID: "control-server", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
 			Port: 22, EntryPointID: fixture.policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: fixture.now,
 		},
 		{
 			ID: "observation-agent-2", ScopeID: fixture.scope.ID, ScopeRevision: fixture.policy.Revision,
-			ScannerKind: "agent", ScannerID: "agent-scan-2", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
+			ScannerKind: "agent", ScannerID: "agent-scan-1", Address: "192.0.2.10", Transport: store.ScanTransportTCP,
 			Port: 22, EntryPointID: fixture.policy.EntryPoints[0].ID, Outcome: "open", ObservedAt: fixture.now.Add(time.Second),
 		},
 	}
@@ -198,6 +198,16 @@ func TestReconcileScanObservationsMergesVantagesAndDeduplicatesAccess(t *testing
 	}
 	if len(candidates[0].Provenance) != 2 {
 		t.Fatalf("vantage provenance was collapsed: %+v", candidates[0])
+	}
+	if candidates[0].DeviceID != "" || len(candidates[0].EvidenceIDs) != 2 {
+		t.Fatalf("address evidence inferred identity or lost evidence: %+v", candidates[0])
+	}
+	provenance := map[string]bool{}
+	for _, item := range candidates[0].Provenance {
+		provenance[item.ScannerKind+":"+item.ScannerID] = true
+	}
+	if !provenance["server:control-server"] || !provenance["agent:agent-scan-1"] {
+		t.Fatalf("server and agent provenance were not kept separate: %+v", candidates[0].Provenance)
 	}
 	requests, err := fixture.store.ListAccessRequests(ctx, "", "")
 	if err != nil || len(requests) != 1 {
