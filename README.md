@@ -225,6 +225,14 @@ TypeScript workspace checks. Run `npm run format` to rewrite the supported
 source and configuration files, or `npm run format:check` for a read-only
 CI-style check.
 
+Lefthook is installed as a pinned development dependency. `npm install` or
+`npm ci` installs the repository's Git hooks: pre-commit formats staged source
+files, runs lint/type checks, and checks staged whitespace; pre-push runs the
+same quality checks, the workspace tests/build, and the Playwright browser
+suite. Run `npm run prepare` to install the hooks manually, or
+`npx lefthook run pre-commit` / `npx lefthook run pre-push --force` to invoke
+them directly.
+
 The snapshot command prints this machine's hostname, OS, architecture, CPU count, and active non-loopback interface addresses. It does not enroll, upload metrics, discover remote devices, or install software. It is a collector scaffold, not a running monitoring daemon.
 
 Build a Linux agent from any supported development host:

@@ -11,17 +11,19 @@
     "setup": "node scripts/setup.mjs",
     "build": "turbo run build",
     "check": "turbo run check",
-    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
-    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.yaml\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
+    "format": "prettier --write \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/app/**/*.{ts,tsx,css}\" \"apps/web/*.{ts,json}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.{yml,yaml}\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
+    "format:check": "prettier --check \"apps/web/src/**/*.{ts,tsx,css}\" \"apps/web/app/**/*.{ts,tsx,css}\" \"apps/web/*.{ts,json}\" \"tests/e2e/**/*.{ts,mjs}\" \"scripts/**/*.{mjs,js}\" \"api/schemas/*.json\" \"tests/fixtures/collectors/*.json\" \"package.json\" \"apps/*/package.json\" \"*.{yml,yaml}\" \".github/workflows/*.{yml,yaml}\" \".prettierrc.json\" \"playwright.config.ts\"",
     "lint": "bash scripts/lint.sh",
     "test:e2e:browser": "npm run build && playwright test",
     "test:proxmox-helper": "bash scripts/test-proxmox-helper.sh",
     "test": "turbo run test",
     "db:up": "node scripts/compose.mjs up -d --wait postgres",
-    "db:down": "node scripts/compose.mjs stop postgres"
+    "db:down": "node scripts/compose.mjs stop postgres",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "lefthook": "2.1.12",
     "prettier": "^3.9.6",
     "turbo": "^2.10.12"
   }

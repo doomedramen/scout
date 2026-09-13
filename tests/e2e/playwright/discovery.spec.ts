@@ -40,6 +40,20 @@ async function ownerPost(page: Page, path: string, data: unknown, idempotencyKey
   });
 }
 
+async function waitForScanIdle(page: Page, scopeId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/v1/scopes/${encodeURIComponent(scopeId)}/scan-status`);
+        if (response.status() !== 200) return "request-failed";
+        const status = (await response.json()) as { activeRun: { state: string } | null };
+        return status.activeRun?.state ?? "idle";
+      },
+      { timeout: 15_000, intervals: [250, 500, 1000] },
+    )
+    .toBe("idle");
+}
+
 test("owner can configure a bounded scan and see local SSH evidence", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
@@ -207,6 +221,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   const scopeResponse = await page.request.get(`/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}`);
   expect(scopeResponse.status()).toBe(200);
   const scanScope = (await scopeResponse.json()) as { scanPolicy: { revision: number } };
+  await waitForScanIdle(page, createdScope?.id ?? "");
   const duplicateRun = await ownerPost(
     page,
     `/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}/scan-runs`,
@@ -214,19 +229,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
     `duplicate-evidence-${Date.now()}`,
   );
   expect(duplicateRun.status()).toBe(202);
-  await expect
-    .poll(
-      async () => {
-        const response = await page.request.get(
-          `/api/v1/scopes/${encodeURIComponent(createdScope?.id ?? "")}/scan-status`,
-        );
-        if (response.status() !== 200) return "request-failed";
-        const status = (await response.json()) as { activeRun: { state: string } | null };
-        return status.activeRun?.state ?? "idle";
-      },
-      { timeout: 15_000, intervals: [250, 500, 1000] },
-    )
-    .toBe("idle");
+  await waitForScanIdle(page, createdScope?.id ?? "");
   const duplicateCandidatesResponse = await page.request.get(
     `/api/v1/candidates?scopeId=${encodeURIComponent(createdScope?.id ?? "")}`,
   );
