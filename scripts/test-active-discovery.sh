@@ -34,7 +34,7 @@ require_command() {
 	}
 }
 
-for command_name in docker curl go ip jq tcpdump sudo; do
+for command_name in docker curl go ip jq setsid tcpdump sudo; do
 	require_command "$command_name"
 done
 docker info >/dev/null 2>&1 || {
@@ -48,6 +48,7 @@ sudo -n true >/dev/null 2>&1 || {
 
 lab_dir="$(mktemp -d "${TMPDIR:-/tmp}/scout-active-discovery.XXXXXX")"
 keep_lab="${SCOUT_ACTIVE_DISCOVERY_LAB_KEEP:-0}"
+large_workload="${SCOUT_ACTIVE_DISCOVERY_LAB_256:-0}"
 lab_id="scout-active-${PPID}-${RANDOM}"
 container_names=()
 network_names=()
@@ -56,10 +57,7 @@ capture_pids=()
 cleanup() {
 	local exit_code=$?
 	set +e
-	for pid in "${capture_pids[@]}"; do
-		kill -INT "$pid" >/dev/null 2>&1 || true
-		wait "$pid" >/dev/null 2>&1 || true
-	done
+	stop_captures
 	if ((${#container_names[@]} > 0)); then
 		docker rm -f "${container_names[@]}" >/dev/null 2>&1 || true
 	fi
@@ -109,6 +107,9 @@ owner_password="${SCOUT_ACTIVE_DISCOVERY_LAB_PASSWORD:-ScoutAa1}"
 if ! [[ "$host_port" =~ ^[0-9]+$ ]] || ((host_port < 1024 || host_port > 65535)); then
 	fail_lab "SCOUT_ACTIVE_DISCOVERY_LAB_PORT must be between 1024 and 65535"
 fi
+if [[ "$large_workload" != "0" && "$large_workload" != "1" ]]; then
+	fail_lab "SCOUT_ACTIVE_DISCOVERY_LAB_256 must be 0 or 1"
+fi
 if curl --silent --show-error --max-time 1 "http://127.0.0.1:${host_port}/api/status" >/dev/null 2>&1; then
 	fail_lab "localhost port ${host_port} is already in use"
 fi
@@ -134,8 +135,17 @@ done
 start_capture() {
 	local bridge=$1
 	local output=$2
-	sudo -n tcpdump -i "$bridge" -nn -U -w "$output" 'tcp' >"$output.log" 2>&1 &
+	setsid sudo -n tcpdump -i "$bridge" -nn -U -w "$output" 'tcp' >"$output.log" 2>&1 &
 	capture_pids+=("$!")
+}
+
+stop_captures() {
+	for pid in "${capture_pids[@]}"; do
+		kill -INT -- -"$pid" >/dev/null 2>&1 || true
+	done
+	for pid in "${capture_pids[@]}"; do
+		wait "$pid" >/dev/null 2>&1 || true
+	done
 }
 
 start_capture "$server_bridge" "$lab_dir/server.pcap"
@@ -219,9 +229,19 @@ site_payload="$(jq -n --arg name "${lab_id}-site" '{name:$name}')"
 site_response="$(owner_post /api/v1/sites "$site_payload")" || fail_lab "site creation failed"
 site_id="$(jq -er '.id // empty' <<<"$site_response")" || fail_lab "site creation omitted id"
 
-server_scan_policy="$(jq -n '{serverEnabled:true,agentIds:[],scheduleSeconds:300,entryPoints:[{id:"ssh-default",name:"SSH",transport:"tcp",port:22,accessMethod:"ssh",enabled:true}],limits:{probesPerSecond:20,concurrency:1,targetBudget:3,attemptBudget:3,timeoutMilliseconds:500,runDeadlineSeconds:60,resultPageSize:10}}')"
-server_scope_payload="$(jq -n --arg siteId "$site_id" --arg open "$server_target_ip" --arg excluded "$excluded_target_ip" --arg closed "$closed_target_ip" --argjson scanPolicy "$server_scan_policy" \
-	'{siteId:$siteId,ranges:[$open,$excluded,$closed],exclusions:[$excluded],methods:["tcp"],ports:[22],enabled:true,scanPolicy:$scanPolicy}')"
+server_target_budget=3
+server_attempt_budget=3
+server_ranges_json="$(jq -n --arg open "$server_target_ip" --arg excluded "$excluded_target_ip" --arg closed "$closed_target_ip" '[$open,$excluded,$closed]')"
+server_exclusions_json="$(jq -n --arg excluded "$excluded_target_ip" '[$excluded]')"
+if [[ "$large_workload" == "1" ]]; then
+	server_target_budget=256
+	server_attempt_budget=256
+	server_ranges_json="$(jq -n --arg subnet "$server_subnet" '[$subnet]')"
+fi
+server_scan_policy="$(jq -n --argjson targetBudget "$server_target_budget" --argjson attemptBudget "$server_attempt_budget" \
+	'{serverEnabled:true,agentIds:[],scheduleSeconds:300,entryPoints:[{id:"ssh-default",name:"SSH",transport:"tcp",port:22,accessMethod:"ssh",enabled:true}],limits:{probesPerSecond:1000,concurrency:16,targetBudget:$targetBudget,attemptBudget:$attemptBudget,timeoutMilliseconds:500,runDeadlineSeconds:60,resultPageSize:50}}')"
+server_scope_payload="$(jq -n --arg siteId "$site_id" --argjson ranges "$server_ranges_json" --argjson exclusions "$server_exclusions_json" --argjson scanPolicy "$server_scan_policy" \
+	'{siteId:$siteId,ranges:$ranges,exclusions:$exclusions,methods:["tcp"],ports:[22],enabled:true,scanPolicy:$scanPolicy}')"
 server_scope_response="$(owner_post /api/v1/scopes "$server_scope_payload")" || fail_lab "server scope creation failed"
 server_scope_id="$(jq -er '.id // empty' <<<"$server_scope_response")" || fail_lab "server scope omitted id"
 server_policy_revision="$(jq -er '.scanPolicy.revision // empty' <<<"$server_scope_response")" || fail_lab "server scope omitted policy revision"
@@ -285,8 +305,19 @@ server_candidate_state="$(wait_for_candidate "$server_scope_id" "$server_target_
 server_run_detail="$(owner_get "/api/v1/scan-runs/${server_run_id}")"
 server_open_count="$(jq -r '.outcomeCounts.open // 0' <<<"$server_run_detail")"
 server_closed_count="$(jq -r '.outcomeCounts.closed // 0' <<<"$server_run_detail")"
-if [[ "$server_open_count" != "1" || "$server_closed_count" != "1" ]]; then
-	fail_lab "server-only run outcomes were not open=1, closed=1: $server_run_detail"
+server_targets_planned="$(jq -r '.targetsPlanned // 0' <<<"$server_run_detail")"
+if ((server_open_count < 1 || server_closed_count < 1)); then
+	fail_lab "server-only run did not record an open endpoint and a closed endpoint: $server_run_detail"
+fi
+if [[ "$large_workload" == "0" && "$server_open_count" != "1" ]]; then
+	fail_lab "server-only run recorded an unexpected open endpoint count: $server_run_detail"
+fi
+if [[ "$large_workload" == "1" ]]; then
+	server_candidates_response="$(owner_get "/api/v1/candidates?scopeId=${server_scope_id}")"
+	server_access_count="$(jq '[.items[]? | select(.state == "needs_credentials" or .state == "invalid_credentials" or .state == "needs_host_trust" or .state == "needs_privilege") | select(.entryPointCount > 0 and .excluded != true)] | length' <<<"$server_candidates_response")"
+	if [[ "$server_targets_planned" != "255" || "$server_access_count" != "$server_open_count" ]]; then
+		fail_lab "256-address scope access projection did not match open SSH endpoints: planned=${server_targets_planned}, open=${server_open_count}, access=${server_access_count}, candidates=$server_candidates_response"
+	fi
 fi
 
 invitation_payload="$(jq -n --arg displayName "${lab_id}-agent" --arg siteId "$site_id" '{displayName:$displayName,siteId:$siteId}')"
@@ -344,10 +375,11 @@ if [[ "$agent_open_count" != "1" ]]; then
 fi
 
 echo "Server run and agent run completed; stopping bridge packet capture." >&2
-for pid in "${capture_pids[@]}"; do
-	kill -INT "$pid" >/dev/null 2>&1 || true
-	wait "$pid" >/dev/null 2>&1 || true
-done
+# Give libpcap time to drain packets already delivered by the bridge before
+# sending tcpdump its interrupt. This matters on a virtualized Docker host
+# after the high-volume 256-address server run.
+sleep 2
+stop_captures
 capture_pids=()
 
 count_syn() {
@@ -373,4 +405,5 @@ Server-only scope: ${server_scope_id}; run ${server_run_id}; state ${server_run_
 Agent-only scope: ${agent_scope_id}; run ${agent_run_id}; state ${agent_run_state}; candidate ${agent_candidate_state}; agent ${agent_id}.
 Packet SYN counts: server target ${server_target_syn}, excluded target ${excluded_target_syn}, agent target ${agent_target_syn}, adjacent target ${adjacent_target_syn}.
 Topology: server ${server_subnet}, agent ${agent_subnet}, adjacent unauthorized ${adjacent_subnet}.
+Server workload: ${server_targets_planned} planned targets; open=${server_open_count}; closed=${server_closed_count}; actionable access candidates=${server_access_count:-not measured}.
 EOF
