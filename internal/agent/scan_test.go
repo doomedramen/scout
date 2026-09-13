@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +30,24 @@ func validScanAssignment(now time.Time) ScanAssignment {
 		}},
 		Limits: store.ScanLimits{ProbesPerSecond: 100, Concurrency: 2, TargetBudget: 4, AttemptBudget: 3, TimeoutMilliseconds: 1000, RunDeadlineSeconds: 30, ResultPageSize: 2},
 	}
+}
+
+func agentCollectorFixtureRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "proc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, contents := range map[string]string{
+		"proc/stat":    "cpu  100 0 100 800 0 0 0 0 0 0\n",
+		"proc/meminfo": "MemTotal:       1024 kB\nMemAvailable:    256 kB\n",
+		"proc/uptime":  "42.5 1.0\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, path), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
 }
 
 func TestValidateScanAssignmentRejectsExpiredAndUnsafeWork(t *testing.T) {
@@ -254,7 +274,7 @@ func TestReportOnceKeepsTelemetryAheadOfScanExecution(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir(), Root: t.TempDir()})
+	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir(), Root: agentCollectorFixtureRoot(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +347,7 @@ func TestCancelledScanAcknowledgesPauseAfterExecutionStops(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir(), Root: t.TempDir()})
+	runtime, err := NewRuntime(Config{ServerURL: server.URL, DataDir: t.TempDir(), Root: agentCollectorFixtureRoot(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

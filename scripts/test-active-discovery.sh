@@ -57,7 +57,7 @@ cleanup() {
 	local exit_code=$?
 	set +e
 	for pid in "${capture_pids[@]}"; do
-		kill "$pid" >/dev/null 2>&1 || true
+		kill -INT "$pid" >/dev/null 2>&1 || true
 		wait "$pid" >/dev/null 2>&1 || true
 	done
 	if ((${#container_names[@]} > 0)); then
@@ -94,6 +94,7 @@ network_names+=("$server_net" "$agent_net" "$adjacent_net")
 
 server_ip="172.30.${server_subnet_octet}.10"
 postgres_ip="172.30.${server_subnet_octet}.11"
+agent_control_ip="172.30.${server_subnet_octet}.12"
 server_target_ip="172.30.${server_subnet_octet}.20"
 excluded_target_ip="172.30.${server_subnet_octet}.21"
 closed_target_ip="172.30.${server_subnet_octet}.22"
@@ -175,7 +176,11 @@ docker run --rm -d --name "$server_name" --network "$server_net" --ip "$server_i
 	-e SCOUT_AUTO_ENROLLMENT=true debian:bookworm-slim /usr/local/bin/scout-server >/dev/null
 container_names+=("$server_name")
 
-lab_base_url="http://127.0.0.1:${host_port}"
+# Contact the control plane over its private Docker address. This works both
+# on a native Linux Docker host and inside a Lima/Colima Linux VM, where a
+# localhost-published port is owned by the macOS-side forwarding layer rather
+# than the VM shell running this harness.
+lab_base_url="http://${server_ip}:8080"
 for attempt in $(seq 1 60); do
 	if curl --silent --show-error --fail --max-time 2 "$lab_base_url/api/status" >/dev/null 2>&1; then
 		break
@@ -291,7 +296,7 @@ invitation="$(jq -er '.invitation // empty' <<<"$invitation_response")" || fail_
 printf '%s\n' "$invitation" >"$lab_dir/invitation"
 chmod 0600 "$lab_dir/invitation"
 
-docker run --rm -d --name "$agent_name" --network "$server_net" --ip "$agent_ip" \
+docker run --rm -d --name "$agent_name" --network "$server_net" --ip "$agent_control_ip" \
 	-v "$lab_dir/scout-agent:/usr/local/bin/scout-agent:ro" debian:bookworm-slim sleep infinity >/dev/null
 container_names+=("$agent_name")
 docker network connect --ip "$agent_ip" "$agent_net" "$agent_name"
@@ -340,7 +345,7 @@ fi
 
 echo "Server run and agent run completed; stopping bridge packet capture." >&2
 for pid in "${capture_pids[@]}"; do
-	kill "$pid" >/dev/null 2>&1 || true
+	kill -INT "$pid" >/dev/null 2>&1 || true
 	wait "$pid" >/dev/null 2>&1 || true
 done
 capture_pids=()
