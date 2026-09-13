@@ -124,14 +124,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T036 [P] [US4] Add failing API/store tests for run/candidate pagination, outcome counts, partial reasons, status projection, retention blockers, cleanup restart, audit redaction, and 100-device query bounds in internal/store/discovery_test.go, internal/control/http_test.go, and tests/integration/scan_storage_test.go (FR-007, FR-016, FR-018–FR-022; SC-006–SC-009).
-- [ ] T037 [P] [US4] Add failing browser tests for run progress, last/next schedule, coverage, partial/stale/error/empty states, candidate filtering, keyboard navigation, and 360/768/1440 CSS-pixel layouts in tests/e2e/discovery.spec.ts (FR-016, FR-019, FR-021; SC-006, SC-009).
+- [X] T036 [P] [US4] Add failing API/store tests for run/candidate pagination, outcome counts, partial reasons, status projection, retention blockers, cleanup restart, audit redaction, and 100-device query bounds in internal/store/discovery_test.go, internal/control/http_test.go, and tests/integration/scan_storage_test.go (FR-007, FR-016, FR-018–FR-022; SC-006–SC-009).
+- [X] T037 [P] [US4] Add failing browser tests for run progress, last/next schedule, coverage, partial/stale/error/empty states, candidate filtering, keyboard navigation, and 360/768/1440 CSS-pixel layouts in tests/e2e/discovery.spec.ts (FR-016, FR-019, FR-021; SC-006, SC-009).
 
 ### Implementation for User Story 4
 
-- [ ] T038 [US4] Implement scan-run list/detail/cancel, scope scan-status, coverage projection, bounded candidate filters, cursor pagination, and exact safe errors in internal/control/discovery.go and apps/web/src/lib/api.ts (FR-016, FR-018–FR-021; SC-006, SC-007).
-- [ ] T039 [US4] Implement 30-day result/evidence and 90-day run-summary cleanup with unresolved-request protection, restart-safe batches, lag/backpressure status, and no candidate/exclusion deletion in internal/store/discovery.go and internal/discovery/coordinator.go (FR-018, FR-019, FR-022; SC-006, SC-007).
-- [ ] T040 [US4] Build accessible scan-run progress, outcome summaries, partial reasons, last/next schedule, vantage provenance, evidence freshness, and action filters in apps/web/src/views/network.tsx and apps/web/src/views/scopes.tsx (FR-016, FR-018–FR-021; SC-006, SC-009).
+- [X] T038 [US4] Implement scan-run list/detail/cancel, scope scan-status, coverage projection, bounded candidate filters, cursor pagination, and exact safe errors in internal/control/discovery.go and apps/web/src/lib/api.ts (FR-016, FR-018–FR-021; SC-006, SC-007).
+- [X] T039 [US4] Implement 30-day result/evidence and 90-day run-summary cleanup with unresolved-request protection, restart-safe batches, lag/backpressure status, and no candidate/exclusion deletion in internal/store/discovery.go and internal/discovery/coordinator.go (FR-018, FR-019, FR-022; SC-006, SC-007).
+- [X] T040 [US4] Build accessible scan-run progress, outcome summaries, partial reasons, last/next schedule, vantage provenance, evidence freshness, and action filters in apps/web/src/views/network.tsx and apps/web/src/views/scopes.tsx (FR-016, FR-018–FR-021; SC-006, SC-009).
 
 **Checkpoint**: Owner can distinguish complete coverage from partial, stale, failed, or bounded work and act without reading logs.
 
