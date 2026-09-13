@@ -138,7 +138,7 @@ export function SystemsView({
           if (!cancelled && initial) setLoading(false);
         });
     };
-    if (!initialData || retry > 0 || query || health || monitoringState) load(true);
+    load(!initialData || retry > 0 || Boolean(query) || Boolean(health) || Boolean(monitoringState));
     const timer = window.setInterval(() => load(false), 5000);
     return () => {
       cancelled = true;

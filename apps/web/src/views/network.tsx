@@ -73,7 +73,6 @@ export function NetworkView({
   }, []);
 
   useEffect(() => {
-    if (initialData && retry === 0) return;
     let cancelled = false;
     setError("");
     api
@@ -133,7 +132,7 @@ export function NetworkView({
           if (!cancelled)
             setCandidateError(caught instanceof APIError ? caught.message : "Could not load found devices");
         });
-    if (!initialData || retry > 0) void loadCandidates();
+    void loadCandidates();
     const timer = window.setInterval(loadCandidates, 5000);
     return () => {
       cancelled = true;

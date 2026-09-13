@@ -115,9 +115,8 @@ export function OverviewView({
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    if (initialData && retry === 0) return;
     let cancelled = false;
-    setLoading(true);
+    if (!initialData || retry > 0) setLoading(true);
     setError("");
     Promise.allSettled([
       loadAll((query) => api.devices(query)),
