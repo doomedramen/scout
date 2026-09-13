@@ -861,13 +861,46 @@ Never attach credential values, private keys, host-key private material, banners
   scan progress/partial/stale/empty/unavailable states, bounded filters, and
   SSH username/password enrollment UI. No browser test used a real device or
   credential.
-- The live segmented packet-capture lab was not run. The current host is
-  macOS, while `scripts/test-active-discovery.sh` fails closed unless it is
-  running on Linux with Docker, isolated internal bridges, bridge-scoped
-  tcpdump permission, and explicit `SCOUT_ACTIVE_DISCOVERY_LAB_CONFIRM=YES`.
-  The same boundary applies to the live older-agent, native systemd, hardware,
-  storage, and provider checks. These are recorded as remaining external
-  evidence, not as passed support claims.
-- T043 remains open only for the owner-authorized Linux lab and its live
-  compatibility/workload evidence. T044 is complete for the repository gates
-  and fixture integration scripts listed above.
+- The live segmented packet-capture lab has since passed in the owner-authorized
+  Colima Linux VM; see the dated section below. The live older-agent, native
+  systemd, hardware, storage, and provider checks remain unclaimed. The
+  controlled 256-address scan is also still open; the lab run below uses a
+  three-target topology.
+- T043 remains open for the live 256-address workload and unvalidated live
+  compatibility checks. T044 is complete for the repository gates and fixture
+  integration scripts listed above.
+
+## Live segmented Docker lab in the Linux VM
+
+- Requirements: FR-001–FR-022; SC-001, SC-002, SC-003, SC-006, SC-007,
+  SC-008, and SC-010; validation date: 2026-09-13 (Europe/London);
+  implementation/test commit: `04d1945`.
+- The lab ran inside the existing Colima Linux VM rather than against the
+  macOS host network: Ubuntu 24.04.4 arm64, Docker 29.5.2, two isolated
+  internal Docker bridges, and bridge-scoped `tcpdump`. QEMU was available on
+  the host, but a second guest was unnecessary for this Linux-only boundary
+  check.
+- Command used, with no production endpoint or credential:
+  `colima ssh -- sh -lc 'cd /Users/martin/Developer/scout && SCOUT_ACTIVE_DISCOVERY_LAB=1 SCOUT_ACTIVE_DISCOVERY_LAB_CONFIRM=YES SCOUT_ACTIVE_DISCOVERY_LAB_KEEP=1 bash scripts/test-active-discovery.sh'`.
+- The segmented run passed. The server-only scope completed with candidate
+  outcome `needs_credentials`; the agent-only scope completed with candidate
+  outcome `needs_credentials` and one enrolled disposable agent. Packet
+  counts were one SYN to the authorized server target, zero to the excluded
+  server target, one SYN to the authorized agent target, and zero to the
+  adjacent unauthorized subnet. The server bridge was `172.30.154.0/24`, the
+  agent bridge was `172.30.155.0/24`, and the adjacent unauthorized bridge was
+  `172.30.156.0/24`.
+- Retained packet-capture hashes were: server
+  `0160324e2ac399a7fddf3842ba88c6e5db9af5f007f91066bc317b07fcf6f9d2`, agent
+  `b2ad15d6d7946f012ababee12fe124e31817dbe00c9de96506ecf17a1583aa25`, and
+  adjacent `704e5e5b3234433c01fd1b20a306e77e985038120492dc53965c3edd38a4ea`.
+- The lab script was hardened in `04d1945` for Linux VM execution: it uses
+  the server container's private address, attaches the agent to both
+  intentionally separated networks, and interrupts `tcpdump` cleanly so
+  short captures flush before assertions. No real LAN address, device,
+  production credential, or external deployment was used.
+- Cleanup was issued against the four exact disposable artifact directories;
+  the Colima guest then became unavailable with a VM I/O error before a final
+  filesystem verification could complete, so the VM was force-stopped and was
+  left stopped. This is an environment cleanup limitation, not a Scout test
+  result. The retained artifacts were never copied into the repository.

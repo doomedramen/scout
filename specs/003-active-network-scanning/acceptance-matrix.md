@@ -26,5 +26,6 @@
 | Contracts, Go tests, vet, web checks/build/format, diff cleanliness | Passed | Final repository gate recorded in `evidence.md`; 16 Playwright tests passed. |
 | Fixture scanning, enrollment, credentials/trust, recovery, retention, and backpressure | Passed | All repository fixture scripts passed, including disposable PostgreSQL 17 integration. |
 | Synthetic 100-device/24-hour workload | Passed | 96,000 samples and 120,000 observations; 41.687s ingest, 11.66ms query p95; not a live capacity claim. |
-| Live segmented packet capture and 256-address workload | Open | Requires the guarded Linux Docker lab and owner confirmation; current validation host is macOS. |
+| Live segmented packet capture | Passed | Guarded three-target Linux Docker lab passed in Colima; packet capture showed authorized server/agent SYNs and no excluded/adjacent SYNs. |
+| Live 256-address workload | Open | The three-target segmented lab passed, but the controlled 256-address scan has not been run. |
 | Native systemd, older-agent, provider, and live hardware/storage compatibility | Open | Fixture coverage passed; live evidence remains intentionally opt-in and unclaimed. |
