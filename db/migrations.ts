@@ -207,6 +207,21 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_invitation (
+        id TEXT PRIMARY KEY NOT NULL,
+        system_id TEXT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
+        token_hash TEXT NOT NULL UNIQUE,
+        public_key TEXT,
+        expires_at INTEGER NOT NULL,
+        consumed_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS invitation_system_idx ON agent_invitation(system_id);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: Database.Database): void {

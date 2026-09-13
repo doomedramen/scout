@@ -111,6 +111,22 @@ export const systems = sqliteTable(
   ],
 );
 
+export const agentInvitations = sqliteTable(
+  "agent_invitation",
+  {
+    id: text("id").primaryKey(),
+    systemId: text("system_id")
+      .notNull()
+      .references(() => systems.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    publicKey: text("public_key"),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("invitation_system_idx").on(table.systemId)],
+);
+
 export const systemAddresses = sqliteTable(
   "system_address",
   {
@@ -315,6 +331,7 @@ export const systemRelations = relations(systems, ({ many, one }) => ({
   credentials: many(credentials),
   agents: many(agents),
   enrollmentJobs: many(enrollmentJobs),
+  invitations: many(agentInvitations),
 }));
 
 export const agentRelations = relations(agents, ({ one, many }) => ({
@@ -330,6 +347,7 @@ export const schema = {
   verification,
   appSettings,
   setupTokens,
+  agentInvitations,
   networkSegments,
   systems,
   systemAddresses,

@@ -9,6 +9,7 @@ describe("SQLite foundation", () => {
     expect(first.sqlite.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(first.sqlite.prepare("SELECT version FROM schema_migration").all()).toEqual([
       { version: 1 },
+      { version: 2 },
     ]);
     first.sqlite.close();
 
