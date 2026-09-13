@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { AccessGrantForm } from "@/components/systems/access-grant-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requirePageSession } from "@/lib/server/session";
@@ -85,6 +86,10 @@ export default async function SystemPage({ params }: { params: Promise<{ systemI
                 No supported access evidence is available yet.
               </p>
             )}
+            {!system.agent &&
+            system.evidence.some((evidence) => evidence.current && evidence.method === "ssh") ? (
+              <AccessGrantForm systemId={system.id} />
+            ) : null}
           </CardContent>
         </Card>
         <Card className="lg:col-span-2">

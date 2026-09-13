@@ -1,5 +1,6 @@
 import { getDatabase } from "@/lib/server/db";
 import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys";
+import { requestDiscovery } from "@/lib/server/discovery";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const LEASE_RECOVERY_INTERVAL_MS = 30_000;
@@ -43,11 +44,13 @@ export function startRuntime(): void {
   controlSigningKey();
   recoverExpiredLeases();
   writeHeartbeat();
+  requestDiscovery();
 
   heartbeatTimer = setInterval(
     () => {
       writeHeartbeat();
       recoverExpiredLeases();
+      requestDiscovery();
     },
     Math.min(HEARTBEAT_INTERVAL_MS, LEASE_RECOVERY_INTERVAL_MS),
   );

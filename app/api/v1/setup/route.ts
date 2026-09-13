@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { validateOwnerPassword } from "@/lib/auth/password";
 import { auth } from "@/lib/server/auth";
+import { requestDiscovery } from "@/lib/server/discovery";
 import { jsonError, sameOrigin } from "@/lib/server/http";
 import {
   consumeSetupToken,
@@ -66,6 +67,7 @@ async function createOwner(request: Request): Promise<Response> {
       return jsonError("The setup token is invalid or has expired.", 400);
     }
 
+    requestDiscovery();
     return Response.json(
       { created: true },
       { status: 201, headers: { "Cache-Control": "no-store" } },
