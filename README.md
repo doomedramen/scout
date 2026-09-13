@@ -183,8 +183,13 @@ live in [`install/scout-install.sh`](install/scout-install.sh) and
 
 The helper creates an unprivileged Debian 13 LXC, installs Docker, and starts
 the Scout quickstart stack with generated database and setup credentials. Run
-`update` inside the resulting LXC to pull the latest Scout and PostgreSQL
-images and recreate the services while retaining both named data volumes.
+`update` inside the resulting LXC to download and validate the current
+[`compose.proxmox.yaml`](compose.proxmox.yaml), pull the latest Scout and
+PostgreSQL images, and recreate the services while retaining both named data
+volumes. The previous Compose file is kept at
+`/opt/scout/compose.yaml.previous`; the `.env` file is not replaced. Set
+`SCOUT_COMPOSE_URL` only when using an owner-controlled mirror of the Proxmox
+Compose definition.
 
 This integration has syntax and metadata contract coverage, but still needs a
 live Proxmox VE installation test before it can be described as verified.

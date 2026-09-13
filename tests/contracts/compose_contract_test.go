@@ -23,6 +23,21 @@ func TestComposeKeepsListenAndPortMappingConfigurable(t *testing.T) {
 		}
 	}
 
+	proxmox, err := os.ReadFile(repoPath(t, "compose.proxmox.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxmoxText := string(proxmox)
+	for _, required := range []string{
+		`${SCOUT_BIND_ADDRESS:-0.0.0.0}:${SCOUT_PORT:-8080}:8080`,
+		`SCOUT_LISTEN: "127.0.0.1:8081"`,
+		`SCOUT_API_ORIGIN: http://127.0.0.1:8081`,
+	} {
+		if !strings.Contains(proxmoxText, required) {
+			t.Errorf("Proxmox compose missing %q", required)
+		}
+	}
+
 	production, err := os.ReadFile(repoPath(t, "compose.yaml"))
 	if err != nil {
 		t.Fatal(err)
