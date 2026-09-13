@@ -31,7 +31,10 @@ import (
 	"scout.local/scout/internal/updates"
 )
 
-const AgentVersion = "0.1.0"
+const (
+	AgentVersion           = "0.1.0"
+	defaultRenewalLeadTime = 7 * 24 * time.Hour
+)
 
 type Config struct {
 	ServerURL        string
@@ -41,6 +44,7 @@ type Config struct {
 	Interval         time.Duration
 	HTTPClient       *http.Client
 	Version          string
+	RenewalLeadTime  time.Duration
 	ReleaseTrustFile string
 	ScanCapabilities store.ScanCapabilities
 	ScanDialContext  func(context.Context, string, string) (net.Conn, error)
@@ -95,6 +99,9 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.Version == "" {
 		config.Version = AgentVersion
 	}
+	if config.RenewalLeadTime <= 0 {
+		config.RenewalLeadTime = defaultRenewalLeadTime
+	}
 	if config.ScanCapabilities.ScanProtocolVersions == nil && config.ScanCapabilities.ScanTransports == nil {
 		config.ScanCapabilities = store.ScanCapabilities{ScanProtocolVersions: []int{1}, ScanTransports: []string{store.ScanTransportTCP}}
 	}
@@ -144,6 +151,10 @@ func (r *Runtime) RunOnce(ctx context.Context) error {
 func (r *Runtime) ReportOnce(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Renewal is best effort. The current certificate and token remain valid
+	// until their expiry, so a transient renewal failure must not stop a healthy
+	// agent from flushing telemetry and trying again on its next interval.
+	_ = r.renewIfNeeded(ctx)
 	_ = r.flushSpool(ctx)
 	snapshot, err := r.collector.Collect(ctx)
 	if err != nil {
@@ -318,15 +329,95 @@ func (r *Runtime) enroll(ctx context.Context, invitation, path string) error {
 		return fmt.Errorf("enrollment response omitted identity")
 	}
 	r.identity = persistedIdentity{DeviceID: result.DeviceID, AgentID: result.AgentID, AgentToken: result.AgentToken, CertificatePEM: result.CertificatePEM, CABundlePEM: result.CABundlePEM, PrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: private})), ExpiresAt: result.ExpiresAt, Version: r.Config.Version}
-	encoded, _ := json.Marshal(r.identity)
+	if err := persistIdentity(path, r.identity); err != nil {
+		return err
+	}
+	if err := r.configureTLS(); err != nil {
+		return err
+	}
+	return nil
+}
+
+type renewalResult struct {
+	DeviceID       string    `json:"deviceId"`
+	AgentID        string    `json:"agentId"`
+	AgentToken     string    `json:"agentToken"`
+	CertificatePEM string    `json:"certificatePem"`
+	CABundlePEM    string    `json:"caBundlePem"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+}
+
+func (r *Runtime) renewIfNeeded(ctx context.Context) error {
+	if r.identity.AgentID == "" || r.identity.AgentToken == "" || r.identity.ExpiresAt.IsZero() {
+		return nil
+	}
+	if time.Until(r.identity.ExpiresAt) > r.Config.RenewalLeadTime {
+		return nil
+	}
+	csr, err := r.renewalCSR()
+	if err != nil {
+		return err
+	}
+	body, err := json.Marshal(map[string]string{"csrPem": csr})
+	if err != nil {
+		return err
+	}
+	data, err := r.postResponse(ctx, "/api/v1/agent/v1/renew", body, r.identity.AgentToken)
+	if err != nil {
+		return err
+	}
+	var result renewalResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return err
+	}
+	if result.DeviceID == "" || result.DeviceID != r.identity.DeviceID || result.AgentID == "" || result.AgentID != r.identity.AgentID || result.AgentToken == "" || result.CertificatePEM == "" || result.CABundlePEM == "" || result.ExpiresAt.IsZero() {
+		return fmt.Errorf("renewal response omitted identity")
+	}
+	next := r.identity
+	next.AgentToken = result.AgentToken
+	next.CertificatePEM = result.CertificatePEM
+	next.CABundlePEM = result.CABundlePEM
+	next.ExpiresAt = result.ExpiresAt
+	previous := r.identity
+	r.identity = next
+	if err := r.configureTLS(); err != nil {
+		r.identity = previous
+		return err
+	}
+	if err := persistIdentity(filepath.Join(r.Config.DataDir, "identity.json"), r.identity); err != nil {
+		r.identity = previous
+		_ = r.configureTLS()
+		return err
+	}
+	return nil
+}
+
+func (r *Runtime) renewalCSR() (string, error) {
+	block, _ := pem.Decode([]byte(r.identity.PrivateKeyPEM))
+	if block == nil || block.Type != "EC PRIVATE KEY" {
+		return "", fmt.Errorf("persisted agent private key is unavailable")
+	}
+	private, err := x509.ParseECPrivateKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("parse persisted agent private key: %w", err)
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "scout-agent"}}, private)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})), nil
+}
+
+func persistIdentity(path string, identity persistedIdentity) error {
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return err
+	}
 	temporary := path + ".new"
 	if err := os.WriteFile(temporary, encoded, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, path); err != nil {
-		return err
-	}
-	if err := r.configureTLS(); err != nil {
 		return err
 	}
 	return nil

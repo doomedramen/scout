@@ -14,14 +14,14 @@ repository has run the named fixture or an owner-authorized live lab.
 | Database image | postgres:17-alpine | Integration fixture verified | Disposable PostgreSQL integration script passed when a compatible local container was available. |
 | Docker engine | Docker 29.8.0 on Darwin arm64 | Runtime present | The host has Docker, but no Compose plugin. No live provider collector was run. |
 | Docker Compose | Not installed on verification host | Not verified | The production profile is checked in; install Compose before clean-host deployment. |
-| Linux agent | linux/amd64 and linux/arm64 build targets | Cross-build path verified | Builds are configured; native systemd install, restart, renewal, and revocation remain open. |
-| Linux systemd | No owner-authorized disposable host used | Open | scripts/test-first-agent.sh fixture covers persistence and reporting only. |
+| Linux agent | linux/amd64 and linux/arm64 build targets | Cross-build and renewal fixture verified | Builds are configured; the renewal path is covered by the authenticated runtime test. Live native-host renewal and power/loss-of-contact acceptance remain open. |
+| Linux systemd | Debian Bookworm systemd/OpenSSH container | Partial live lab | Owner-authorized disposable automatic install, restart identity persistence, online heartbeat, and revoked-heartbeat rejection passed on 2026-09-13. This is not a native-host or power-loss acceptance claim. |
 | Docker collector | Fixture adapter and denied/malformed responses | Fixture verified | Entity limits, bounded reads, and redaction are covered. Live Engine version/ACL compatibility is open. |
 | Proxmox VE collector | HTTPS/TLS fixture boundary | Fixture verified | Typed resource translation and TLS/fingerprint configuration are covered. Live PVE version/ACL compatibility is open. |
 | Third-party collector | Fake provider fixture | Fixture verified | Registry, deadline, panic/error containment, and bounded scheduling are covered. |
 | Release updater | Ed25519, Linux artifact fixtures | Fixture verified | Signature, digest, platform, generation, resume, journal, readiness, and one rollback are covered. |
 | Updater power loss | Disposable Linux VM required | Open | No process termination or power-cut lab was run. |
-| Automatic enrollment | In-process server worker plus in-memory, scope-bound fixtures | Boundary verified | Duplicate sightings, exclusions, grants, leases, owner host trust, remote install handoff, and revision fencing are covered. Live target placement is open. |
+| Automatic enrollment | In-process server worker plus disposable Debian Bookworm target | Owner-authorized lab verified | UI-driven SSH discovery, username/password access, host trust, fixed installation, enrollment, online heartbeat, restart persistence, and revocation passed locally on 2026-09-13. A separate second-vantage and native-host acceptance remains open. |
 | 100-device / 24-hour capacity | Synthetic 100-device, 24-hour sample shape | Synthetic only | T040 exercises 40 numeric series and 50 service states per device: 96,000 samples and 120,000 observations. The in-memory result is not a live PostgreSQL capacity or retention-sizing claim. |
 
 ## Required permissions

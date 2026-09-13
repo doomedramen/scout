@@ -126,6 +126,12 @@ host the server cannot reach. Discovered Linux targets use the server-local
 enrollment worker after the owner supplies SSH access; no agent image or
 separate worker container is required for the normal flow.
 
+Enrolled agents persist their device-bound identity under the agent data
+directory and renew their certificate and token automatically before the
+30-day identity reaches its final seven days. Renewal is atomic; if the
+server is temporarily unavailable, the current identity remains usable until
+expiry and the agent retries on its next report interval.
+
 ## Access and automatic enrollment
 
 Create a site and disabled scope first. Review ranges, exclusions, methods,

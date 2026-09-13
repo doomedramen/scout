@@ -142,6 +142,30 @@ This file records executed verification only. Planned targets from the specifica
   The top-bar `+` button is the sole manual-agent entry point and has a
   descriptive accessible name, title, expanded state, and 44px hit area.
 
+## Owner-authorized disposable automatic-enrollment lab
+
+- On 2026-09-13, a local `scout:northstar` server image, PostgreSQL 17, and a
+  disposable Debian Bookworm container running systemd and OpenSSH were started
+  on an isolated Docker network. The server was exposed only on
+  `127.0.0.1:18082`; no production endpoint, device, or credential was used.
+- An authenticated Playwright browser drove the product UI: it opened the
+  discovered device, confirmed the observed SSH entry point, entered the target
+  SSH username `root` and password, and recorded the disposable target's host
+  fingerprint. The candidate moved from `needs_credentials` to `queued`, then
+  `enrolling`, then `enrolled` without a manual installer command.
+- The server-local enrollment worker selected the bundled architecture-specific
+  agent, installed the fixed systemd service over SSH, and the resulting device
+  appeared as `online` with an agent identity and heartbeat. Restarting the
+  target service preserved the same agent identity. Decommissioning the
+  disposable device returned HTTP 401 for a subsequent heartbeat using its old
+  token, proving revocation at the control boundary.
+- The runtime lifecycle test now also forces a near-expiry certificate on an
+  authenticated restart and verifies that the daemon submits a CSR, rotates
+  its certificate/token, advances expiry, persists the result, and keeps
+  reporting. A native-host power/loss-of-contact run and live certificate
+  renewal on the disposable systemd container remain separate acceptance work;
+  T017 is therefore still open.
+
 ## Final quality gate and handover
 
 - The repository now has a checked-in Prettier configuration and scripts. The

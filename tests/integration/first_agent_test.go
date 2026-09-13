@@ -84,7 +84,11 @@ func TestRuntimeEnrollmentPersistenceAndReporting(t *testing.T) {
 		t.Fatalf("identity permissions=%o", identityInfo.Mode().Perm())
 	}
 
-	second, err := agent.NewRuntime(agent.Config{ServerURL: server.URL, DataDir: dataDir, HTTPClient: server.Client(), Interval: time.Second})
+	previousIdentity, err := repository.Agent(ctx, firstDevice.AgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := agent.NewRuntime(agent.Config{ServerURL: server.URL, DataDir: dataDir, HTTPClient: server.Client(), Interval: time.Second, RenewalLeadTime: 31 * 24 * time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +101,16 @@ func TestRuntimeEnrollmentPersistenceAndReporting(t *testing.T) {
 	}
 	if secondDevice.AgentID != firstDevice.AgentID {
 		t.Fatalf("restart created a different agent identity: first=%s second=%s", firstDevice.AgentID, secondDevice.AgentID)
+	}
+	renewedIdentity, err := repository.Agent(ctx, secondDevice.AgentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewedIdentity.CertSerial == previousIdentity.CertSerial {
+		t.Fatalf("agent certificate was not renewed: serial=%s", renewedIdentity.CertSerial)
+	}
+	if !renewedIdentity.ExpiresAt.After(previousIdentity.ExpiresAt) {
+		t.Fatalf("agent certificate expiry did not advance: previous=%s renewed=%s", previousIdentity.ExpiresAt, renewedIdentity.ExpiresAt)
 	}
 
 	lastHeartbeat := *secondDevice.LastHeartbeat
