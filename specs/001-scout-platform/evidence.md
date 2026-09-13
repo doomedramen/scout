@@ -106,17 +106,24 @@ This file records executed verification only. Planned targets from the specifica
   accepted and rejected authentication, transport, secret, trust, worker,
   update, audit, and decommission cases. Production enrollment and updates
   remain disabled by default and still require owner-authorized lab evidence.
+- T049: commit `4e55224` adds the missing browser evidence. The Playwright
+  suite verifies the dark color scheme at 360px and 1440px, reduced-motion
+  CSS, keyboard focus and arrow navigation on a metric chart, a timestamped
+  tooltip without `Invalid Date`/`undefined`, meaningful status text, and
+  empty/error scan results without fabricated devices. The focused four-test
+  run passed; the full suite subsequently passed 19 tests.
 - T063: the latest web build produces a 904.82 kB initial JavaScript chunk
   (268.13 kB gzip) and a 19.36 kB lazy host-detail chunk (6.24 kB gzip), and
-  still reports the existing large-chunk warning. Playwright now covers the
+  still reports the existing large-chunk warning. Playwright covers the
   manual-agent `+` action and responsive 360px, 768px, and 1440px journeys;
-  dark-mode, reduced-motion, chart-tooltip, and full accessibility review
-  evidence remains open.
+  the broader final accessibility review and measured chunk-splitting
+  decision remain open.
 - Still open: T017 native Linux/systemd acceptance, T022 clean-host
   deployment/restore, T030 power-loss VM update stages, T044 live
-  second-vantage placement, T049 browser viewport/accessibility journey, T055
-  live Docker/Proxmox version and ACL compatibility, T059 full offline
-  decommission lab, and T061 live capacity/disk-pressure measurement.
+  second-vantage placement, T055 live Docker/Proxmox version and ACL
+  compatibility, T059 full offline decommission lab, T061 live
+  capacity/disk-pressure measurement, and T063 broader final accessibility
+  review/chunk-splitting decision.
 
 ## Current checkpoint: scan history and manual-agent navigation
 

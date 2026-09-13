@@ -91,7 +91,7 @@ Independent test: deterministic real-storage fixture including gaps, conflicting
 - [X] T046 [US4] Implement bounded historical queries/aggregation and all filter fields in internal/control/devices.go and internal/telemetry/query.go; preserve gaps, units and min/max through downsampling (FR-015).
 - [X] T047 [US4] Complete shadcn host charts, time selection, service state, inventory filters and API error/retry behavior in apps/web/src/views/device.tsx and apps/web/src/views/systems.tsx (FR-015, FR-019).
 - [X] T048 [US4] Implement topology graph plus equivalent keyboard-accessible list/evidence inspector in apps/web/src/views/network.tsx; keep logical/physical confidence distinct (FR-016, FR-017, FR-018).
-- [ ] T049 [US4] Verify dark UI at 360/1440 pixels, chart keyboard tooltips, meaningful status text, reduced motion, no-data/error states and absence of fabricated data in tests/e2e/monitoring.spec.ts; record SC-006 and SC-007 (FR-018, FR-019).
+- [X] T049 [US4] Verify dark UI at 360/1440 pixels, chart keyboard tooltips, meaningful status text, reduced motion, no-data/error states and absence of fabricated data in tests/e2e/monitoring.spec.ts; record SC-006 and SC-007 (FR-018, FR-019).
 
 ## Phase 9: US6 — Extensible service collectors (P2)
 
