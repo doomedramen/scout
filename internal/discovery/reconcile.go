@@ -117,6 +117,9 @@ func (s *Service) IngestScanResultPage(ctx context.Context, scanner policy.ScanV
 	if page.ScopeRevision != run.ScopeRevision || currentPolicy.Revision != run.ScopeRevision {
 		return store.ScanResultReceipt{}, false, store.ErrConflict
 	}
+	if run.CancellationRequested {
+		return store.ScanResultReceipt{}, false, store.ErrConflict
+	}
 	contentHash := page.ContentHash
 	if contentHash == "" {
 		contentHash = scanResultPageHash(page)

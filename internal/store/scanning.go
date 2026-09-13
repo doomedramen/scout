@@ -1011,7 +1011,7 @@ func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultRece
 		if !ok {
 			return ErrNotFound
 		}
-		if scanRunTerminalStates[run.State] || run.State == ScanRunQueued || run.State == ScanRunLeased {
+		if scanRunTerminalStates[run.State] || run.State == ScanRunQueued || run.State == ScanRunLeased || run.CancellationRequested {
 			return ErrConflict
 		}
 		if existing, ok := state.ScanResultReceipts[scanReceiptKey(receipt.RunID, receipt.PageOrdinal)]; ok {
@@ -1021,9 +1021,6 @@ func (s *Store) AcceptScanResultPage(ctx context.Context, receipt ScanResultRece
 			result = existing
 			duplicate = true
 			return nil
-		}
-		if run.CancellationRequested {
-			return ErrConflict
 		}
 		if receipt.PageOrdinal < 0 || receipt.PageOrdinal > 16383 || len(observations) > 1000 || receipt.ResultCount != len(observations) || receipt.ContentHash == "" {
 			return ErrInvalid

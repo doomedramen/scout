@@ -266,6 +266,23 @@ func TestIngestScanResultPageReplaysIdenticallyAndRejectsConflicts(t *testing.T)
 	}
 }
 
+func TestIngestScanResultPageRejectsIdenticalReplayAfterCancellation(t *testing.T) {
+	ctx := context.Background()
+	fixture := newScanIngestionFixture(t)
+	page := validScanResultPage(fixture)
+	page.Final = false
+	page.Summary = nil
+	if _, duplicate, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, page); err != nil || duplicate {
+		t.Fatalf("seed result page: duplicate=%t err=%v", duplicate, err)
+	}
+	if _, err := fixture.store.RequestScanCancellation(ctx, fixture.run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, duplicate, err := fixture.service.IngestScanResultPage(ctx, fixture.scanner, page); !errors.Is(err, store.ErrConflict) || duplicate {
+		t.Fatalf("cancelled identical replay was accepted: duplicate=%t err=%v", duplicate, err)
+	}
+}
+
 func TestIngestScanResultPageRejectsWrongScannerExpiredAndUnsafeResults(t *testing.T) {
 	ctx := context.Background()
 	cases := []struct {
