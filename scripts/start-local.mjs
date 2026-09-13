@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const standaloneDirectory = path.join(root, ".next", "standalone");
 const standaloneNextDirectory = path.join(standaloneDirectory, ".next");
+const artifactDirectory = path.join(root, "agent-artifacts");
 
 fs.mkdirSync(standaloneNextDirectory, { recursive: true });
 fs.cpSync(path.join(root, ".next", "static"), path.join(standaloneNextDirectory, "static"), {
@@ -19,7 +20,10 @@ if (fs.existsSync(path.join(root, "public"))) {
 
 const server = spawn(process.execPath, [path.join(standaloneDirectory, "server.js")], {
   cwd: standaloneDirectory,
-  env: process.env,
+  env: {
+    ...process.env,
+    SCOUT_AGENT_ARTIFACT_DIR: artifactDirectory,
+  },
   stdio: "inherit",
 });
 

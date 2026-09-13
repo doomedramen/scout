@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run agent:build && next build",
     "start": "node scripts/start-local.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",

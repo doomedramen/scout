@@ -26,7 +26,9 @@ export function artifactPath(
   platform: InstallerPlatform,
   architecture: InstallerArchitecture,
 ): string {
-  return path.join(process.cwd(), "agent-artifacts", artifactName(platform, architecture));
+  const artifactDirectory =
+    process.env.SCOUT_AGENT_ARTIFACT_DIR ?? path.join(process.cwd(), "agent-artifacts");
+  return path.join(artifactDirectory, artifactName(platform, architecture));
 }
 
 export function readAgentArtifact(

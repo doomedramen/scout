@@ -98,10 +98,10 @@ npm run lint
 npm run typecheck
 npm test -- --run
 cargo test --workspace
-npm run agent:build
+npm run build
 ```
 
 The Rust workspace contains the native `scout-agent`. The server image embeds
 the signed release artifacts; there is intentionally no separate agent image.
-`npm run agent:build` prepares the local Linux amd64 artifact before a local
-container build.
+The production build prepares the local Linux amd64 artifact automatically;
+`npm run agent:build` remains available when only the local artifact is needed.

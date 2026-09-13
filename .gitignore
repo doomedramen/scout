@@ -6,6 +6,8 @@ playwright-report/
 test-results/
 dist/
 target/
+agent-artifacts/*
+!agent-artifacts/.gitkeep
 .turbo/
 .scout-data/
 .env

@@ -3,15 +3,23 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+FROM rust:1.96-bookworm AS agent-build
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY agent ./agent
+RUN cargo build --release --locked -p scout-agent
+
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+COPY --from=agent-build /src/target/release/scout-agent /tmp/scout-agent
+RUN SCOUT_AGENT_BINARY=/tmp/scout-agent npm run build
 
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV SCOUT_AGENT_ARTIFACT_DIR=/app/agent-artifacts
 WORKDIR /app
 RUN groupadd --system --gid 1001 scout && useradd --system --uid 1001 --gid scout scout
 COPY --from=build --chown=scout:scout /app/.next/standalone ./
