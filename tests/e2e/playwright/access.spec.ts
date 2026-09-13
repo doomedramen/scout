@@ -43,3 +43,18 @@ test("SSH credentials ask for a username and password by default", async ({ page
   await expect(page.getByLabel("SSH password")).toBeVisible();
   await expect(page.getByLabel("Secret")).toHaveCount(0);
 });
+
+test("filled SSH password credentials can be stored", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/#/access");
+
+  await page.getByLabel("SSH username").fill("root");
+  await page.getByLabel("SSH password").fill("playwright-password-fixture");
+  await page.getByLabel("Exact targets").fill("192.0.2.10:22");
+
+  const submit = page.getByRole("button", { name: "Store encrypted credential" });
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByRole("status")).toContainText("Credential stored");
+  await expect(page.locator("body")).not.toContainText("playwright-password-fixture");
+});
