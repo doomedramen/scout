@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { isActionableAccessCandidate, uniqueAccessCandidates } from "@/lib/access";
 import { api, APIError, type Candidate, type Device, type Incident } from "@/lib/api";
 
 type OverviewState = "online" | "offline" | "needs-access" | "revoked";
@@ -92,10 +93,12 @@ function sourceMessage(caught: unknown, fallback: string): string {
 export function OverviewView({
   onNavigate,
   onSelect,
+  onOpenAccess,
   onIncident,
 }: {
   onNavigate: (page: "Systems" | "Incidents" | "Network" | "Access") => void;
   onSelect: (device: Device) => void;
+  onOpenAccess: (candidate: Candidate) => void;
   onIncident: (incidentId: string) => void;
 }) {
   const [data, setData] = useState<FleetData>({ devices: [], candidates: [], incidents: [] });
@@ -143,7 +146,7 @@ export function OverviewView({
 
   const devices = useMemo(() => data.devices.filter((device) => device.lifecycle !== "candidate"), [data.devices]);
   const accessCandidates = useMemo(
-    () => data.candidates.filter((candidate) => !candidate.deviceId && !candidate.excluded),
+    () => uniqueAccessCandidates(data.candidates.filter(isActionableAccessCandidate)),
     [data.candidates],
   );
   const counts = useMemo(() => {
@@ -151,10 +154,7 @@ export function OverviewView({
     return {
       monitored: sourceErrors.devices ? null : states.filter((state) => state === "online").length,
       offline: sourceErrors.devices ? null : states.filter((state) => state === "offline").length,
-      access:
-        sourceErrors.devices || sourceErrors.candidates
-          ? null
-          : states.filter((state) => state === "needs-access").length + accessCandidates.length,
+      access: sourceErrors.candidates ? null : accessCandidates.length,
       revoked: sourceErrors.devices ? null : states.filter((state) => state === "revoked").length,
       stale: sourceErrors.devices ? null : devices.filter((device) => freshnessFor(device) === "stale").length,
     };
@@ -251,7 +251,7 @@ export function OverviewView({
           <strong>{counts.stale ?? "—"}</strong>
           <small>telemetry</small>
         </button>
-        <button aria-label="Prerequisites" className="overview-summary-card" onClick={() => onNavigate("Access")}>
+        <button aria-label="Prerequisites" className="overview-summary-card" onClick={() => onNavigate("Systems")}>
           <span className="summary-card-label">
             <UserRoundCheck aria-hidden="true" /> Needs access
           </span>
@@ -340,7 +340,7 @@ export function OverviewView({
                   key={label}
                   className="signal-row"
                   aria-label={label === "Needs access" ? "Prerequisites status" : `${label} status`}
-                  onClick={() => onNavigate(label === "Needs access" ? "Access" : "Systems")}
+                  onClick={() => onNavigate("Systems")}
                 >
                   <span>
                     <i className={`dot ${tone}`} aria-hidden="true" /> {label}
@@ -439,7 +439,7 @@ export function OverviewView({
           <CardHeader>
             <div className="overview-panel-heading">
               <div>
-                <CardTitle>Access requests</CardTitle>
+                <CardTitle>Systems needing access</CardTitle>
               </div>
               <Badge variant="outline">{sourceErrors.candidates ? "—" : accessCandidates.length}</Badge>
             </div>
@@ -454,7 +454,7 @@ export function OverviewView({
             ) : (
               <div className="access-strip">
                 {accessCandidates.slice(0, 3).map((candidate) => (
-                  <button key={candidate.id} onClick={() => onNavigate("Access")}>
+                  <button key={candidate.id} onClick={() => onOpenAccess(candidate)}>
                     <UserRoundCheck aria-hidden="true" />
                     <span>
                       <strong>{candidate.displayName || candidate.hostname || candidate.address}</strong>
@@ -466,7 +466,7 @@ export function OverviewView({
                   </button>
                 ))}
                 {accessCandidates.length > 3 && (
-                  <Button variant="ghost" onClick={() => onNavigate("Access")}>
+                  <Button variant="ghost" onClick={() => onNavigate("Systems")}>
                     View all <ArrowRight data-icon="inline-end" />
                   </Button>
                 )}

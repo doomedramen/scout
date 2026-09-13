@@ -116,13 +116,15 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
     )
     .toBe("needs_credentials");
 
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Prerequisites", exact: true }).locator("strong")).toHaveText("1");
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: /^Scopes Sites/ }).click();
   const completedScopeRow = page.locator(".scope-row").filter({ hasText: "127.0.0.1" }).last();
   await expect(completedScopeRow.getByText("Last run")).toBeVisible();
   await expect(completedScopeRow.getByText("Outcome counts")).toBeVisible();
 
-  await page.getByRole("button", { name: "Systems" }).click();
+  await page.getByRole("button", { name: "Systems", exact: true }).click();
   const provisionalSystemRow = page
     .locator("tbody tr")
     .filter({ hasText: "127.0.0.1" })
@@ -131,10 +133,13 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(provisionalSystemRow).toBeVisible();
   await expect(provisionalSystemRow).toContainText("Needs access");
   await provisionalSystemRow.getByRole("button", { name: /View / }).click();
-  await expect(page.getByRole("heading", { name: "SSH found on this system" })).toBeVisible();
-  await expect(page.getByText("Provide credentials and Scout will install the agent automatically.")).toBeVisible();
+  await expect(page).toHaveURL(/\/systems\/[^/]+\/credentials$/);
+  await expect(page.getByRole("heading", { name: /Prepare access for 127\.0\.0\.1/ })).toBeVisible();
+  await expect(page.getByText(/Scout found an SSH entry point at 127\.0\.0\.1:/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Access requests for this system" })).toBeVisible();
   await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
-  await page.getByRole("button", { name: "All systems" }).click();
+  await page.getByRole("button", { name: "Back to systems" }).click();
+  await expect(page).toHaveURL(/\/systems$/);
 
   await page.getByRole("button", { name: "Network" }).click();
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
@@ -157,6 +162,7 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await addCredentials.focus();
   await expect(addCredentials).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/systems\/[^/]+\/credentials$/);
   await expect(page.getByRole("heading", { name: /Prepare access for 127\.0\.0\.1/ })).toBeVisible();
   await expect(page.getByLabel("Exact targets")).toHaveValue(`127.0.0.1:${scanPort}`);
   await expect(page.getByLabel("Scope ID")).toHaveValue(createdScope?.id ?? "");
@@ -208,11 +214,12 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   const jobs = (await jobsResponse.json()) as { items: Array<{ kind: string }> };
   expect(jobs.items.filter((job) => job.kind === "enrollment")).toHaveLength(1);
 
-  await page.getByRole("button", { name: "Systems" }).click();
+  await page.getByRole("button", { name: "Systems", exact: true }).click();
   const systemRow = page.locator("tbody tr").filter({ hasText: "127.0.0.1" });
   await expect(systemRow).toBeVisible();
   await systemRow.getByRole("button", { name: /View / }).click();
-  await expect(page.getByRole("heading", { name: "SSH found on this system" })).toBeVisible();
+  await expect(page).toHaveURL(/\/systems\/[^/]+\/credentials$/);
+  await expect(page.getByRole("heading", { name: /Prepare access for 127\.0\.0\.1/ })).toBeVisible();
   await expect(
     page.getByText("Access is approved. Scout is installing and verifying the agent automatically."),
   ).toBeVisible();

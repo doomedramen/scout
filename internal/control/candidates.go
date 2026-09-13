@@ -439,15 +439,15 @@ func candidateAction(candidate store.Candidate) *candidateActionResponse {
 	if state == "excluded" {
 		return nil
 	}
-	href := "/?page=Network&candidateId=" + url.QueryEscape(candidate.ID)
+	href := "/network/candidate/" + url.PathEscape(candidate.ID)
 	action := &candidateActionResponse{Kind: "view_details", Label: "View details", Href: href}
 	switch state {
 	case "needs_credentials":
-		action.Kind, action.Label, action.Href = "assign_credentials", "Add SSH credentials", "/?page=Access&candidateId="+url.QueryEscape(candidate.ID)
+		action.Kind, action.Label, action.Href = "assign_credentials", "Add SSH credentials", "/systems/"+url.PathEscape(candidate.ID)+"/credentials"
 	case "invalid_credentials":
-		action.Kind, action.Label, action.Href = "assign_credentials", "Update SSH credentials", "/?page=Access&candidateId="+url.QueryEscape(candidate.ID)
+		action.Kind, action.Label, action.Href = "assign_credentials", "Update SSH credentials", "/systems/"+url.PathEscape(candidate.ID)+"/credentials"
 	case "needs_host_trust":
-		action.Kind, action.Label, action.Href = "review_trust", "Review host trust", "/?page=Access&candidateId="+url.QueryEscape(candidate.ID)
+		action.Kind, action.Label, action.Href = "review_trust", "Review host trust", "/systems/"+url.PathEscape(candidate.ID)+"/credentials"
 	case "needs_privilege":
 		action.Label = "Fix SSH privilege"
 	case "needs_server_connectivity":

@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import {
+  ArrowLeft,
   BellRing,
   Bell,
   Cpu,
@@ -211,24 +212,46 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
     setPage(pageFromRoute(route));
     const detailID = route[2] ? decodeURIComponent(route[2]) : "";
     if (route[1] !== "device" || selected?.id !== detailID) setSelected(null);
-    if (route[1] !== "candidate" || selectedCandidate?.id !== detailID) setSelectedCandidate(null);
+    const candidateID =
+      route[1] === "candidate"
+        ? detailID
+        : route[0] === "systems" && route[2] === "credentials"
+          ? decodeURIComponent(route[1] ?? "")
+          : "";
+    if (!candidateID || selectedCandidate?.id !== candidateID) setSelectedCandidate(null);
     setIncidentFocus(route[0] === "incidents" ? (route[1] ?? "") : "");
     setMobileNavOpen(false);
   }, [route, routeKey, selected?.id, selectedCandidate?.id]);
 
   useEffect(() => {
+    if (auth !== "signedIn" || route[0] !== "access" || route[1] !== "candidate" || !route[2]) return;
+    router.replace(`/systems/${route[2]}/credentials`);
+  }, [auth, route, routeKey, router]);
+
+  useEffect(() => {
     if (auth !== "signedIn") return;
     const parts = route;
-    if (parts[1] === "candidate" && parts[2] && !selectedCandidate) {
+    const candidateID =
+      parts[1] === "candidate" ? parts[2] : parts[0] === "systems" && parts[2] === "credentials" ? parts[1] : "";
+    if (candidateID && !selectedCandidate) {
       let cancelled = false;
-      api
-        .candidate(decodeURIComponent(parts[2]))
-        .then((detail) => {
+      const loadCandidate = async () => {
+        const decodedID = decodeURIComponent(candidateID);
+        try {
+          const detail = await api.candidate(decodedID);
           if (!cancelled) setSelectedCandidate(detail.candidate);
-        })
-        .catch(() => {
-          if (!cancelled) router.replace("/network");
-        });
+          return;
+        } catch {
+          if (parts[0] !== "systems" || parts[2] !== "credentials") throw new Error("candidate unavailable");
+        }
+        const result = await api.candidates(`?deviceId=${encodeURIComponent(decodedID)}&limit=1`);
+        const candidate = result.items[0];
+        if (!candidate) throw new Error("candidate unavailable");
+        if (!cancelled) setSelectedCandidate(candidate);
+      };
+      void loadCandidate().catch(() => {
+        if (!cancelled) router.replace(parts[0] === "systems" ? "/systems" : "/network");
+      });
       return () => {
         cancelled = true;
       };
@@ -316,23 +339,37 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
   }
 
   function openAccess(candidate: Candidate) {
-    setPage("Access");
+    setPage("Systems");
     setSelected(null);
     setSelectedCandidate(candidate);
     setQuery("");
     setMobileNavOpen(false);
-    router.push(`/access/candidate/${encodeURIComponent(candidate.id)}`);
+    router.push(`/systems/${encodeURIComponent(candidate.id)}/credentials`);
   }
 
   function openDevice(device: Device) {
+    if (device.candidateId || (!device.agentId && !device.agentVersion)) {
+      openAccessByCandidateID(device.candidateId ?? device.id);
+      return;
+    }
     const targetPage = page === "Overview" ? "Systems" : page;
     setPage(targetPage);
     setSelected(device);
     router.push(`/${pageSlugs[targetPage]}/device/${encodeURIComponent(device.id)}`);
   }
 
+  function openAccessByCandidateID(candidateID: string) {
+    setPage("Systems");
+    setSelected(null);
+    setSelectedCandidate(null);
+    setQuery("");
+    setMobileNavOpen(false);
+    router.push(`/systems/${encodeURIComponent(candidateID)}/credentials`);
+  }
+
   const detail = pageDetails[page];
   const settingsActive = page === "Settings" || settingsPages.some((name) => name === page);
+  const systemCredentialsRoute = page === "Systems" && route[2] === "credentials";
 
   return (
     <div className="app-shell">
@@ -443,12 +480,13 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
               selected={selected}
               onBack={() => navigate(page)}
               onChanged={setSelected}
+              onOpenAccess={openAccess}
               onOpenIncident={openIncident}
             />
           </Suspense>
         ) : (
           <>
-            {page !== "Overview" && page !== "Settings" && (
+            {page !== "Overview" && page !== "Settings" && !systemCredentialsRoute && (
               <div className="page-heading">
                 <div>
                   <h1>{detail.title}</h1>
@@ -462,9 +500,34 @@ export default function App({ route, initialAuth, initialStatus, initialStatusEr
               </div>
             )}
             {page === "Overview" && (
-              <OverviewView onNavigate={(next) => navigate(next)} onSelect={openDevice} onIncident={openIncident} />
+              <OverviewView
+                onNavigate={(next) => navigate(next)}
+                onSelect={openDevice}
+                onOpenAccess={openAccess}
+                onIncident={openIncident}
+              />
             )}
-            {page === "Systems" && <SystemsView query={query} onQuery={setQuery} onSelect={openDevice} />}
+            {page === "Systems" &&
+              (systemCredentialsRoute ? (
+                selectedCandidate ? (
+                  <section className="system-access-route" aria-label="System credentials">
+                    <div className="candidate-detail-toolbar">
+                      <Button variant="ghost" onClick={() => navigate("Systems")}>
+                        <ArrowLeft size={15} />
+                        Back to systems
+                      </Button>
+                    </div>
+                    <AccessView candidate={selectedCandidate} />
+                  </section>
+                ) : (
+                  <div className="empty" role="status">
+                    <ServerCog size={30} />
+                    <h2>Loading system access</h2>
+                  </div>
+                )
+              ) : (
+                <SystemsView query={query} onQuery={setQuery} onSelect={openDevice} />
+              ))}
             {page === "Incidents" && (
               <IncidentsView
                 focusIncidentId={incidentFocus}

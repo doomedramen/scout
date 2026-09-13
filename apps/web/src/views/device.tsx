@@ -13,7 +13,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { AccessView } from "@/views/access";
 import { HardwareView } from "@/views/hardware";
 import { ServicesView } from "@/views/services";
 import { StorageView } from "@/views/storage";
@@ -192,11 +191,13 @@ export function DeviceView({
   selected,
   onBack,
   onChanged,
+  onOpenAccess,
   onOpenIncident,
 }: {
   selected: Device;
   onBack: () => void;
   onChanged?: (device: Device) => void;
+  onOpenAccess?: (candidate: Candidate) => void;
   onOpenIncident?: (incidentId: string) => void;
 }) {
   const [device, setDevice] = useState(selected);
@@ -441,7 +442,18 @@ export function DeviceView({
         <h2 id="device-summary-heading" className="sr-only">
           Summary
         </h2>
-        {!hasAgent && canConfigureCandidate && <AccessView candidate={candidate} embedded />}
+        {!hasAgent && canConfigureCandidate && (
+          <section className="action-panel" aria-labelledby="device-access-title">
+            <div className="panel-title">
+              <ShieldCheck size={17} />
+              <div>
+                <h2 id="device-access-title">System access</h2>
+                <p>SSH was found on this system. Credentials and host trust are managed on its access page.</p>
+              </div>
+            </div>
+            {onOpenAccess && <Button onClick={() => onOpenAccess(candidate)}>Open system access</Button>}
+          </section>
+        )}
         <section className="chart-panel host-info device-identity" aria-labelledby="device-identity-heading">
           <div className="chart-heading">
             <div>

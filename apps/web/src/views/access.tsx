@@ -7,8 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   APIError,
   api,
-  type AccessRequest,
   type Candidate,
+  type CandidateAccessRequest,
   type CandidateDetail,
   type Credential,
   type Owner,
@@ -34,7 +34,7 @@ export function AccessView({
   const [candidateDetail, setCandidateDetail] = useState<CandidateDetail | null>(null);
   const [scopeRevision, setScopeRevision] = useState<number | undefined>();
   const [owner, setOwner] = useState<Owner | null>(null);
-  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [requests, setRequests] = useState<CandidateAccessRequest[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [trust, setTrust] = useState<TrustRecord[]>([]);
   const [credentialKind, setCredentialKind] = useState("ssh");
@@ -47,7 +47,8 @@ export function AccessView({
   const [trustHost, setTrustHost] = useState("");
   const [trustEndpoint, setTrustEndpoint] = useState("");
   const [fingerprint, setFingerprint] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [credentialBusy, setCredentialBusy] = useState(false);
+  const [trustBusy, setTrustBusy] = useState(false);
   const [securityBusy, setSecurityBusy] = useState(false);
   const [mfaPassword, setMfaPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -103,16 +104,33 @@ export function AccessView({
   }, [candidateDetail, focusedCandidate]);
 
   async function refresh() {
-    const [statusInfo, ownerInfo, requestList, credentialList, trustList] = await Promise.all([
+    if (candidate) {
+      const [statusInfo, ownerInfo, candidateInfo, credentialList, trustList, scope] = await Promise.all([
+        api.status(),
+        api.owner(),
+        api.candidate(candidate.id),
+        api.credentials(),
+        api.trust(),
+        api.scope(candidate.scopeId),
+      ]);
+      setDevelopment(statusInfo.mode === "development");
+      setOwner(ownerInfo);
+      setCandidateDetail(candidateInfo);
+      setRequests(candidateInfo.accessRequests);
+      setCredentials(credentialList.items);
+      setTrust(trustList.items);
+      setScopeRevision(scope.revision);
+      return;
+    }
+    const [statusInfo, ownerInfo, credentialList, trustList] = await Promise.all([
       api.status(),
       api.owner(),
-      api.accessRequests("open"),
       api.credentials(),
       api.trust(),
     ]);
     setDevelopment(statusInfo.mode === "development");
     setOwner(ownerInfo);
-    setRequests(requestList.items);
+    setRequests([]);
     setCredentials(credentialList.items);
     setTrust(trustList.items);
   }
@@ -172,11 +190,11 @@ export function AccessView({
 
   useEffect(() => {
     refresh().catch((caught) => setError(caught instanceof APIError ? caught.message : "Could not load access state"));
-  }, []);
+  }, [candidate?.id]);
 
   async function createCredential(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
+    setCredentialBusy(true);
     setError("");
     setMessage("");
     const isSSHCredential = credentialKind.trim().toLowerCase() === "ssh";
@@ -190,38 +208,40 @@ export function AccessView({
         endpoint,
         username: isSSHCredential ? username : undefined,
         scopeId: focusedCandidate?.scopeId,
+        candidateId: focusedCandidate?.id,
         expectedScopeRevision: scopeRevision,
       });
       setSecret("");
       setMessage("Credential stored. The secret is write-only and will not be shown again.");
-      await refresh();
+      void refresh().catch(() => setError("Credential stored, but access state could not be refreshed"));
     } catch (caught) {
       setSecret("");
       setError(caught instanceof APIError ? caught.message : "Credential could not be stored");
     } finally {
-      setBusy(false);
+      setCredentialBusy(false);
     }
   }
 
   async function createTrust(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
+    setTrustBusy(true);
     setError("");
     setMessage("");
     try {
       await api.createTrust({
         scopeId: trustScope || undefined,
+        candidateId: focusedCandidate?.id,
         host: trustHost,
         endpoint: trustEndpoint,
         fingerprint,
       });
       setMessage("Trust record added. Scout will not accept a changed key automatically.");
       setFingerprint("");
-      await refresh();
+      void refresh().catch(() => setError("Trust record stored, but access state could not be refreshed"));
     } catch (caught) {
       setError(caught instanceof APIError ? caught.message : "Trust record could not be stored");
     } finally {
-      setBusy(false);
+      setTrustBusy(false);
     }
   }
 
@@ -245,7 +265,9 @@ export function AccessView({
                   ? ["queued", "enrolling"].includes(focusedCandidate.state)
                     ? "Access is approved. Scout is installing and verifying the agent automatically."
                     : "Provide credentials and Scout will install the agent automatically."
-                  : `Scout found an SSH entry point at ${endpoint || `${focusedCandidate.address}:22`}. Store a target-bound credential below and Scout will re-evaluate this device automatically.`}
+                  : ["queued", "enrolling", "enrolled"].includes(focusedCandidate.state)
+                    ? "Access is approved. Scout is installing and verifying the agent automatically."
+                    : `Scout found an SSH entry point at ${endpoint || `${focusedCandidate.address}:22`}. Store a target-bound credential below and Scout will re-evaluate this device automatically.`}
               </p>
             </div>
           </div>
@@ -455,7 +477,7 @@ export function AccessView({
             Endpoint metadata <span className="label-hint">optional</span>
             <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
           </label>
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={credentialBusy}>
             Store encrypted credential
           </Button>
         </form>
@@ -495,36 +517,38 @@ export function AccessView({
               onChange={(event) => setFingerprint(event.target.value)}
             />
           </label>
-          <Button type="submit" variant="outline" disabled={busy}>
+          <Button type="submit" variant="outline" disabled={trustBusy}>
             Record trusted identity
           </Button>
         </form>
       </div>
-      {!embedded && (
+      {!embedded && candidate && (
         <div className="data-panel">
           <div className="section-heading">
             <div>
-              <h3>Open access requests</h3>
-              <p>Specific missing prerequisites; no command output or secrets.</p>
+              <h3>Access requests for this system</h3>
+              <p>Specific missing prerequisites for this host; no command output or secrets.</p>
             </div>
-            <Badge variant="outline">{requests.length}</Badge>
+            <Badge variant="outline">{requests.filter((item) => item.state === "open").length}</Badge>
           </div>
-          {requests.length ? (
+          {requests.filter((item) => item.state === "open").length ? (
             <div className="compact-list">
-              {requests.map((item) => (
-                <div key={item.id}>
-                  <strong>{item.reasonCode.replaceAll("_", " ")}</strong>
-                  <span>{item.safeDetails.target ?? "Target unavailable"}</span>
-                  <small>{new Date(item.lastAttempt).toLocaleString()}</small>
-                </div>
-              ))}
+              {requests
+                .filter((item) => item.state === "open")
+                .map((item) => (
+                  <div key={item.id}>
+                    <strong>{item.reasonCode.replaceAll("_", " ")}</strong>
+                    <span>{item.safeDetails?.target ?? item.endpoint ?? "Target unavailable"}</span>
+                    <small>{new Date(item.updatedAt).toLocaleString()}</small>
+                  </div>
+                ))}
             </div>
           ) : (
-            <p className="empty-inline">No unresolved access requests.</p>
+            <p className="empty-inline">No unresolved access requests for this system.</p>
           )}
         </div>
       )}
-      {!embedded && (
+      {!embedded && !candidate && (
         <div className="access-columns">
           <div className="data-panel">
             <div className="section-heading">

@@ -294,10 +294,15 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 		Endpoint              string   `json:"endpoint"`
 		Username              string   `json:"username"`
 		ScopeID               string   `json:"scopeId"`
+		CandidateID           string   `json:"candidateId"`
 		ExpectedScopeRevision int64    `json:"expectedScopeRevision"`
 	}
 	if err := decodeJSON(r, &req, 64<<10); err != nil {
 		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
+	if err := a.validateCandidateScope(r.Context(), &req.ScopeID, req.CandidateID); err != nil {
+		writeMappedError(w, r, err)
 		return
 	}
 	if strings.TrimSpace(req.Secret) == "" || len(req.Secret) > 8192 {
@@ -347,7 +352,7 @@ func (a *App) createCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	affected := 0
 	if req.ScopeID != "" && a.Enrollment != nil {
-		affected, err = a.Enrollment.ReevaluateScope(r.Context(), req.ScopeID)
+		affected, err = a.reevaluateAccess(r.Context(), req.ScopeID, req.CandidateID)
 		if err != nil {
 			writeMappedError(w, r, err)
 			return
@@ -451,6 +456,7 @@ func (a *App) createTrust(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		ScopeID     string `json:"scopeId"`
+		CandidateID string `json:"candidateId"`
 		Host        string `json:"host"`
 		Endpoint    string `json:"endpoint"`
 		Fingerprint string `json:"fingerprint"`
@@ -458,6 +464,10 @@ func (a *App) createTrust(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &req, 64<<10); err != nil {
 		writeMappedError(w, r, store.ErrInvalid)
+		return
+	}
+	if err := a.validateCandidateScope(r.Context(), &req.ScopeID, req.CandidateID); err != nil {
+		writeMappedError(w, r, err)
 		return
 	}
 	if req.Endpoint == "" {
@@ -476,7 +486,7 @@ func (a *App) createTrust(w http.ResponseWriter, r *http.Request) {
 	}
 	affected := 0
 	if req.ScopeID != "" && a.Enrollment != nil {
-		affected, err = a.Enrollment.ReevaluateScope(r.Context(), req.ScopeID)
+		affected, err = a.reevaluateAccess(r.Context(), req.ScopeID, req.CandidateID)
 		if err != nil {
 			writeMappedError(w, r, err)
 			return
@@ -484,6 +494,37 @@ func (a *App) createTrust(w http.ResponseWriter, r *http.Request) {
 	}
 	a.recordOwnerAudit(r, "trust.create", trust.ID, map[string]any{"host": trust.Host, "fingerprint": trust.Fingerprint})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": trust.ID, "scopeId": trust.ScopeID, "endpoint": trust.Endpoint, "host": trust.Host, "fingerprint": trust.Fingerprint, "publicKey": trust.PublicKey, "revision": trust.Revision, "revokedAt": trust.RevokedAt, "affectedCandidateCount": affected})
+}
+
+func (a *App) validateCandidateScope(ctx context.Context, scopeID *string, candidateID string) error {
+	if strings.TrimSpace(candidateID) == "" {
+		return nil
+	}
+	candidate, err := a.Store.GetCandidate(ctx, candidateID)
+	if err != nil {
+		return err
+	}
+	if *scopeID == "" {
+		*scopeID = candidate.ScopeID
+		return nil
+	}
+	if *scopeID != candidate.ScopeID {
+		return store.ErrConflict
+	}
+	return nil
+}
+
+func (a *App) reevaluateAccess(ctx context.Context, scopeID, candidateID string) (int, error) {
+	if a.Enrollment == nil {
+		return 0, nil
+	}
+	if strings.TrimSpace(candidateID) == "" {
+		return a.Enrollment.ReevaluateScope(ctx, scopeID)
+	}
+	if _, err := a.Enrollment.ReevaluateCandidate(ctx, candidateID); err != nil {
+		return 0, err
+	}
+	return 1, nil
 }
 
 func (a *App) bindCredentialToScope(ctx context.Context, scopeID, credentialID string, expectedRevision int64) error {

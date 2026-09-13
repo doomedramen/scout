@@ -1021,6 +1021,7 @@ export const api = {
     endpoint?: string;
     username?: string;
     scopeId?: string;
+    candidateId?: string;
     expectedScopeRevision?: number;
   }) => request<Credential>("/credentials", { method: "POST", body: JSON.stringify(value) }),
   rotateCredential: (id: string, value: { secret: string; expectedRevision: number }) =>
@@ -1030,8 +1031,14 @@ export const api = {
     }),
   revokeCredential: (id: string) => request<void>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" }),
   trust: () => request<ListResponse<TrustRecord>>("/trust"),
-  createTrust: (value: { scopeId?: string; host: string; endpoint: string; fingerprint: string; publicKey?: string }) =>
-    request<TrustRecord>("/trust", { method: "POST", body: JSON.stringify(value) }),
+  createTrust: (value: {
+    scopeId?: string;
+    candidateId?: string;
+    host: string;
+    endpoint: string;
+    fingerprint: string;
+    publicKey?: string;
+  }) => request<TrustRecord>("/trust", { method: "POST", body: JSON.stringify(value) }),
   updateTrust: (id: string, value: Partial<TrustRecord> & { expectedRevision: number }) =>
     request<TrustRecord>(`/trust/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) }),
   jobs: (query = "") => request<ListResponse<Job>>(`/jobs${query}`),

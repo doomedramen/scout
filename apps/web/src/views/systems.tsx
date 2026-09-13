@@ -4,16 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { isActionableAccessCandidate } from "@/lib/access";
 import { api, APIError, type Candidate, type Device } from "@/lib/api";
-
-const candidateAccessStates = new Set([
-  "discovered",
-  "needs_credentials",
-  "invalid_credentials",
-  "needs_host_trust",
-  "needs_privilege",
-  "needs_server_connectivity",
-]);
 
 function Meter({ value }: { value: number }) {
   return (
@@ -81,7 +73,7 @@ function isBootstrapPlaceholder(device: Device): boolean {
 }
 
 function candidateNeedsAccess(candidate: Candidate): boolean {
-  return !candidate.deviceId && !candidate.excluded && candidateAccessStates.has(candidate.state);
+  return !candidate.deviceId && isActionableAccessCandidate(candidate);
 }
 
 function candidateDevice(candidate: Candidate): Device {
