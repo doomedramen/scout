@@ -783,3 +783,30 @@ Never attach credential values, private keys, host-key private material, banners
   `git diff --check` passed. Live Linux lab execution remains T043. No live
   device, production network, or production credential was contacted.
 - T034 is complete. T035–T044 remain open.
+
+## Assigned-vantage status in owner views
+
+- Requirements: FR-002, FR-003, FR-016, FR-017, FR-021; SC-009, SC-010;
+  implementation/test commit: e25cd95.
+- The Scopes view now polls the protected scan-status projection and shows
+  current/partial/stale/unknown coverage, last and next schedule, every
+  configured server or assigned-agent vantage, capability declarations,
+  heartbeat freshness, and safe pause/cancellation messaging. A scope with
+  no enabled vantage is visibly paused even when the broader scope remains
+  enabled. Scan-run responses now expose the redacted
+  `cancellationRequested` flag so an active holder can be shown as awaiting
+  acknowledgement without exposing lease authority.
+- The Network view polls status once per distinct candidate scope and adds
+  coverage, assigned-vantage state, active-run/cancellation, and completion
+  freshness beside each found device. Candidate evidence remains visible if a
+  status request fails; the row reports loading rather than hiding the device.
+- Failure-first browser coverage was added before implementation. The red
+  run failed because `Scan coverage` was absent; the green run passed after
+  the status projection was wired. The browser also toggles server scanning
+  off and verifies the explicit paused/fenced message, then resumes scanning.
+- Exact verification: `npm run check` passed; `npm run build` passed;
+  `npx playwright test tests/e2e/playwright/discovery.spec.ts
+  tests/e2e/playwright/access.spec.ts` passed with 4 tests; and
+  `git diff --check` passed. No live device, production network, production
+  credential, or deployment was contacted.
+- T035 is complete. T036–T044 remain open.
