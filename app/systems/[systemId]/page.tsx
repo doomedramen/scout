@@ -94,8 +94,28 @@ export default async function SystemPage({ params }: { params: Promise<{ systemI
               </p>
             )}
             {!system.agent &&
-            system.evidence.some((evidence) => evidence.current && evidence.method === "ssh") ? (
-              <AccessGrantForm systemId={system.id} />
+            (system.enrollment ||
+              system.evidence.some((evidence) => evidence.current && evidence.method === "ssh")) ? (
+              <AccessGrantForm
+                systemId={system.id}
+                target={system.enrollment?.target ?? system.addresses[0] ?? null}
+                initialJob={
+                  system.enrollment
+                    ? {
+                        jobId: system.enrollment.id,
+                        status: system.enrollment.status,
+                        stage: system.enrollment.stage,
+                        errorCode: system.enrollment.errorCode,
+                        errorMessage: system.enrollment.errorMessage,
+                        attempt: system.enrollment.attempt,
+                        createdAt: system.enrollment.createdAt,
+                        updatedAt: system.enrollment.updatedAt,
+                        leaseExpiresAt: system.enrollment.leaseExpiresAt,
+                        target: system.enrollment.target,
+                      }
+                    : null
+                }
+              />
             ) : null}
           </CardContent>
         </Card>
@@ -128,8 +148,10 @@ export default async function SystemPage({ params }: { params: Promise<{ systemI
               </dl>
             ) : (
               <p className="text-muted-foreground">
-                No agent is enrolled. The access form will be available after SSH trust is
-                confirmed.
+                No agent is enrolled.{" "}
+                {system.enrollment
+                  ? "Scout is showing the installation progress above."
+                  : "The access form will be available after SSH trust is confirmed."}
               </p>
             )}
             <div className="mt-6 border-t pt-6">

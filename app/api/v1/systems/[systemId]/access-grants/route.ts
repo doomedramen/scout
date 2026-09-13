@@ -60,7 +60,11 @@ export async function POST(
       Date.now(),
     );
     return Response.json(
-      { ...job, jobUrl: `/api/v1/enrollment-jobs/${job.jobId}` },
+      {
+        ...job,
+        target: `${current.endpoint.address}:${current.endpoint.port}`,
+        jobUrl: `/api/v1/enrollment-jobs/${job.jobId}`,
+      },
       { status: 202, headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

@@ -36,6 +36,12 @@ describe("access grants", () => {
     const retry = createAccessGrant({ ...input, secret: "different" }, 2_000);
 
     expect(retry).toEqual(first);
+    expect(first).toMatchObject({
+      attempt: 0,
+      createdAt: new Date(1_000).toISOString(),
+      updatedAt: new Date(1_000).toISOString(),
+      leaseExpiresAt: null,
+    });
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM credential_grant").get()).toEqual({
       count: 1,
     });

@@ -22,6 +22,9 @@ test("owner setup lands on Systems and future visits use sign-in", async ({ page
   await expect(page).toHaveURL(/\/systems$/);
   await expect(page.getByRole("heading", { name: "Systems", exact: true })).toBeVisible();
   await expect(page.getByText("No systems found yet")).toBeVisible();
+  await expect
+    .poll(() => page.locator("html").evaluate((element) => getComputedStyle(element).fontFamily))
+    .not.toBe("Times");
 
   await page.context().clearCookies();
   await page.goto("/");

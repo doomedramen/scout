@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
-import { getFleetSnapshot } from "@/lib/server/systems";
+import { getFleetSnapshot, getSystemDetails } from "@/lib/server/systems";
 
 describe("fleet snapshot", () => {
   afterEach(() => {
@@ -50,5 +50,32 @@ describe("fleet snapshot", () => {
     expect(snapshot.summary).toMatchObject({ monitored: 0, needsAccess: 1 });
     expect(snapshot.systems).toHaveLength(1);
     expect(snapshot.systems[0]).toMatchObject({ id: "system-open", status: "needs-access" });
+  });
+
+  it("returns enough enrollment progress for the system view to explain a running install", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, display_name, status, excluded, created_at, updated_at) VALUES (?, ?, 'installing', 0, ?, ?)",
+      )
+      .run("system-installing", "192.0.2.10", 1_000, 9_000);
+    sqlite
+      .prepare(
+        "INSERT INTO enrollment_job (id, system_id, status, stage, error_code, error_message, lease_expires_at, attempt, created_at, updated_at) VALUES (?, ?, 'running', 'installation', NULL, NULL, ?, ?, ?, ?)",
+      )
+      .run("job-installing", "system-installing", 30_000, 2, 1_000, 9_000);
+
+    const details = getSystemDetails("system-installing", 10_000);
+
+    expect(details?.enrollment).toMatchObject({
+      id: "job-installing",
+      status: "running",
+      stage: "installation",
+      attempt: 2,
+      createdAt: new Date(1_000).toISOString(),
+      updatedAt: new Date(9_000).toISOString(),
+      leaseExpiresAt: new Date(30_000).toISOString(),
+    });
   });
 });

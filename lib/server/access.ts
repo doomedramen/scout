@@ -27,7 +27,15 @@ export class AccessError extends Error {
   }
 }
 
-export type EnrollmentJobReceipt = { jobId: string; status: string; stage: string };
+export type EnrollmentJobReceipt = {
+  jobId: string;
+  status: string;
+  stage: string;
+  attempt: number;
+  createdAt: string;
+  updatedAt: string;
+  leaseExpiresAt: string | null;
+};
 
 export function sshEndpointForSystem(systemId: string, now = Date.now()): SshEndpoint {
   const { sqlite } = getDatabase();
@@ -150,5 +158,25 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
       .run(input.idempotencyKey, job.id, now);
     return { jobId: job.id, status: job.status, stage: job.stage };
   });
-  return create();
+  const receipt = create();
+  const details = sqlite
+    .prepare(
+      "SELECT attempt, created_at AS createdAt, updated_at AS updatedAt, lease_expires_at AS leaseExpiresAt FROM enrollment_job WHERE id = ?",
+    )
+    .get(receipt.jobId) as
+    | {
+        attempt: number;
+        createdAt: number;
+        updatedAt: number;
+        leaseExpiresAt: number | null;
+      }
+    | undefined;
+  if (!details) throw new AccessError("The enrollment job is unavailable.", "conflict");
+  return {
+    ...receipt,
+    attempt: details.attempt,
+    createdAt: new Date(details.createdAt).toISOString(),
+    updatedAt: new Date(details.updatedAt).toISOString(),
+    leaseExpiresAt: details.leaseExpiresAt ? new Date(details.leaseExpiresAt).toISOString() : null,
+  };
 }

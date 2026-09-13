@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 
 import { decryptCredential } from "@/lib/server/credentials";
 import { inferDefaultRoute } from "@/lib/discovery/network";
@@ -206,8 +207,8 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
     { ciphertext: row.secretCiphertext, nonce: row.nonce },
     { systemId: row.systemId, method: row.method, username: row.username },
   );
+  const callbackUrl = callbackOrigin(row.address);
   const invitation = createAgentInvitation(row.systemId, now);
-  const callbackUrl = callbackOrigin();
   return {
     jobId: row.id,
     systemId: row.systemId,
@@ -262,6 +263,12 @@ async function runSshInstallation(
     const privilegeEnvironment =
       context.credential.authType === "password" ? `SCOUT_PRIVILEGE_FILE='${privilegePath}' ` : "";
     const install = await connection.exec(`${privilegeEnvironment}/bin/sh '${scriptPath}'`);
+    if (install.code !== 0 && /Scout callback is unreachable/i.test(install.stderr)) {
+      throw new EnrollmentFailure(
+        `The target host ${context.endpoint.address} could not reach Scout at ${context.callbackUrl}. Set SCOUT_PUBLIC_URL to a URL reachable from that host.`,
+        "callback",
+      );
+    }
     ensureCommandSucceeded(
       install,
       install.stderr.trim() || "The remote Scout installer failed.",
@@ -356,14 +363,23 @@ function failJob(
     .run(now, job.systemId);
 }
 
-function callbackOrigin(): string {
+function callbackOrigin(targetAddress?: string): string {
   const configured = process.env.SCOUT_PUBLIC_URL?.trim();
   if (configured) {
+    let url: URL;
     try {
-      return new URL(configured).origin;
+      url = new URL(configured);
     } catch {
       throw new EnrollmentFailure("SCOUT_PUBLIC_URL is not a valid callback URL.", "callback");
     }
+    const origin = url.origin;
+    if (targetAddress && isLoopbackHostname(url.hostname) && !isLoopbackHostname(targetAddress)) {
+      throw new EnrollmentFailure(
+        `SCOUT_PUBLIC_URL points to loopback-only address ${origin}, which target host ${targetAddress} cannot reach. Set SCOUT_PUBLIC_URL to the Scout host's LAN or DNS URL.`,
+        "callback",
+      );
+    }
+    return origin;
   }
   const inference = inferDefaultRoute();
   if (inference.kind !== "ready") {
@@ -374,6 +390,16 @@ function callbackOrigin(): string {
   }
   const port = process.env.SCOUT_PORT ?? process.env.PORT ?? "8080";
   return `http://${inference.boundary.sourceAddress}:${port}`;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "0.0.0.0" ||
+    (isIP(normalized) === 4 && normalized.startsWith("127."))
+  );
 }
 
 export function invitationIsValid(token: string, now = Date.now()): boolean {

@@ -200,7 +200,11 @@ export type SystemDetails = SystemSummary & {
     stage: string;
     errorCode: string | null;
     errorMessage: string | null;
+    attempt: number;
+    createdAt: string;
     updatedAt: string;
+    leaseExpiresAt: string | null;
+    target: string | null;
   } | null;
 };
 
@@ -270,7 +274,8 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
   const enrollment = sqlite
     .prepare(
       `
-        SELECT id, status, stage, error_code AS errorCode, error_message AS errorMessage, updated_at AS updatedAt
+        SELECT id, status, stage, error_code AS errorCode, error_message AS errorMessage,
+          attempt, created_at AS createdAt, updated_at AS updatedAt, lease_expires_at AS leaseExpiresAt
         FROM enrollment_job
         WHERE system_id = ?
         ORDER BY created_at DESC
@@ -284,12 +289,23 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
         stage: string;
         errorCode: string | null;
         errorMessage: string | null;
+        attempt: number;
+        createdAt: number;
         updatedAt: number;
+        leaseExpiresAt: number | null;
       }
     | undefined;
+  const enrollmentTarget = enrollment
+    ? (sqlite
+        .prepare(
+          "SELECT address, port FROM access_evidence WHERE system_id = ? AND method = 'ssh' AND outcome = 'open' ORDER BY observed_at DESC LIMIT 1",
+        )
+        .get(systemId) as { address: string; port: number } | undefined)
+    : undefined;
+  const summary = toSummary(row, now);
 
   return {
-    ...toSummary(row, now),
+    ...summary,
     segmentId: row.segmentId,
     excluded: row.excluded === 1,
     evidence: evidence.map((item) => ({
@@ -304,7 +320,17 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
     })),
     credentialMethods: credentialMethods.map((item) => item.method),
     enrollment: enrollment
-      ? { ...enrollment, updatedAt: new Date(enrollment.updatedAt).toISOString() }
+      ? {
+          ...enrollment,
+          createdAt: new Date(enrollment.createdAt).toISOString(),
+          updatedAt: new Date(enrollment.updatedAt).toISOString(),
+          leaseExpiresAt: enrollment.leaseExpiresAt
+            ? new Date(enrollment.leaseExpiresAt).toISOString()
+            : null,
+          target: enrollmentTarget
+            ? `${enrollmentTarget.address}:${enrollmentTarget.port}`
+            : (summary.addresses[0] ?? null),
+        }
       : null,
   };
 }

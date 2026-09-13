@@ -31,6 +31,7 @@ describe("agent installer", () => {
     expect(script).toContain("launchctl bootstrap system");
     expect(script).toContain("SCOUT_TRUST_PIN");
     expect(script).toContain("SCOUT_REQUIRE_TRUST_PIN=1");
+    expect(script).toContain("Scout callback is unreachable at $SCOUT_CALLBACK_URL");
   });
 
   it("requires the out-of-band server pin before an HTTP manual bootstrap", () => {

@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "node .next/standalone/server.js",
+        command: "npm start",
         url: "http://127.0.0.1:18082/api/health/live",
         reuseExistingServer: false,
         timeout: 120_000,

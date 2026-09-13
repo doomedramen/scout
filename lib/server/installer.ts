@@ -101,7 +101,7 @@ export function renderInstallerScript(input: {
     "",
     'preflight="${TMPDIR:-/tmp}/scout-preflight.$$"',
     'fetch_to "$SCOUT_CALLBACK_URL/api/v1/bootstrap/agent/preflight" "$preflight" || \\',
-    '  fail "Scout callback is unreachable; make SCOUT_PUBLIC_URL reachable from this host"',
+    '  fail "Scout callback is unreachable at $SCOUT_CALLBACK_URL; set SCOUT_PUBLIC_URL to a URL reachable from this host"',
     'rm -f "$preflight"',
     "",
     "os=$(uname -s 2>/dev/null || true)",

@@ -15,7 +15,7 @@ describe("enrollment worker", () => {
   it("claims, stages, and completes one automatic installation", async () => {
     process.env.SCOUT_DATABASE_URL = "file::memory:";
     process.env.SCOUT_DATA_DIR = `/tmp/scout-test-enrollment-${Date.now()}`;
-    process.env.SCOUT_PUBLIC_URL = "http://127.0.0.1:18081";
+    process.env.SCOUT_PUBLIC_URL = "http://192.0.2.5:18081";
     const { sqlite } = getDatabase();
     insertSystemAndEvidence(sqlite, 1_000);
     const receipt = createAccessGrant(
@@ -37,7 +37,7 @@ describe("enrollment worker", () => {
       expect(context.endpoint).toEqual({ address: "192.0.2.10", port: 22 });
       expect(context.credential.username).toBe("root");
       expect(context.credential.secret).toBe("CorrectHorse1");
-      expect(context.serverUrl).toBe("http://127.0.0.1:18081");
+      expect(context.serverUrl).toBe("http://192.0.2.5:18081");
       expect(context.invitation).toHaveLength(64);
       for (const stage of ["authentication", "privilege-check", "installation"] as const) {
         seenStages.push(stage);
@@ -131,6 +131,41 @@ describe("enrollment worker", () => {
     expect(claimNextEnrollmentJob(2_000)).not.toBeNull();
     expect(claimNextEnrollmentJob(2_001)).toBeNull();
     expect(claimNextEnrollmentJob(302_001)).not.toBeNull();
+  });
+
+  it("blocks a remote installation before SSH when the callback is loopback-only", async () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = `/tmp/scout-test-enrollment-callback-${Date.now()}`;
+    process.env.SCOUT_PUBLIC_URL = "http://127.0.0.1:18082";
+    const { sqlite } = getDatabase();
+    insertSystemAndEvidence(sqlite, 1_000);
+    createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "root",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:test",
+        trust: true,
+        idempotencyKey: "job-idempotency-callback",
+      },
+      1_000,
+    );
+
+    let executorCalled = false;
+    const result = await processNextEnrollmentJob(async () => {
+      executorCalled = true;
+      throw new Error("SSH should not start");
+    }, 2_000);
+
+    expect(executorCalled).toBe(false);
+    expect(result).toMatchObject({
+      status: "failed",
+      stage: "connecting",
+      errorMessage: expect.stringMatching(/127\.0\.0\.1|loopback|192\.0\.2\.10/),
+    });
   });
 });
 

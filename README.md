@@ -12,7 +12,7 @@ On a Linux host with Docker Compose:
 mkdir -p /opt/scout
 cd /opt/scout
 curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/compose.yaml -o compose.yaml
-printf 'SCOUT_PORT=8080\nSCOUT_PUBLIC_URL=http://127.0.0.1:8080\n' > .env
+printf 'SCOUT_PORT=8080\n' > .env
 docker compose up -d
 docker compose logs -f scout
 ```
@@ -37,8 +37,11 @@ docker compose up -d
 ```
 
 `SCOUT_PORT` controls the Next.js listener and the host-network endpoint.
-`SCOUT_PUBLIC_URL` is optional, but should be set to the HTTPS URL or reachable
-LAN URL that installed agents will use to call Scout.
+`SCOUT_PUBLIC_URL` is optional: when it is unset, Scout advertises the private
+address on its default route. Set it to the HTTPS URL or reachable LAN URL that
+installed agents will use to call Scout when using a reverse proxy or a fixed
+hostname. Do not use `127.0.0.1` unless every target host is the Scout host
+itself; remote hosts cannot reach the Scout host through their own loopback.
 
 ## Install the host helper
 
