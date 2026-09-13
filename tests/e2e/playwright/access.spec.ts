@@ -27,7 +27,7 @@ test("access errors stay safe and the credential action is keyboard reachable", 
   await expect(submit).toBeFocused();
   await page.keyboard.press("Enter");
 
-  const alert = page.getByRole("alert");
+  const alert = page.locator(".form-error");
   await expect(alert).toContainText("Request failed validation");
   await expect(alert).not.toContainText(secret);
   await expect(page.locator("body")).not.toContainText(secret);
@@ -35,7 +35,7 @@ test("access errors stay safe and the credential action is keyboard reachable", 
 
 test("SSH credentials ask for a username and password by default", async ({ page }) => {
   await signIn(page);
-  await page.goto("/#/access");
+  await page.goto("/access");
   await expect(page.getByRole("heading", { name: "Resolve prerequisites" })).toBeVisible();
   await expect(page.getByLabel("Credential type")).toHaveValue("ssh");
   await expect(page.getByLabel("SSH authentication")).toHaveValue("password");
@@ -46,7 +46,7 @@ test("SSH credentials ask for a username and password by default", async ({ page
 
 test("filled SSH password credentials can be stored", async ({ page }) => {
   await signIn(page);
-  await page.goto("/#/access");
+  await page.goto("/access");
 
   await page.getByLabel("SSH username").fill("root");
   await page.getByLabel("SSH password").fill("playwright-password-fixture");

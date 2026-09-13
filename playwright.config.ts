@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const externalURL = process.env.SCOUT_E2E_URL;
-const baseURL = externalURL ?? "http://127.0.0.1:18082";
+const baseURL = externalURL ?? "http://127.0.0.1:18081";
 const browserChannel = process.env.SCOUT_E2E_BROWSER_CHANNEL ?? (process.env.CI ? undefined : "chrome");
 
 export default defineConfig({
@@ -21,11 +21,20 @@ export default defineConfig({
   },
   webServer: externalURL
     ? undefined
-    : {
-        command:
-          "SCOUT_PRODUCTION=false SCOUT_AUTO_ENROLLMENT=false SCOUT_LISTEN=127.0.0.1:18082 SCOUT_SETUP_TOKEN=playwright-setup SCOUT_WEB_DIR=apps/web/dist ./apps/server/dist/scout-server",
-        url: `${baseURL}/api/status`,
-        reuseExistingServer: false,
-        timeout: 120_000,
-      },
+    : [
+        {
+          command:
+            "SCOUT_PRODUCTION=false SCOUT_AUTO_ENROLLMENT=false SCOUT_LISTEN=127.0.0.1:18082 SCOUT_SETUP_TOKEN=playwright-setup ./apps/server/dist/scout-server",
+          url: "http://127.0.0.1:18082/api/status",
+          reuseExistingServer: false,
+          timeout: 120_000,
+        },
+        {
+          command:
+            "SCOUT_API_ORIGIN=http://127.0.0.1:18082 HOSTNAME=127.0.0.1 PORT=18081 npm run start --workspace=@scout/web",
+          url: `${baseURL}/api/status`,
+          reuseExistingServer: false,
+          timeout: 120_000,
+        },
+      ],
 });

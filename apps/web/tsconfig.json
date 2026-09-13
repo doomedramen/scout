@@ -10,8 +10,19 @@
     "noEmit": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "types": ["vite/client", "node"],
-    "paths": { "@/*": ["./src/*"] }
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "allowJs": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["next-env.d.ts", ".next/types/**/*.ts", "app", "src", ".next/dev/types/**/*.ts"],
+  "exclude": ["node_modules"]
 }

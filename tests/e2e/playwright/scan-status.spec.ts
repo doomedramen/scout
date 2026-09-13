@@ -322,7 +322,7 @@ test("owner can inspect active, partial, and stale scan coverage", async ({ page
     () => candidateMode,
   );
 
-  await page.goto("/#/network");
+  await page.goto("/network");
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   const foundHost = page
     .getByRole("list", { name: "Found devices" })
@@ -342,12 +342,12 @@ test("owner can inspect active, partial, and stale scan coverage", async ({ page
   await expect(scopeRow).toContainText("next scheduled");
 
   statusMode = "partial";
-  await page.goto("/#/network");
+  await page.goto("/network");
   await expect(foundHost).toContainText("Scan coverage: Partial");
   await expect(foundHost).toContainText("completed");
 
   statusMode = "stale";
-  await page.goto("/#/scopes");
+  await page.goto("/scopes");
   const staleScopeRow = page.locator(".scope-row").filter({ hasText: "192.0.2.0/24" });
   await expect(staleScopeRow).toContainText("Scan coverage");
   await expect(staleScopeRow).toContainText("Evidence is stale until a complete run succeeds.");
@@ -363,11 +363,11 @@ test("network scan keeps empty and unavailable results explicit", async ({ page 
     () => candidateMode,
   );
 
-  await page.goto("/#/network");
+  await page.goto("/network");
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   await expect(page.getByText("No devices found.", { exact: true })).toBeVisible();
 
   candidateMode = "error";
   await page.reload();
-  await expect(page.getByRole("alert")).toContainText("Found devices unavailable");
+  await expect(page.locator(".empty-inline[role='alert']")).toContainText("Found devices unavailable");
 });

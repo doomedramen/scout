@@ -42,7 +42,7 @@ The [Scout platform specification](specs/001-scout-platform/spec.md) is the sour
 Requires Node.js 22.14+ or 24+, npm 11, Go 1.26+, and Docker with Compose for the optional local database. The repository uses npm workspaces and Turborepo:
 
 ```text
-apps/web       React + TypeScript + Vite + shadcn/ui and charts
+apps/web       Next.js App Router + TypeScript + shadcn/ui and charts
 apps/server    Go control API
 apps/agent     Go local host collector
 internal       Shared Go packages
@@ -117,11 +117,11 @@ services:
         condition: service_healthy
     environment:
       SCOUT_PRODUCTION: "false"
-      SCOUT_LISTEN: "0.0.0.0:8080"
+      SCOUT_LISTEN: "127.0.0.1:8081"
       SCOUT_DATABASE_URL: postgres://scout:${SCOUT_DB_PASSWORD:-scout-local-only}@postgres:5432/scout?sslmode=disable
       SCOUT_SETUP_TOKEN: ${SCOUT_SETUP_TOKEN:-local-only-change-me}
       SCOUT_SECRET_KEY_FILE: /var/lib/scout/wrapping-key
-      SCOUT_WEB_DIR: /usr/local/share/scout/web
+      SCOUT_API_ORIGIN: http://127.0.0.1:8081
       SCOUT_PUBLIC_ORIGIN: ${SCOUT_PUBLIC_ORIGIN:-http://127.0.0.1:${SCOUT_PORT:-8080}}
       SCOUT_AUTO_ENROLLMENT: ${SCOUT_AUTO_ENROLLMENT:-true}
     ports:
@@ -194,7 +194,7 @@ npm run db:up
 npm run dev
 ```
 
-Open the Vite URL printed in the terminal (normally `http://127.0.0.1:5173`). The API binds to `127.0.0.1:8080`. Setup creates a private, ignored `.env` with a random local database password; existing files are never overwritten. The development runner loads it automatically. Both the Compose plugin and standalone `docker-compose` are supported.
+Open Next.js URL printed in terminal (normally `http://127.0.0.1:3000`). API binds to `127.0.0.1:8080`; Next proxies `/api` there. Setup creates private, ignored `.env` with random local database password; existing files are never overwritten. Development runner loads it automatically. Both Compose plugin and standalone `docker-compose` are supported.
 
 Run the browser regression journey against an isolated in-memory server with:
 
@@ -233,7 +233,7 @@ Build a Linux agent from any supported development host:
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o apps/agent/dist/scout-agent-linux-amd64 ./apps/agent
 ```
 
-Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on their target OS before release. Stop the local database with `npm run db:down`; its named volume is preserved. The published container packages the control server, web UI, and both Linux bootstrap agents; source development still uses the Vite server.
+Use `GOARCH=arm64` for Linux ARM64. Builds should be tested on target OS before release. Stop local database with `npm run db:down`; named volume remains. Published container packages control server, Next.js UI, and both Linux bootstrap agents; source development uses Next.js server.
 
 ## Install the first Linux agent
 

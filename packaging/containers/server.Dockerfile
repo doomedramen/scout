@@ -31,15 +31,20 @@ FROM alpine:3.22 AS permissions
 
 RUN mkdir -p /var/lib/scout && chown 65532:65532 /var/lib/scout
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM node:24-alpine
 
 COPY --from=build /out/scout-server /usr/local/bin/scout-server
 COPY --from=build /out/agent /usr/local/share/scout/agent
 COPY scripts/install-agent.sh /usr/local/share/scout/agent/install-agent.sh
 COPY packaging/linux/agent.service /usr/local/share/scout/agent/agent.service
-COPY --from=web-build /src/apps/web/dist /usr/local/share/scout/web
-COPY --from=permissions --chown=nonroot:nonroot /var/lib/scout /var/lib/scout
-ENV SCOUT_WEB_DIR=/usr/local/share/scout/web
+COPY --from=web-build /src/apps/web/.next/standalone /app/web
+COPY --from=web-build /src/apps/web/.next/static /app/web/apps/web/.next/static
+COPY packaging/containers/start-server.sh /usr/local/bin/start-server
+COPY --from=permissions --chown=node:node /var/lib/scout /var/lib/scout
+RUN chmod 0755 /usr/local/bin/start-server
+ENV PORT=8080
+ENV HOSTNAME=0.0.0.0
+ENV SCOUT_API_ORIGIN=http://127.0.0.1:8081
 VOLUME ["/var/lib/scout"]
-USER nonroot:nonroot
-ENTRYPOINT ["/usr/local/bin/scout-server"]
+USER node:node
+ENTRYPOINT ["/usr/local/bin/start-server"]

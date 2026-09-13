@@ -15,7 +15,7 @@ test("development owner can complete the first-run access workflow", async ({ pa
   await page.getByRole("button", { name: "Create owner" }).click();
 
   const signInHeading = page.getByRole("heading", { name: "Sign in to Scout" });
-  const setupError = page.getByRole("alert");
+  const setupError = page.locator(".form-error");
   await expect(signInHeading.or(setupError)).toBeVisible();
   if (await setupError.isVisible()) {
     await expect(setupError).toContainText("Owner setup could not be completed");

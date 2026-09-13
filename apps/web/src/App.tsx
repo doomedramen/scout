@@ -1,4 +1,8 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+"use client";
+
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   BellRing,
   Bell,
@@ -22,23 +26,6 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NotificationMenu } from "@/components/notification-menu";
 import { api, type Candidate, type Device, type Status } from "@/lib/api";
-import { AccessView } from "@/views/access";
-import { AgentSetupView } from "@/views/agent-setup";
-import { CandidateView } from "@/views/candidate";
-import { EnrollmentView } from "@/views/enrollment";
-import { IncidentsView } from "@/views/incidents";
-import { HardwareView } from "@/views/hardware";
-import { NetworkView } from "@/views/network";
-import { NotificationsView } from "@/views/notifications";
-import { OverviewView } from "@/views/overview";
-import { RecoveryView } from "@/views/recovery";
-import { ScopesView } from "@/views/scopes";
-import { ServicesView } from "@/views/services";
-import { SettingsView } from "@/views/settings";
-import { StorageView } from "@/views/storage";
-import { SetupView } from "@/views/setup";
-import { SystemsView } from "@/views/systems";
-import { UpdatesView } from "@/views/updates";
 
 type Page =
   | "Overview"
@@ -54,6 +41,15 @@ type Page =
   | "Hardware"
   | "Storage"
   | "Settings";
+
+export type Route = string[];
+
+type AppProps = {
+  route: Route;
+  initialAuth: "signedOut" | "signedIn";
+  initialStatus: Status | null;
+  initialStatusError: boolean;
+};
 
 const pages = [
   { name: "Overview" as const, icon: LayoutDashboard },
@@ -91,9 +87,8 @@ const pageSlugs: Record<Page, string> = {
 
 const pageFromSlug = new Map(Object.entries(pageSlugs).map(([page, slug]) => [slug, page as Page]));
 
-function pageFromHash(): Page {
-  const slug = window.location.hash.replace(/^#\/?/, "").split("/")[0];
-  return pageFromSlug.get(slug) ?? "Overview";
+function pageFromRoute(route: Route): Page {
+  return pageFromSlug.get(route[0] ?? "") ?? "Overview";
 }
 
 const pageDetails: Record<Page, { title: string }> = {
@@ -118,9 +113,70 @@ const pageDetails: Record<Page, { title: string }> = {
 
 const LazyDeviceView = lazy(() => import("@/views/device").then(({ DeviceView }) => ({ default: DeviceView })));
 
-export default function App() {
-  const [auth, setAuth] = useState<"loading" | "signedOut" | "signedIn">("loading");
-  const [page, setPage] = useState<Page>(() => pageFromHash());
+const viewLoading = () => (
+  <div className="empty" role="status">
+    Loading view…
+  </div>
+);
+const AccessView = dynamic(() => import("@/views/access").then(({ AccessView }) => AccessView), {
+  loading: viewLoading,
+});
+const AgentSetupView = dynamic(() => import("@/views/agent-setup").then(({ AgentSetupView }) => AgentSetupView), {
+  loading: viewLoading,
+});
+const CandidateView = dynamic(() => import("@/views/candidate").then(({ CandidateView }) => CandidateView), {
+  loading: viewLoading,
+});
+const EnrollmentView = dynamic(() => import("@/views/enrollment").then(({ EnrollmentView }) => EnrollmentView), {
+  loading: viewLoading,
+});
+const IncidentsView = dynamic(() => import("@/views/incidents").then(({ IncidentsView }) => IncidentsView), {
+  loading: viewLoading,
+});
+const HardwareView = dynamic(() => import("@/views/hardware").then(({ HardwareView }) => HardwareView), {
+  loading: viewLoading,
+});
+const NetworkView = dynamic(() => import("@/views/network").then(({ NetworkView }) => NetworkView), {
+  loading: viewLoading,
+});
+const NotificationsView = dynamic(
+  () => import("@/views/notifications").then(({ NotificationsView }) => NotificationsView),
+  {
+    loading: viewLoading,
+  },
+);
+const OverviewView = dynamic(() => import("@/views/overview").then(({ OverviewView }) => OverviewView), {
+  loading: viewLoading,
+});
+const RecoveryView = dynamic(() => import("@/views/recovery").then(({ RecoveryView }) => RecoveryView), {
+  loading: viewLoading,
+});
+const ScopesView = dynamic(() => import("@/views/scopes").then(({ ScopesView }) => ScopesView), {
+  loading: viewLoading,
+});
+const ServicesView = dynamic(() => import("@/views/services").then(({ ServicesView }) => ServicesView), {
+  loading: viewLoading,
+});
+const SettingsView = dynamic(() => import("@/views/settings").then(({ SettingsView }) => SettingsView), {
+  loading: viewLoading,
+});
+const StorageView = dynamic(() => import("@/views/storage").then(({ StorageView }) => StorageView), {
+  loading: viewLoading,
+});
+const SetupView = dynamic(() => import("@/views/setup").then(({ SetupView }) => SetupView), { loading: viewLoading });
+const SystemsView = dynamic(() => import("@/views/systems").then(({ SystemsView }) => SystemsView), {
+  loading: viewLoading,
+});
+const UpdatesView = dynamic(() => import("@/views/updates").then(({ UpdatesView }) => UpdatesView), {
+  loading: viewLoading,
+});
+
+export default function App({ route, initialAuth, initialStatus, initialStatusError }: AppProps) {
+  const router = useRouter();
+  const routeKey = route.join("/");
+  const previousRouteKey = useRef(routeKey);
+  const [auth, setAuth] = useState<"signedOut" | "signedIn">(initialAuth);
+  const [page, setPage] = useState<Page>(() => pageFromRoute(route));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Device | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -128,23 +184,18 @@ export default function App() {
   const [agentSetupOpen, setAgentSetupOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [manageRulesRequest, setManageRulesRequest] = useState(0);
-  const [status, setStatus] = useState<Status | null>(null);
-  const [statusError, setStatusError] = useState(false);
+  const [status, setStatus] = useState<Status | null>(initialStatus);
+  const [statusError, setStatusError] = useState(initialStatusError);
 
   useEffect(() => {
     let cancelled = false;
     api
-      .owner()
-      .then(() => {
-        if (!cancelled) setAuth("signedIn");
-      })
-      .catch(() => {
-        if (!cancelled) setAuth("signedOut");
-      });
-    api
       .status()
       .then((value) => {
-        if (!cancelled) setStatus(value);
+        if (!cancelled) {
+          setStatus(value);
+          setStatusError(false);
+        }
       })
       .catch(() => {
         if (!cancelled) setStatusError(true);
@@ -155,26 +206,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onHashChange = () => {
-      const hash = window.location.hash.replace(/^#\/?/, "").split("/");
-      const next = pageFromSlug.get(hash[0]) ?? "Overview";
-      setPage(next);
-      setSelected(null);
-      setSelectedCandidate(null);
-      setIncidentFocus(hash[0] === "incidents" ? (hash[1] ?? "") : "");
-      setMobileNavOpen(false);
-    };
-    window.addEventListener("hashchange", onHashChange);
-    window.addEventListener("popstate", onHashChange);
-    return () => {
-      window.removeEventListener("hashchange", onHashChange);
-      window.removeEventListener("popstate", onHashChange);
-    };
-  }, []);
+    if (previousRouteKey.current === routeKey) return;
+    previousRouteKey.current = routeKey;
+    setPage(pageFromRoute(route));
+    const detailID = route[2] ? decodeURIComponent(route[2]) : "";
+    if (route[1] !== "device" || selected?.id !== detailID) setSelected(null);
+    if (route[1] !== "candidate" || selectedCandidate?.id !== detailID) setSelectedCandidate(null);
+    setIncidentFocus(route[0] === "incidents" ? (route[1] ?? "") : "");
+    setMobileNavOpen(false);
+  }, [route, routeKey, selected?.id, selectedCandidate?.id]);
 
   useEffect(() => {
     if (auth !== "signedIn") return;
-    const parts = window.location.hash.replace(/^#\/?/, "").split("/");
+    const parts = route;
     if (parts[1] === "candidate" && parts[2] && !selectedCandidate) {
       let cancelled = false;
       api
@@ -183,7 +227,7 @@ export default function App() {
           if (!cancelled) setSelectedCandidate(detail.candidate);
         })
         .catch(() => {
-          if (!cancelled) window.history.replaceState({}, "", "#/network");
+          if (!cancelled) router.replace("/network");
         });
       return () => {
         cancelled = true;
@@ -191,18 +235,47 @@ export default function App() {
     }
     if (parts[1] !== "device" || !parts[2] || selected) return;
     let cancelled = false;
+    const deviceID = decodeURIComponent(parts[2]);
+    if (deviceID.startsWith("candidate:")) {
+      api
+        .candidate(deviceID.slice("candidate:".length))
+        .then(({ candidate }) => {
+          if (cancelled) return;
+          setSelected({
+            id: `candidate:${candidate.id}`,
+            candidateId: candidate.id,
+            displayName: candidate.displayName || candidate.hostname || candidate.address,
+            siteId: candidate.siteId,
+            platform: "linux",
+            architecture: "unknown",
+            hostname: candidate.hostname,
+            addresses: [candidate.address],
+            lifecycle: "candidate",
+            availability: "connecting",
+            metricFreshness: {},
+            collectorStates: [],
+            revision: candidate.scopeRevision || 1,
+          });
+        })
+        .catch(() => {
+          if (!cancelled) router.replace(`/${parts[0] || "overview"}`);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     api
-      .device(decodeURIComponent(parts[2]))
+      .device(deviceID)
       .then((device) => {
         if (!cancelled) setSelected(device);
       })
       .catch(() => {
-        if (!cancelled) window.history.replaceState({}, "", `#/${parts[0] || "overview"}`);
+        if (!cancelled) router.replace(`/${parts[0] || "overview"}`);
       });
     return () => {
       cancelled = true;
     };
-  }, [auth, page, selected, selectedCandidate]);
+  }, [auth, page, route, router, selected, selectedCandidate]);
 
   if (auth !== "signedIn") {
     return (
@@ -224,8 +297,7 @@ export default function App() {
     setSelectedCandidate(null);
     setQuery("");
     const suffix = next === "Incidents" && detail?.incidentId ? `/${encodeURIComponent(detail.incidentId)}` : "";
-    const hash = `#/${pageSlugs[next]}${suffix}`;
-    if (window.location.hash !== hash) window.history.pushState({}, "", hash);
+    router.push(`/${pageSlugs[next]}${suffix}`);
     if (next !== "Incidents") setIncidentFocus("");
     setMobileNavOpen(false);
   }
@@ -240,8 +312,7 @@ export default function App() {
     setSelected(null);
     setSelectedCandidate(candidate);
     setMobileNavOpen(false);
-    const hash = `#/network/candidate/${encodeURIComponent(candidate.id)}`;
-    if (window.location.hash !== hash) window.history.pushState({}, "", hash);
+    router.push(`/network/candidate/${encodeURIComponent(candidate.id)}`);
   }
 
   function openAccess(candidate: Candidate) {
@@ -250,16 +321,14 @@ export default function App() {
     setSelectedCandidate(candidate);
     setQuery("");
     setMobileNavOpen(false);
-    const hash = `#/access/candidate/${encodeURIComponent(candidate.id)}`;
-    if (window.location.hash !== hash) window.history.pushState({}, "", hash);
+    router.push(`/access/candidate/${encodeURIComponent(candidate.id)}`);
   }
 
   function openDevice(device: Device) {
     const targetPage = page === "Overview" ? "Systems" : page;
     setPage(targetPage);
     setSelected(device);
-    const hash = `#/${pageSlugs[targetPage]}/device/${encodeURIComponent(device.id)}`;
-    if (window.location.hash !== hash) window.history.pushState({}, "", hash);
+    router.push(`/${pageSlugs[targetPage]}/device/${encodeURIComponent(device.id)}`);
   }
 
   const detail = pageDetails[page];
@@ -358,7 +427,7 @@ export default function App() {
         </nav>
       </div>
       <main>
-        {status?.recoveryMode && <RecoveryView onChanged={() => window.location.reload()} />}
+        {status?.recoveryMode && <RecoveryView onChanged={() => router.refresh()} />}
         {agentSetupOpen && <AgentSetupView onClose={() => setAgentSetupOpen(false)} />}
         {selectedCandidate && page === "Network" ? (
           <CandidateView selected={selectedCandidate} onBack={() => navigate("Network")} onOpenAccess={openAccess} />
