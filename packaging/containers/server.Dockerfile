@@ -44,6 +44,7 @@ COPY --from=permissions --chown=node:node /var/lib/scout /var/lib/scout
 RUN chmod 0755 /usr/local/bin/start-server
 ENV PORT=8080
 ENV HOSTNAME=0.0.0.0
+ENV SCOUT_LISTEN=127.0.0.1:8081
 ENV SCOUT_API_ORIGIN=http://127.0.0.1:8081
 VOLUME ["/var/lib/scout"]
 USER node:node
