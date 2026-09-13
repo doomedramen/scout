@@ -19,6 +19,7 @@ trap cleanup EXIT
 mkdir -p "$test_dir/bin" "$test_dir/scout"
 awk '/^cat .*\/usr\/bin\/update$/ { capture=1; next } capture && /^EOF$/ { exit } capture { print }' \
   install/scout-install.sh >"$test_dir/update"
+cmp "$test_dir/update" install/scout-update.sh
 awk '/^cat .*\/opt\/scout\/compose\.yaml$/ { capture=1; next } capture && /^EOF$/ { exit } capture { print }' \
   install/scout-install.sh >"$test_dir/compose.install.yaml"
 cmp "$test_dir/compose.install.yaml" "$repo_dir/compose.proxmox.yaml"

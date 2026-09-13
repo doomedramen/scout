@@ -189,7 +189,12 @@ PostgreSQL images, and recreate the services while retaining both named data
 volumes. The previous Compose file is kept at
 `/opt/scout/compose.yaml.previous`; the `.env` file is not replaced. Set
 `SCOUT_COMPOSE_URL` only when using an owner-controlled mirror of the Proxmox
-Compose definition.
+Compose definition. Existing LXCs created before this updater was published
+can migrate the command once with:
+
+```bash
+tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/install/scout-update.sh -o "$tmp" && install -m 0755 "$tmp" /usr/bin/update && rm -f "$tmp" && update
+```
 
 This integration has syntax and metadata contract coverage, but still needs a
 live Proxmox VE installation test before it can be described as verified.
