@@ -37,6 +37,18 @@ if ! docker compose pull; then
   echo "Scout update: image pull failed; restored the previous Compose file" >&2
   exit 1
 fi
+if ! docker compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add FOWNER \
+  --entrypoint /bin/sh server -c '
+    chown -R node:node /var/lib/scout
+    chmod 0700 /var/lib/scout
+    if [ -e /var/lib/scout/wrapping-key ]; then
+      chmod 0400 /var/lib/scout/wrapping-key
+    fi
+  '; then
+  cp -p -- "$backup" "$compose_file"
+  echo "Scout update: could not repair Scout data permissions; restored the previous Compose file" >&2
+  exit 1
+fi
 if ! docker compose up -d --remove-orphans --wait; then
   cp -p -- "$backup" "$compose_file"
   echo "Scout update: service restart failed; restored the previous Compose file" >&2

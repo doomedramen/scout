@@ -43,6 +43,7 @@ SCOUT_INSTALL_DIR="$test_dir/scout" SCOUT_TEST_LOG="$test_dir/docker.log" \
   bash "$test_dir/update" >/dev/null
 grep -q 'compose -f .* config' "$test_dir/docker.log"
 grep -qx 'compose pull' "$test_dir/docker.log"
+grep -q 'compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add FOWNER' "$test_dir/docker.log"
 grep -qx 'compose up -d --remove-orphans --wait' "$test_dir/docker.log"
 cmp "$test_dir/scout/compose.yaml" "$repo_dir/compose.proxmox.yaml"
 cmp "$test_dir/scout/compose.yaml.previous" "$repo_dir/compose.quickstart.yaml"
@@ -72,11 +73,13 @@ grep -q '_CS_DEFAULT_URL="https://raw.githubusercontent.com/doomedramen/scout/ma
 grep -q 'compose.proxmox.yaml' ct/scout.sh
 grep -q 'Downloaded Scout Compose file failed validation' ct/scout.sh
 grep -q 'docker compose pull' ct/scout.sh
+grep -q 'docker compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add FOWNER' ct/scout.sh
 grep -q 'docker compose up -d --remove-orphans --wait' ct/scout.sh
 grep -q "cat <<'EOF' >/usr/bin/update" install/scout-install.sh
 grep -q 'compose.proxmox.yaml' install/scout-install.sh
 grep -q 'downloaded Compose file failed validation' install/scout-install.sh
 grep -q 'docker compose pull' install/scout-install.sh
+grep -q 'docker compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add FOWNER' install/scout-install.sh
 grep -q 'docker compose up -d --remove-orphans --wait' install/scout-install.sh
 grep -q '"updateable": true' json/scout.json
 grep -q '"script": "ct/scout.sh"' json/scout.json

@@ -64,6 +64,21 @@ function update_script() {
   fi
   msg_ok "Pulled Scout Images"
 
+  msg_info "Repairing Scout data permissions"
+  if ! $STD docker compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add FOWNER \
+    --entrypoint /bin/sh server -c '
+      chown -R node:node /var/lib/scout
+      chmod 0700 /var/lib/scout
+      if [ -e /var/lib/scout/wrapping-key ]; then
+        chmod 0400 /var/lib/scout/wrapping-key
+      fi
+    '; then
+    cp -p -- "$backup" "$compose_file"
+    msg_error "Could not repair Scout data permissions; restored the previous Compose file"
+    exit 1
+  fi
+  msg_ok "Repaired Scout data permissions"
+
   msg_info "Updating Scout"
   if ! $STD docker compose up -d --remove-orphans --wait; then
     cp -p -- "$backup" "$compose_file"
