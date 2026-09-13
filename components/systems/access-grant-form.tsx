@@ -35,6 +35,7 @@ export function AccessGrantForm({ systemId }: { systemId: string }) {
   const [passphrase, setPassphrase] = useState("");
   const [trust, setTrust] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -79,10 +80,12 @@ export function AccessGrantForm({ systemId }: { systemId: string }) {
     if (!preflight) return;
     setPending(true);
     setError("");
+    const requestKey = idempotencyKey ?? crypto.randomUUID();
+    if (!idempotencyKey) setIdempotencyKey(requestKey);
     try {
       const response = await fetch(`/api/v1/systems/${systemId}/access-grants`, {
         method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": crypto.randomUUID() },
+        headers: { "content-type": "application/json", "idempotency-key": requestKey },
         body: JSON.stringify({
           method: "ssh",
           username,
@@ -104,6 +107,7 @@ export function AccessGrantForm({ systemId }: { systemId: string }) {
       }
       setSecret("");
       setPassphrase("");
+      setIdempotencyKey(null);
       setJob(payload);
     } catch {
       setError(

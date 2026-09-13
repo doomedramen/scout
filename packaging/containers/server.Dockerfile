@@ -25,6 +25,7 @@ COPY --from=build --chown=scout:scout /app/.next/static ./.next/static
 COPY --from=build --chown=scout:scout /app/public ./public
 COPY --from=build --chown=scout:scout /app/agent-artifacts ./agent-artifacts
 COPY --from=agent-build --chown=scout:scout /src/target/release/scout-agent ./agent-artifacts/scout-agent-linux-x86_64
+COPY --chown=scout:scout packaging/containers/scout-ops.mjs /usr/local/bin/scout-ops.mjs
 RUN mkdir -p /data && chown scout:scout /data
 USER scout
 EXPOSE 8080

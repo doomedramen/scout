@@ -1,0 +1,130 @@
+#!/bin/sh
+set -eu
+
+SCOUT_DIR=${SCOUT_DIR:-/opt/scout}
+COMPOSE_FILE=$SCOUT_DIR/compose.yaml
+COMPOSE_URL=${SCOUT_COMPOSE_URL:-https://raw.githubusercontent.com/doomedramen/scout/main/compose.yaml}
+
+die() {
+  printf 'scout: %s\n' "$1" >&2
+  exit 1
+}
+
+require_docker() {
+  command -v docker >/dev/null 2>&1 || die "Docker is required."
+  docker compose version >/dev/null 2>&1 || die "Docker Compose is required."
+}
+
+download_compose() {
+  temporary=$COMPOSE_FILE.tmp.$$
+  curl -fsSL "$COMPOSE_URL" -o "$temporary" || {
+    rm -f "$temporary"
+    die "Could not download the current Compose definition."
+  }
+  docker compose -f "$temporary" config >/dev/null 2>&1 || {
+    rm -f "$temporary"
+    die "The downloaded Compose definition failed validation."
+  }
+  mv "$temporary" "$COMPOSE_FILE"
+}
+
+ensure_compose() {
+  mkdir -p "$SCOUT_DIR"
+  if [ ! -s "$COMPOSE_FILE" ]; then
+    download_compose
+  fi
+}
+
+compose() {
+  docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+read_passphrase() {
+  if [ -n "${SCOUT_BACKUP_PASSPHRASE:-}" ]; then
+    printf '%s' "$SCOUT_BACKUP_PASSPHRASE"
+    return
+  fi
+  printf 'Backup passphrase: ' >&2
+  stty -echo
+  IFS= read -r passphrase
+  stty echo
+  printf '\n' >&2
+  [ -n "$passphrase" ] || die "A backup passphrase is required."
+  printf '%s' "$passphrase"
+}
+
+run_ops() {
+  operation=$1
+  archive=$2
+  passphrase=$3
+  printf '%s\n' "$passphrase" | compose run --rm --no-deps -v "$PWD:/backup" \
+    --entrypoint node scout /usr/local/bin/scout-ops.mjs "$operation" "/backup/$archive"
+}
+
+require_docker
+command=${1:-status}
+
+case "$command" in
+  up)
+    ensure_compose
+    compose up -d --wait
+    ;;
+  update)
+    ensure_compose
+    previous=$COMPOSE_FILE.previous.$$
+    cp "$COMPOSE_FILE" "$previous"
+    download_compose
+    if ! compose pull scout || ! compose up -d --wait; then
+      mv "$previous" "$COMPOSE_FILE"
+      compose up -d --wait || true
+      die "Update failed; the previous Compose definition was restored."
+    fi
+    rm -f "$previous"
+    ;;
+  backup)
+    ensure_compose
+    archive=${2:-scout-backup-$(date -u +%Y%m%dT%H%M%SZ).scoutbak}
+    passphrase=$(read_passphrase)
+    compose stop scout
+    if ! run_ops backup "$archive" "$passphrase"; then
+      compose start scout || true
+      die "Backup failed."
+    fi
+    compose start scout
+    printf 'scout: backup written to %s\n' "$PWD/$archive"
+    ;;
+  restore)
+    ensure_compose
+    archive=${2:-}
+    [ -n "$archive" ] || die "Usage: scout restore BACKUP.scoutbak"
+    [ -f "$archive" ] || die "Backup archive not found: $archive"
+    passphrase=$(read_passphrase)
+    compose stop scout
+    if ! run_ops restore "$(basename "$archive")" "$passphrase"; then
+      compose start scout || true
+      die "Restore failed; the existing data was left in place."
+    fi
+    compose start scout
+    printf 'scout: restore validated; review the instance before enabling work\n'
+    ;;
+  status)
+    ensure_compose
+    compose ps
+    ;;
+  logs)
+    ensure_compose
+    shift
+    compose logs "$@"
+    ;;
+  setup-token)
+    ensure_compose
+    compose logs --no-color scout | grep 'Scout owner setup token' || die "No unused setup token is visible in the logs."
+    ;;
+  trust-pin)
+    ensure_compose
+    compose logs --no-color scout | grep 'bootstrap fingerprint' || die "No bootstrap fingerprint is available yet."
+    ;;
+  *)
+    die "Usage: scout {up|update|backup|restore|status|logs|setup-token|trust-pin}"
+    ;;
+esac

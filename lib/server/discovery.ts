@@ -4,6 +4,7 @@ import { getDatabase } from "@/lib/server/db";
 import { inferDefaultRoute, type NetworkBoundary } from "@/lib/discovery/network";
 import { scanSegment, type ProbeResult } from "@/lib/discovery/scanner";
 import { ownerExists } from "@/lib/server/setup";
+import { authorityPaused } from "@/lib/server/settings";
 
 const EVIDENCE_TTL_MS = 30 * 60 * 1000;
 const SCAN_INTERVAL_MS = 10 * 60 * 1000;
@@ -254,7 +255,13 @@ export async function discoverNow(
 }
 
 export function requestDiscovery(): void {
-  if (process.env.SCOUT_DISABLE_DISCOVERY === "true" || discoveryRun || !ownerExists()) return;
+  if (
+    process.env.SCOUT_DISABLE_DISCOVERY === "true" ||
+    authorityPaused() ||
+    discoveryRun ||
+    !ownerExists()
+  )
+    return;
   discoveryRun = discoverNow().finally(() => {
     discoveryRun = undefined;
   });

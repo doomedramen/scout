@@ -1,0 +1,126 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import Database from "better-sqlite3";
+
+const dataDirectory = process.env.SCOUT_DATA_DIR || "/data";
+const keyFiles = ["auth.secret", "credentials.key", "control-signing.key"];
+
+const [operation, archive] = process.argv.slice(2);
+
+if (!operation || !archive || !["backup", "restore"].includes(operation)) {
+  console.error("Usage: scout-ops.mjs {backup|restore} /backup/archive.scoutbak");
+  process.exit(2);
+}
+
+const passphrase = fs.readFileSync(0, "utf8").split(/\r?\n/, 1)[0];
+if (!passphrase) {
+  console.error("A non-empty backup passphrase is required.");
+  process.exit(2);
+}
+
+if (operation === "backup") await backup(archive, passphrase);
+else await restore(archive, passphrase);
+
+async function backup(output, secret) {
+  const source = path.join(dataDirectory, "scout.sqlite");
+  if (!fs.existsSync(source)) throw new Error("Scout database does not exist.");
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-"));
+  const snapshot = path.join(temporaryDirectory, "scout.sqlite");
+  const database = new Database(source, { readonly: true, fileMustExist: true });
+  try {
+    await database.backup(snapshot);
+  } finally {
+    database.close();
+  }
+  const payload = {
+    version: 1,
+    database: fs.readFileSync(snapshot).toString("base64"),
+    keys: Object.fromEntries(
+      keyFiles.map((name) => [
+        name,
+        fs.readFileSync(path.join(dataDirectory, name)).toString("base64"),
+      ]),
+    ),
+  };
+  const encrypted = encrypt(Buffer.from(JSON.stringify(payload)), secret);
+  writeAtomically(output, JSON.stringify(encrypted));
+  fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  process.stdout.write(`Scout backup written to ${output}\n`);
+}
+
+async function restore(input, secret) {
+  const envelope = JSON.parse(fs.readFileSync(input, "utf8"));
+  const payload = JSON.parse(decrypt(envelope, secret).toString("utf8"));
+  if (payload.version !== 1 || typeof payload.database !== "string" || !payload.keys) {
+    throw new Error("The backup archive format is invalid.");
+  }
+  const database = Buffer.from(payload.database, "base64");
+  const keys = Object.fromEntries(
+    keyFiles.map((name) => {
+      const value = payload.keys[name];
+      if (typeof value !== "string") throw new Error(`Backup key is missing: ${name}`);
+      const decoded = Buffer.from(value, "base64");
+      const expected = name === "auth.secret" ? 32 : 32;
+      if (decoded.length !== expected) throw new Error(`Backup key has an invalid length: ${name}`);
+      return [name, decoded];
+    }),
+  );
+  fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
+  const previous = path.join(dataDirectory, `.restore-previous-${Date.now()}`);
+  fs.mkdirSync(previous, { mode: 0o700 });
+  for (const name of ["scout.sqlite", ...keyFiles]) {
+    const current = path.join(dataDirectory, name);
+    if (fs.existsSync(current)) fs.renameSync(current, path.join(previous, name));
+  }
+  writeAtomically(path.join(dataDirectory, "scout.sqlite"), database);
+  for (const [name, value] of Object.entries(keys))
+    writeAtomically(path.join(dataDirectory, name), value);
+  const restored = new Database(path.join(dataDirectory, "scout.sqlite"));
+  restored
+    .prepare(
+      "INSERT INTO app_setting (key, value, updated_at) VALUES ('authority_paused', 'true', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    )
+    .run(Date.now());
+  restored.close();
+  process.stdout.write(`Scout backup restored. Previous files are retained in ${previous}\n`);
+}
+
+function encrypt(plaintext, secret) {
+  const salt = crypto.randomBytes(16);
+  const nonce = crypto.randomBytes(12);
+  const key = crypto.scryptSync(secret, salt, 32);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return {
+    version: 1,
+    salt: salt.toString("base64url"),
+    nonce: nonce.toString("base64url"),
+    tag: cipher.getAuthTag().toString("base64url"),
+    ciphertext: ciphertext.toString("base64url"),
+  };
+}
+
+function decrypt(envelope, secret) {
+  if (envelope.version !== 1) throw new Error("The backup archive version is unsupported.");
+  const key = crypto.scryptSync(secret, Buffer.from(envelope.salt, "base64url"), 32);
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    key,
+    Buffer.from(envelope.nonce, "base64url"),
+  );
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, "base64url")),
+    decipher.final(),
+  ]);
+}
+
+function writeAtomically(destination, value) {
+  const temporary = `${destination}.tmp-${process.pid}`;
+  fs.writeFileSync(temporary, value, { mode: 0o600 });
+  fs.renameSync(temporary, destination);
+  fs.chmodSync(destination, 0o600);
+}

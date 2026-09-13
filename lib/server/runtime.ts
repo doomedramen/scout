@@ -2,6 +2,7 @@ import { getDatabase } from "@/lib/server/db";
 import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys";
 import { requestDiscovery } from "@/lib/server/discovery";
 import { processNextEnrollmentJob } from "@/lib/server/enrollment";
+import { authorityPaused } from "@/lib/server/settings";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const LEASE_RECOVERY_INTERVAL_MS = 30_000;
@@ -23,7 +24,7 @@ function writeHeartbeat(now = Date.now()): void {
 }
 
 function requestEnrollmentWork(): void {
-  if (enrollmentRun) return;
+  if (enrollmentRun || authorityPaused()) return;
   enrollmentRun = processNextEnrollmentJob()
     .catch((error: unknown) => {
       console.error("Scout enrollment worker failed", error);
