@@ -8,7 +8,10 @@ Document validation establishes artifact consistency only. It does not prove act
 
 ## Implementation evidence
 
-No implementation or live network scan is claimed by this package.
+Implementation and fixture evidence is appended below. No production network,
+device, credential, or deployment is claimed by this package. Historical
+entries retain the remaining limits that applied when each entry was written;
+the latest validation status is at the end of this ledger.
 
 For every completed task or release gate append:
 
@@ -817,7 +820,7 @@ Never attach credential values, private keys, host-key private material, banners
 - Run status now projects active, latest terminal, and next scheduled work independently for each assigned server or agent vantage. The owner-facing status contract and TypeScript model expose per-vantage completion, schedule, and active-run progress without collapsing an agent-only or multi-vantage scope into a misleading server aggregate. Candidate API limits now reject non-positive, malformed, or over-500 page sizes with the existing safe invalid-request envelope instead of silently expanding or clamping unsafe scan queries.
 - The Network view reports scan coverage, assigned-vantage state, active progress, and completion freshness next to each found device. The Scopes view reports coverage, outcome summary, partial/error/stale notes, retention lag, queue pressure, capabilities, heartbeat freshness, and per-vantage last/next schedule. Deterministic browser coverage exercises active progress, partial evidence, stale evidence, empty results, unavailable results, candidate filtering/keyboard navigation, and the 360/768/1440 layout checks.
 - Existing bounded cleanup implementation is retained: 30-day observations/receipts and 90-day terminal run summaries are deleted in restart-safe batches; open or re-evaluating access requests protect their evidence and owning runs; candidates and exclusions are never deleted; status exposes cleanup lag/blocking and queue backpressure. Existing memory and PostgreSQL tests cover cleanup continuation, unresolved-request protection, duplicate/conflicting pages, counter bounds, and restart persistence. Audit and API error tests confirm secrets/backend errors are redacted.
-- Exact verification commands and outcomes: `go test ./... -count=1` passed, including PostgreSQL integration in 41.9 seconds; `go vet ./...` passed; `npm run lint` passed; `npm run check` passed; `npm run format:check` passed; `git diff --check` passed; `npm run test:e2e:browser` rebuilt the application and passed all 16 Playwright tests, including the new scan-status suite. The new browser suite also passed independently with 2 tests. No real device, production network, production credential, or deployment was contacted.
+- Exact verification commands and outcomes: `go test ./... -count=1` passed; `go vet ./...` passed; `npm run lint` passed; `npm run check` passed; `npm run format:check` passed; `git diff --check` passed; `npm run test:e2e:browser` rebuilt the application and passed all 16 Playwright tests, including the new scan-status suite. The new browser suite also passed independently with 2 tests. PostgreSQL-backed integration is run separately by `scripts/test-integration.sh` because the full Go gate does not assume a database URL. No real device, production network, production credential, or deployment was contacted.
 - T036–T040 are complete. T041–T044 remain open for recovery preservation, final operational documentation, live segmented packet-boundary/workload evidence, and the final release gate.
 
 ## Recovery preservation and active-scanning operations documentation
@@ -828,3 +831,43 @@ Never attach credential values, private keys, host-key private material, banners
 - README and operator/security/support documentation now describe the exact scope/vantage configuration, bounded TCP-only traffic model, permissions, retention windows, pause and late-result fences, recovery behavior, automatic server-local enrollment boundary, Docker quickstart limits, and explicit unverified live/non-goal areas.
 - Exact verification commands and outcomes: `go test ./internal/store ./tests/integration -run 'TestBackupRestorePreservesScanStateAndFencesActiveAuthority|TestSQLScanBackupPreservesEvidenceAndFencesActiveAuthority|TestSQLScanHistoryCleanupIsRestartSafeAndProtectsOpenRequests|TestBackupRestoreAndRecoveryPauseAuthority' -count=1` passed; `bash -n scripts/backup.sh scripts/restore.sh scripts/test-restore.sh` passed; `scripts/test-restore.sh` passed in fixture mode. No live restore, production database, device, network, or credential was used.
 - T041–T042 are complete. T043–T044 remain open for owner-authorized segmented packet capture, live/reference workload and compatibility evidence, and the final repository release gate.
+
+## Final fixture gates and live-lab boundary
+
+- Requirements: FR-001–FR-022; SC-001–SC-010; validation date: 2026-09-13
+  (Europe/London); implementation/test commit: 5d490f1.
+- Final repository checks passed: `go test ./... -count=1` (including the
+  recovery replay regression; integration package 43.317 seconds), `go vet
+  ./...`, `npm run check`, `npm run build`, `npm run format:check`, `git diff
+  --check`, and `go test ./tests/contracts -count=1`.
+- Repository fixture scripts passed: `scripts/test-active-discovery.sh`,
+  `scripts/test-load.sh`, `scripts/test-integration.sh` using a disposable
+  PostgreSQL 17 container (integration package 53.033 seconds),
+  `scripts/test-collectors.sh`, `scripts/test-decommission.sh`,
+  `scripts/test-enrollment.sh`, `scripts/test-first-agent.sh`,
+  `scripts/test-hardware-monitoring.sh`, `scripts/test-monitoring-load.sh`,
+  `scripts/test-proxmox-helper.sh`, `scripts/test-restore.sh`,
+  `scripts/test-storage-health.sh`, `scripts/test-systemd.sh`, and
+  `scripts/test-updates.sh`. Live lab modes stayed disabled and therefore
+  contacted no real device, network, provider, storage utility, system bus, or
+  production credential.
+- Synthetic reference workload passed: 100 devices, 40 numeric series, 50
+  service states, 24 hours, 96,000 samples, and 120,000 observations. The
+  latest run reported 41.687 seconds ingest time, 11.66 ms query p95, zero
+  evaluation lag, and zero rollup queue depth. This is explicitly a synthetic
+  regression result, not a live capacity claim.
+- Browser acceptance passed: `npm run test:e2e:browser` ran 16 Playwright
+  tests, including keyboard navigation and 360/768/1440 CSS-pixel layouts,
+  scan progress/partial/stale/empty/unavailable states, bounded filters, and
+  SSH username/password enrollment UI. No browser test used a real device or
+  credential.
+- The live segmented packet-capture lab was not run. The current host is
+  macOS, while `scripts/test-active-discovery.sh` fails closed unless it is
+  running on Linux with Docker, isolated internal bridges, bridge-scoped
+  tcpdump permission, and explicit `SCOUT_ACTIVE_DISCOVERY_LAB_CONFIRM=YES`.
+  The same boundary applies to the live older-agent, native systemd, hardware,
+  storage, and provider checks. These are recorded as remaining external
+  evidence, not as passed support claims.
+- T043 remains open only for the owner-authorized Linux lab and its live
+  compatibility/workload evidence. T044 is complete for the repository gates
+  and fixture integration scripts listed above.

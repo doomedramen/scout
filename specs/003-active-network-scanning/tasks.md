@@ -144,7 +144,7 @@
 - [X] T041 Extend backup/restore and recovery-mode tests to preserve scan policy, assignments, candidate/evidence links, access requests, terminal summaries, and cancellation of stale active authority in internal/store/recovery.go, scripts/backup.sh, scripts/restore.sh, and tests/integration/scan_storage_test.go (FR-015, FR-016, FR-019, FR-022; SC-003, SC-006, SC-008).
 - [X] T042 [P] Document configuration, permissions, traffic model, retention, pause, failure recovery, and explicit non-goals in docs/operations.md, docs/security.md, docs/support-matrix.md, and README.md (FR-001–FR-006, FR-014, FR-016–FR-022).
 - [ ] T043 Run the isolated segmented lab, packet-boundary capture, credential/trust journey, restart/replay/backpressure cases, older-agent compatibility, keyboard/viewport checks, and 256-address/100-device workload from specs/003-active-network-scanning/quickstart.md; record exact results and remaining limits in specs/003-active-network-scanning/evidence.md and acceptance-matrix.md (FR-001–FR-022; SC-001–SC-010).
-- [ ] T044 Run `go test ./... -count=1`, `go vet ./...`, `npm run check`, `npm run build`, `npm run format:check`, `git diff --check`, contract validation, and repository integration scripts; record outputs and commit in specs/003-active-network-scanning/evidence.md (FR-001–FR-022; SC-001–SC-010).
+- [X] T044 Run `go test ./... -count=1`, `go vet ./...`, `npm run check`, `npm run build`, `npm run format:check`, `git diff --check`, contract validation, and repository integration scripts; record outputs and commit in specs/003-active-network-scanning/evidence.md (FR-001–FR-022; SC-001–SC-010).
 
 ## Dependencies and execution order
 

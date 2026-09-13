@@ -18,3 +18,13 @@
 - Detailed observations and summaries respect retention while exclusions and unresolved work persist.
 - Browser journey passes keyboard and viewport checks.
 - Reference workload records actual timing, rate, concurrency, storage, queue, and telemetry-isolation results.
+
+## Validation status — 2026-09-13
+
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Contracts, Go tests, vet, web checks/build/format, diff cleanliness | Passed | Final repository gate recorded in `evidence.md`; 16 Playwright tests passed. |
+| Fixture scanning, enrollment, credentials/trust, recovery, retention, and backpressure | Passed | All repository fixture scripts passed, including disposable PostgreSQL 17 integration. |
+| Synthetic 100-device/24-hour workload | Passed | 96,000 samples and 120,000 observations; 41.687s ingest, 11.66ms query p95; not a live capacity claim. |
+| Live segmented packet capture and 256-address workload | Open | Requires the guarded Linux Docker lab and owner confirmation; current validation host is macOS. |
+| Native systemd, older-agent, provider, and live hardware/storage compatibility | Open | Fixture coverage passed; live evidence remains intentionally opt-in and unclaimed. |
