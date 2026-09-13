@@ -981,9 +981,13 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 .candidate-row-copy small,
-.candidate-row-state small {
+.candidate-row-state small,
+.candidate-row-scan-status {
   color: #9da5b2;
   font-size: 10px;
+}
+.candidate-row-scan-status {
+  color: #b6c4dc;
 }
 .candidate-row-state {
   justify-items: end;
@@ -3303,6 +3307,45 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.scope-scan-status {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #354052;
+  border-radius: 7px;
+  background: #1a2029;
+}
+.scope-scan-status-heading,
+.scope-vantage > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scope-scan-status-heading {
+  justify-content: space-between;
+}
+.scope-scan-status-heading strong,
+.scope-vantage strong {
+  font-size: 11px;
+  text-transform: none;
+}
+.scope-scan-status > small,
+.scope-vantage small {
+  color: #9da5b2;
+  font-size: 10px;
+}
+.scope-vantages {
+  display: grid;
+  gap: 5px;
+  margin-top: 2px;
+}
+.scope-vantage {
+  display: grid;
+  gap: 3px;
+  padding-top: 5px;
+  border-top: 1px solid #2b3037;
 }
 .discovery-launch {
   grid-template-columns: minmax(160px, 1fr) 140px auto;

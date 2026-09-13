@@ -59,6 +59,14 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   await expect(scopeRow.getByRole("button", { name: "Pause scope" })).toBeVisible();
   await scopeRow.getByRole("button", { name: "Enable server scan" }).click();
   await expect(scopeRow.getByRole("button", { name: "Pause server scan" })).toBeVisible();
+  await expect(scopeRow.getByText("Scan coverage")).toBeVisible();
+  await expect(scopeRow.getByText("Server vantage")).toBeVisible();
+  await expect(scopeRow.getByText(/Capabilities:.*tcp/)).toBeVisible();
+  await scopeRow.getByRole("button", { name: "Pause server scan" }).click();
+  await expect(scopeRow.getByRole("button", { name: "Enable server scan" })).toBeVisible();
+  await expect(scopeRow.getByText(/Paused — new work is disabled and active runs are fenced safely\./)).toBeVisible();
+  await scopeRow.getByRole("button", { name: "Enable server scan" }).click();
+  await expect(scopeRow.getByRole("button", { name: "Pause server scan" })).toBeVisible();
   await scopeRow.getByRole("button", { name: "Scan now" }).click();
   await expect(page.getByText("Scan queued.", { exact: true })).toBeVisible();
 
@@ -103,6 +111,8 @@ test("owner can configure a bounded scan and see local SSH evidence", async ({ p
   const foundDevices = page.getByRole("list", { name: "Found devices" });
   const foundHost = foundDevices.getByRole("listitem").filter({ hasText: "127.0.0.1" });
   await expect(foundHost).toHaveCount(1);
+  await expect(foundHost.getByText(/Scan coverage:/)).toBeVisible();
+  await expect(foundHost.getByText(/Server vantage available/)).toBeVisible();
   const foundHostButton = foundHost.getByRole("button");
   await foundHostButton.focus();
   await expect(foundHostButton).toBeFocused();

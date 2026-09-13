@@ -3,7 +3,17 @@ import { Globe2, Plus, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { APIError, api, type Device, type Scope, type Site } from "@/lib/api";
+import { APIError, api, type Device, type ScanStatus, type Scope, type Site } from "@/lib/api";
+import {
+  formatScanTime,
+  humanizeScanValue,
+  scanActiveRunLabel,
+  scanCoverageLabel,
+  scanStatusIsPaused,
+  scanVantageCapabilities,
+  scanVantageFreshness,
+  scanVantageLabel,
+} from "@/lib/scan-status";
 
 function values(value: string) {
   return value
@@ -16,6 +26,7 @@ export function ScopesView() {
   const [sites, setSites] = useState<Site[]>([]);
   const [scopes, setScopes] = useState<Scope[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [scanStatuses, setScanStatuses] = useState<Record<string, ScanStatus>>({});
   const [siteName, setSiteName] = useState("");
   const [siteId, setSiteId] = useState("");
   const [ranges, setRanges] = useState("");
@@ -40,6 +51,34 @@ export function ScopesView() {
   useEffect(() => {
     refresh().catch((caught) => setError(caught instanceof APIError ? caught.message : "Could not load scope policy"));
   }, []);
+
+  useEffect(() => {
+    if (!scopes.length) {
+      setScanStatuses({});
+      return;
+    }
+    let cancelled = false;
+    const loadStatuses = async () => {
+      const next: Record<string, ScanStatus> = {};
+      await Promise.all(
+        scopes.map(async (scope) => {
+          try {
+            next[scope.id] = await api.scanStatus(scope.id);
+          } catch {
+            // Keep the scope usable when status is temporarily unavailable. The row says Loading
+            // until the next poll succeeds instead of hiding policy controls behind one failure.
+          }
+        }),
+      );
+      if (!cancelled) setScanStatuses(next);
+    };
+    void loadStatuses();
+    const timer = window.setInterval(() => void loadStatuses(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [scopes]);
 
   async function createSite(event: FormEvent) {
     event.preventDefault();
@@ -313,6 +352,45 @@ export function ScopesView() {
                     {Math.round((scope.scanPolicy?.scheduleSeconds ?? 300) / 60)} min
                   </small>
                   <small>{scope.scanPolicy?.agentIds.length ?? 0} assigned scan agent(s)</small>
+                  <div className="scope-scan-status" aria-label={`Scan status for ${scope.ranges.join(", ")}`}>
+                    <div className="scope-scan-status-heading">
+                      <strong>Scan coverage</strong>
+                      <Badge variant="outline">{scanCoverageLabel(scanStatuses[scope.id], scope.enabled)}</Badge>
+                    </div>
+                    {scanStatuses[scope.id] ? (
+                      <>
+                        <small>
+                          {!scanStatusIsPaused(scanStatuses[scope.id], scope.enabled)
+                            ? `Last completed ${formatScanTime(scanStatuses[scope.id].lastCompletedAt)} · next scheduled ${formatScanTime(scanStatuses[scope.id].nextScheduledAt)}`
+                            : "Paused — new work is disabled and active runs are fenced safely."}
+                        </small>
+                        {scanActiveRunLabel(scanStatuses[scope.id]) && (
+                          <small>{scanActiveRunLabel(scanStatuses[scope.id])}</small>
+                        )}
+                        <div className="scope-vantages" aria-label="Assigned scan vantages">
+                          {scanStatuses[scope.id].vantages.map((vantage) => (
+                            <div className="scope-vantage" key={`${vantage.scanner.kind}:${vantage.scanner.id}`}>
+                              <span>
+                                <strong>{scanVantageLabel(vantage, devices)}</strong>
+                                <Badge variant="outline">{humanizeScanValue(vantage.state)}</Badge>
+                              </span>
+                              <small>
+                                Capabilities: {scanVantageCapabilities(vantage)} · Freshness:{" "}
+                                {scanVantageFreshness(vantage)}
+                              </small>
+                            </div>
+                          ))}
+                        </div>
+                        {scanStatuses[scope.id].partialReason && (
+                          <small>
+                            Coverage note: {humanizeScanValue(scanStatuses[scope.id].partialReason ?? "unknown")}
+                          </small>
+                        )}
+                      </>
+                    ) : (
+                      <small>Loading assigned-vantage status…</small>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Badge variant="outline" className={scope.enabled ? "enabled-label" : "access-label"}>

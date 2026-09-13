@@ -396,24 +396,25 @@ func scanVantageDecisionError(reason string) error {
 }
 
 type scanRunResponse struct {
-	ID                  string                  `json:"id"`
-	ScopeID             string                  `json:"scopeId"`
-	ScopeRevision       int64                   `json:"scopeRevision"`
-	Scanner             scanScannerResponse     `json:"scanner"`
-	Trigger             string                  `json:"trigger"`
-	State               string                  `json:"state"`
-	ScheduledAt         time.Time               `json:"scheduledAt"`
-	StartedAt           *time.Time              `json:"startedAt"`
-	FinishedAt          *time.Time              `json:"finishedAt"`
-	AssignmentExpiresAt time.Time               `json:"assignmentExpiresAt"`
-	TargetsPlanned      int                     `json:"targetsPlanned"`
-	AttemptsPlanned     int                     `json:"attemptsPlanned"`
-	AttemptsCompleted   int                     `json:"attemptsCompleted"`
-	OutcomeCounts       store.ScanOutcomeCounts `json:"outcomeCounts"`
-	PartialReason       *string                 `json:"partialReason"`
-	ErrorCode           *string                 `json:"errorCode"`
-	PageCount           int                     `json:"pageCount"`
-	FinalPageOrdinal    *int                    `json:"finalPageOrdinal"`
+	ID                    string                  `json:"id"`
+	ScopeID               string                  `json:"scopeId"`
+	ScopeRevision         int64                   `json:"scopeRevision"`
+	Scanner               scanScannerResponse     `json:"scanner"`
+	Trigger               string                  `json:"trigger"`
+	State                 string                  `json:"state"`
+	ScheduledAt           time.Time               `json:"scheduledAt"`
+	StartedAt             *time.Time              `json:"startedAt"`
+	FinishedAt            *time.Time              `json:"finishedAt"`
+	AssignmentExpiresAt   time.Time               `json:"assignmentExpiresAt"`
+	TargetsPlanned        int                     `json:"targetsPlanned"`
+	AttemptsPlanned       int                     `json:"attemptsPlanned"`
+	AttemptsCompleted     int                     `json:"attemptsCompleted"`
+	OutcomeCounts         store.ScanOutcomeCounts `json:"outcomeCounts"`
+	CancellationRequested bool                    `json:"cancellationRequested"`
+	PartialReason         *string                 `json:"partialReason"`
+	ErrorCode             *string                 `json:"errorCode"`
+	PageCount             int                     `json:"pageCount"`
+	FinalPageOrdinal      *int                    `json:"finalPageOrdinal"`
 }
 
 type scanScannerResponse struct {
@@ -430,7 +431,7 @@ func scanRunView(run store.ScanRun) scanRunResponse {
 		Scanner: scanScannerResponse{Kind: run.ScannerKind, ID: run.ScannerID}, Trigger: run.Trigger, State: run.State,
 		ScheduledAt: run.ScheduledAt, StartedAt: cloneTime(run.StartedAt), FinishedAt: cloneTime(run.FinishedAt),
 		AssignmentExpiresAt: run.AssignmentExpiresAt, TargetsPlanned: run.TargetsPlanned, AttemptsPlanned: run.AttemptsPlanned,
-		AttemptsCompleted: run.AttemptsCompleted, OutcomeCounts: run.OutcomeCounts, PartialReason: partialReason,
+		AttemptsCompleted: run.AttemptsCompleted, OutcomeCounts: run.OutcomeCounts, CancellationRequested: run.CancellationRequested, PartialReason: partialReason,
 		ErrorCode: errorCode, PageCount: run.PageCount, FinalPageOrdinal: cloneInt(run.FinalPageOrdinal),
 	}
 }

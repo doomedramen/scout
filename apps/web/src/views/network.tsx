@@ -2,7 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { Network as NetworkIcon, RefreshCw, Server, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api, APIError, type Candidate, type Device, type Relationship, type TopologyNode } from "@/lib/api";
+import {
+  api,
+  APIError,
+  type Candidate,
+  type Device,
+  type Relationship,
+  type ScanStatus,
+  type TopologyNode,
+} from "@/lib/api";
+import {
+  formatScanTime,
+  humanizeScanValue,
+  scanActiveRunLabel,
+  scanCoverageLabel,
+  scanVantageLabel,
+} from "@/lib/scan-status";
 import { demoDevices, type Device as DemoDevice } from "@/demo";
 
 function demoDevice(item: DemoDevice, index: number): Device {
@@ -63,6 +78,7 @@ export function NetworkView({
   const [nodes, setNodes] = useState<TopologyNode[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [scanStatuses, setScanStatuses] = useState<Record<string, ScanStatus>>({});
   const [candidateState, setCandidateState] = useState("");
   const [candidateQuery, setCandidateQuery] = useState("");
   const [nodeQuery, setNodeQuery] = useState("");
@@ -99,6 +115,34 @@ export function NetworkView({
       cancelled = true;
     };
   }, [demo, retry]);
+
+  useEffect(() => {
+    if (demo || !candidates.length) {
+      setScanStatuses({});
+      return;
+    }
+    let cancelled = false;
+    const scopeIDs = [...new Set(candidates.map((candidate) => candidate.scopeId).filter(Boolean))];
+    const loadStatuses = async () => {
+      const next: Record<string, ScanStatus> = {};
+      await Promise.all(
+        scopeIDs.map(async (scopeID) => {
+          try {
+            next[scopeID] = await api.scanStatus(scopeID);
+          } catch {
+            // Candidate evidence stays visible when one scope status request is unavailable.
+          }
+        }),
+      );
+      if (!cancelled) setScanStatuses(next);
+    };
+    void loadStatuses();
+    const timer = window.setInterval(() => void loadStatuses(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [candidates, demo]);
 
   useEffect(() => {
     if (demo) {
@@ -295,6 +339,33 @@ export function NetworkView({
                           {(candidate.entryPointCount ?? candidate.entryPointIds?.length ?? 0) === 1 ? "" : "s"} · last
                           seen{" "}
                           {candidate.lastScannedAt ? new Date(candidate.lastScannedAt).toLocaleString() : "not yet"}
+                        </small>
+                        <small className="candidate-row-scan-status">
+                          {scanStatuses[candidate.scopeId] ? (
+                            <>
+                              Scan coverage: {scanCoverageLabel(scanStatuses[candidate.scopeId], true)} ·{" "}
+                              {scanStatuses[candidate.scopeId].vantages.length
+                                ? scanStatuses[candidate.scopeId].vantages
+                                    .filter((vantage) => vantage.assigned)
+                                    .map(
+                                      (vantage) =>
+                                        `${scanVantageLabel(vantage)} ${humanizeScanValue(vantage.state).toLowerCase()}`,
+                                    )
+                                    .join(" · ")
+                                : "No assigned vantage"}
+                              {scanStatuses[candidate.scopeId].activeRun && (
+                                <>
+                                  {" · "}
+                                  {scanActiveRunLabel(scanStatuses[candidate.scopeId])}
+                                </>
+                              )}
+                              {scanStatuses[candidate.scopeId].lastCompletedAt && (
+                                <> · completed {formatScanTime(scanStatuses[candidate.scopeId].lastCompletedAt)}</>
+                              )}
+                            </>
+                          ) : (
+                            "Scan status loading…"
+                          )}
                         </small>
                       </span>
                       <span className="candidate-row-state">

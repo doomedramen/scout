@@ -207,11 +207,24 @@ export type ScanRun = {
     skipped: number;
     scannerError: number;
   };
+  cancellationRequested: boolean;
   partialReason: string | null;
   errorCode: string | null;
   pageCount: number;
   finalPageOrdinal?: number | null;
 };
+
+export type ScanVantageState = "available" | "stale" | "revoked" | "decommissioned" | "unsupported";
+
+export type ScanVantage = {
+  scanner: ScanScanner;
+  state: ScanVantageState;
+  assigned: boolean;
+  capabilities: string[];
+  lastSeen: string | null;
+};
+
+export type ScanCoverageState = "current" | "partial" | "stale" | "contradicted" | "unknown";
 
 export type ScanStatus = {
   scopeId: string;
@@ -220,14 +233,8 @@ export type ScanStatus = {
   lastCompletedAt: string | null;
   nextScheduledAt: string | null;
   activeRun: ScanRun | null;
-  vantages: Array<{
-    scanner: ScanScanner;
-    state: "available" | "stale" | "revoked" | "decommissioned" | "unsupported";
-    assigned: boolean;
-    capabilities: string[];
-    lastSeen: string | null;
-  }>;
-  coverageState: "current" | "partial" | "stale" | "contradicted" | "unknown";
+  vantages: ScanVantage[];
+  coverageState: ScanCoverageState;
   partialReason: string | null;
   candidateOutcomeCounts: Record<string, number>;
   retention: { evidenceBefore: string; runsBefore: string; lagSeconds: number; blocked: boolean };
