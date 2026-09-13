@@ -65,7 +65,9 @@ func TestTelemetryBackpressureIsVisibleAndRecoverable(t *testing.T) {
 
 func TestMemoryMetricQueryKeepsEntitySeriesSeparate(t *testing.T) {
 	ctx := context.Background()
+	now := time.Date(2026, 9, 13, 14, 17, 0, 0, time.UTC)
 	s := NewMemory()
+	s.SetClock(func() time.Time { return now })
 	site, err := s.CreateSite(ctx, Site{Name: "series-lab"})
 	if err != nil {
 		t.Fatal(err)
@@ -74,13 +76,13 @@ func TestMemoryMetricQueryKeepsEntitySeriesSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent := AgentIdentity{ID: NewID(), DeviceID: device.ID, ExpiresAt: time.Now().UTC().Add(time.Hour)}
+	agent := AgentIdentity{ID: NewID(), DeviceID: device.ID, ExpiresAt: now.Add(time.Hour)}
 	if err := s.CreateAgentIdentity(ctx, agent); err != nil {
 		t.Fatal(err)
 	}
 
 	first, second := 1024.0, 2048.0
-	observedAt := time.Now().UTC().Truncate(time.Second)
+	observedAt := now
 	_, err = s.IngestBatch(ctx, agent.ID, "boot", "entities", "entities-hash", []MetricSample{
 		{EntityID: "disk-a", Metric: "disk.read_rate", Value: &first, Availability: FreshnessCurrent, Unit: "bytes_per_second", ObservedAt: observedAt},
 		{EntityID: "disk-b", Metric: "disk.read_rate", Value: &second, Availability: FreshnessCurrent, Unit: "bytes_per_second", ObservedAt: observedAt.Add(time.Second)},
