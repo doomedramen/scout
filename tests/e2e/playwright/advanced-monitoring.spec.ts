@@ -367,3 +367,51 @@ test("owner can keyboard-inspect incidents, services, and history at mobile and 
   await expectNoHorizontalOverflow(page);
   expect(fixtureState.getIncident().revision).toBe(2);
 });
+
+test("monitoring charts stay truthful and keyboard-inspectable under reduced motion", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await installFixtures(page);
+  await signIn(page);
+  await page.goto("/");
+
+  const theme = await page.evaluate(() => ({
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    background: getComputedStyle(document.documentElement).backgroundColor,
+  }));
+  expect(theme.colorScheme).toContain("dark");
+  expect(theme.background).toBe("rgb(20, 22, 25)");
+  await page.setViewportSize({ width: 360, height: 800 });
+  const narrowTheme = await page.evaluate(() => ({
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    background: getComputedStyle(document.documentElement).backgroundColor,
+    fitsViewport: document.documentElement.scrollWidth <= window.innerWidth + 1,
+  }));
+  expect(narrowTheme).toEqual({ colorScheme: "dark", background: "rgb(20, 22, 25)", fitsViewport: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const reducedMotion = await page
+    .locator(".overview-summary-card")
+    .first()
+    .evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { transitionDuration: style.transitionDuration, animationName: style.animationName };
+    });
+  expect(reducedMotion).toEqual({ transitionDuration: "0s", animationName: "none" });
+
+  await page.getByRole("button", { name: "Systems", exact: true }).click();
+  await page.getByRole("button", { name: "View Journey host" }).click();
+  await expect(page.getByRole("heading", { name: "Journey host" })).toBeVisible();
+
+  const chart = page.locator('[data-slot="chart"]').first();
+  await expect(chart).toHaveAttribute("aria-label", /CPU usage history/);
+  const chartSurface = chart.locator("svg").first();
+  await expect(chartSurface).toHaveAttribute("tabindex", "0");
+  await chartSurface.focus();
+  await expect(chartSurface).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  const tooltip = page.locator(".recharts-tooltip-wrapper:visible");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("CPU usage");
+  await expect(tooltip).not.toContainText("Invalid Date");
+  await expect(tooltip).not.toContainText("undefined");
+});

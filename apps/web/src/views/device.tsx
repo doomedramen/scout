@@ -12,7 +12,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  ChartContainer,
+  ChartDataQuality,
+  ChartTooltip,
+  ChartTooltipContent,
+  formatChartTimestamp,
+} from "@/components/ui/chart";
 import { HardwareView } from "@/views/hardware";
 import { ServicesView } from "@/views/services";
 import { StorageView } from "@/views/storage";
@@ -834,7 +840,7 @@ function MetricChart({
               <ChartTooltip
                 content={
                   <ChartTooltipContent
-                    labelFormatter={(value) => new Date(Number(value)).toLocaleString()}
+                    labelFormatter={(value, payload) => formatChartTimestamp(value, payload)}
                     formatter={(value) =>
                       value == null ? (
                         <span>Unavailable</span>

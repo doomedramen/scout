@@ -366,6 +366,7 @@ test("network scan keeps empty and unavailable results explicit", async ({ page 
   await page.goto("/network");
   await expect(page.getByRole("heading", { name: "Found devices" })).toBeVisible();
   await expect(page.getByText("No devices found.", { exact: true })).toBeVisible();
+  await expect(page.getByText("192.0.2.44", { exact: true })).toHaveCount(0);
 
   candidateMode = "error";
   await page.reload();

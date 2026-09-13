@@ -102,6 +102,24 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
+function firstPayloadTime(payload: unknown): unknown {
+  if (!Array.isArray(payload)) return undefined;
+  const first = payload[0];
+  if (typeof first !== "object" || first === null || !("payload" in first)) return undefined;
+  const point = first.payload;
+  if (typeof point !== "object" || point === null || !("time" in point)) return undefined;
+  return point.time;
+}
+
+export function formatChartTimestamp(value: unknown, payload?: unknown): string {
+  const raw = firstPayloadTime(payload) ?? value;
+  const timestamp =
+    typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
+  if (!Number.isFinite(timestamp)) return "Observed time unavailable";
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "Observed time unavailable" : date.toLocaleString();
+}
+
 function ChartDataQuality({ gapCount = 0, partial = false }: { gapCount?: number; partial?: boolean }) {
   if (!gapCount && !partial) {
     return null;

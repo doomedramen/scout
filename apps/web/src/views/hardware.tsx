@@ -15,7 +15,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChartContainer, ChartDataQuality, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import {
+  ChartContainer,
+  ChartDataQuality,
+  ChartTooltip,
+  ChartTooltipContent,
+  formatChartTimestamp,
+} from "@/components/ui/chart";
 import { APIError, api, type CollectorConfig, type Device, type MetricSeries, type ServiceEntity } from "@/lib/api";
 
 type HardwareState = "online" | "fault" | "unavailable";
@@ -692,7 +698,9 @@ export function HardwareView({ deviceId }: { deviceId?: string } = {}) {
                     <YAxis width={48} tickFormatter={(value) => String(value)} />
                     <ChartTooltip
                       content={
-                        <ChartTooltipContent labelFormatter={(value) => new Date(Number(value)).toLocaleString()} />
+                        <ChartTooltipContent
+                          labelFormatter={(value, payload) => formatChartTimestamp(value, payload)}
+                        />
                       }
                     />
                     <Area
