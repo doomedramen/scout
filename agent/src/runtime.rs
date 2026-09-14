@@ -47,6 +47,8 @@ struct EnrollmentState {
     #[serde(default)]
     publisher_public_key: Option<String>,
     #[serde(default)]
+    task_generation: u64,
+    #[serde(default)]
     release_sequence: u64,
 }
 
@@ -136,27 +138,20 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     let mut collector = SysinfoHostCollector::new();
     let telemetry_buffer = TelemetryBuffer::new(config.data_dir.join("telemetry.queue"));
     let mut dropped_samples = 0;
-    let response = match send_heartbeat(
-        &client,
-        &identity,
-        &enrollment,
-        0,
-        enrollment.release_sequence,
-    )
-    .await
-    {
-        Ok(response) => {
-            apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
-            FilesystemUpdatePlatform::new(&config.data_dir)
-                .mark_healthy()
-                .map_err(|error| anyhow!("mark agent release healthy: {error}"))?;
-            Some(response)
-        }
-        Err(error) => {
-            eprintln!("scout-agent heartbeat failed: {error:#}");
-            None
-        }
-    };
+    let response =
+        match send_heartbeat(&client, &identity, &enrollment, enrollment.release_sequence).await {
+            Ok(response) => {
+                apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
+                FilesystemUpdatePlatform::new(&config.data_dir)
+                    .mark_healthy()
+                    .map_err(|error| anyhow!("mark agent release healthy: {error}"))?;
+                Some(response)
+            }
+            Err(error) => {
+                eprintln!("scout-agent heartbeat failed: {error:#}");
+                None
+            }
+        };
     let update_applied = if response.is_some() {
         match check_for_update(
             &client,
@@ -190,6 +185,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         eprintln!("scout-agent telemetry failed: {error:#}");
     }
     if let Some(task) = response.and_then(|response| response.task) {
+        record_task_watermark(&state_path, &mut enrollment, task.generation)?;
         if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
             eprintln!("scout-agent task failed: {error:#}");
         }
@@ -206,7 +202,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => return Ok(()),
             _ = heartbeat.tick() => {
-                match send_heartbeat(&client, &identity, &enrollment, 0, enrollment.release_sequence).await {
+                match send_heartbeat(&client, &identity, &enrollment, enrollment.release_sequence).await {
                     Ok(response) => {
                         if let Err(error) = apply_heartbeat_response(&state_path, &mut enrollment, &response) {
                             eprintln!("scout-agent state save failed: {error:#}");
@@ -215,6 +211,9 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                             eprintln!("scout-agent release health save failed: {error}");
                         }
                         if let Some(task) = response.task {
+                            if let Err(error) = record_task_watermark(&state_path, &mut enrollment, task.generation) {
+                                eprintln!("scout-agent task watermark save failed: {error:#}");
+                            }
                             if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
                                 eprintln!("scout-agent task failed: {error:#}");
                             }
@@ -282,6 +281,7 @@ async fn enroll(
         system_id: response.system_id,
         control_public_key: Some(response.control_public_key),
         publisher_public_key: config.publisher_public_key.clone(),
+        task_generation: 0,
         release_sequence: 0,
     })
 }
@@ -377,13 +377,12 @@ async fn send_heartbeat(
     client: &Client,
     identity: &Identity,
     enrollment: &EnrollmentState,
-    task_generation: u64,
     release_sequence: u64,
 ) -> Result<HeartbeatResponse> {
     let payload = HeartbeatPayload {
         agent_id: enrollment.agent_id.clone(),
         observed_at: timestamp(),
-        task_generation,
+        task_generation: enrollment.task_generation,
         release_sequence,
     };
     let body = serde_json::to_string(&payload)?;
@@ -399,6 +398,18 @@ async fn send_heartbeat(
     .json::<HeartbeatResponse>()
     .await
     .context("decode heartbeat response")
+}
+
+fn record_task_watermark(
+    state_path: &std::path::Path,
+    enrollment: &mut EnrollmentState,
+    generation: u64,
+) -> Result<()> {
+    if generation <= enrollment.task_generation {
+        return Ok(());
+    }
+    enrollment.task_generation = generation;
+    save_enrollment(state_path, enrollment).context("save task watermark")
 }
 
 async fn send_telemetry(

@@ -116,6 +116,10 @@ async fn an_agent_bridges_a_signed_relay_task_without_buffering_the_target_conne
     assert!(paths.iter().any(|path| path.ends_with("/upstream")));
     assert!(paths.iter().any(|path| path.ends_with("/downstream")));
     assert!(paths.iter().any(|path| path.ends_with("/result")));
+    let enrollment: serde_json::Value = serde_json::from_str(&fs::read_to_string(
+        directory.path().join("enrollment.json"),
+    )?)?;
+    assert_eq!(enrollment["taskGeneration"], 1);
     Ok(())
 }
 
