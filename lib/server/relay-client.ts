@@ -115,6 +115,7 @@ function findRelayScanner(
           AND scanner.id <> target.id
           AND scanner.excluded = 0
           AND agent.revoked_at IS NULL
+          AND agent.reconciliation_required = 0
           AND agent.last_heartbeat_at IS NOT NULL
           AND agent.last_heartbeat_at > ?
         ORDER BY agent.last_heartbeat_at DESC, agent.id ASC

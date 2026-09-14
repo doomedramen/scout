@@ -134,4 +134,45 @@ describe("server-side relay socket", () => {
     expect(socket).toBeTruthy();
     socket.destroy();
   });
+
+  it("does not use a restored scanner until it reports reconciliation watermarks", async () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const now = Date.now();
+    const segment = ensureNetworkSegment(
+      {
+        cidr: "192.0.2.0/24",
+        interfaceName: "test0",
+        gateway: "192.0.2.1",
+        sourceAddress: "192.0.2.10",
+        provenanceKey: "relay-client-restore-segment",
+      },
+      now,
+    );
+    const scannerSystemId = randomUUID();
+    const targetSystemId = randomUUID();
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, segment_id, display_name, status, created_at, updated_at) VALUES (?, ?, 'scanner', 'online', ?, ?), (?, ?, 'target', 'needs-access', ?, ?)",
+      )
+      .run(scannerSystemId, segment.id, now, now, targetSystemId, segment.id, now, now);
+    sqlite
+      .prepare(
+        "INSERT INTO agent (id, system_id, public_key, platform, architecture, version, last_heartbeat_at, reconciliation_required, created_at, updated_at) VALUES ('restored-relay-agent', ?, ?, 'linux', 'x86_64', '0.1.0', ?, 1, ?, ?)",
+      )
+      .run(scannerSystemId, "a".repeat(43), now, now, now);
+    sqlite
+      .prepare(
+        "INSERT INTO access_evidence (id, system_id, method, address, port, outcome, source, observed_at, expires_at) VALUES (?, ?, 'ssh', '192.0.2.20', 22, 'open', 'agent-scan', ?, ?)",
+      )
+      .run(randomUUID(), targetSystemId, now, now + 60_000);
+
+    await expect(
+      prepareRelaySocket(
+        targetSystemId,
+        { address: "192.0.2.20", port: 22 },
+        { timeoutMs: 20, pollMs: 5 },
+      ),
+    ).rejects.toThrow("No healthy same-segment Scout agent");
+  });
 });
