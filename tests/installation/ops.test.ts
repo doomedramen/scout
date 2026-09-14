@@ -36,6 +36,12 @@ describe("packaged operational safeguards", () => {
     expect(hostHelper).toContain('SCOUT_IMAGE="$image_digest" compose up -d --wait');
   });
 
+  it("downloads Compose into an exclusive temporary file and cleans it on interruption", () => {
+    expect(hostHelper).toContain('mktemp "$SCOUT_DIR/.compose.yaml.tmp.XXXXXX"');
+    expect(hostHelper).toContain("trap cleanup_download EXIT HUP INT TERM");
+    expect(hostHelper).toContain('mv -f "$temporary" "$COMPOSE_FILE"');
+  });
+
   it("provides an image-side snapshot and authority operator", () => {
     expect(ops).toContain('"snapshot"');
     expect(ops).toContain('"restore-snapshot"');

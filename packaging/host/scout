@@ -16,16 +16,18 @@ require_docker() {
 }
 
 download_compose() {
-  temporary=$COMPOSE_FILE.tmp.$$
-  curl -fsSL "$COMPOSE_URL" -o "$temporary" || {
+  temporary=$(mktemp "$SCOUT_DIR/.compose.yaml.tmp.XXXXXX") ||
+    die "Could not create a temporary Compose definition."
+  cleanup_download() {
     rm -f "$temporary"
+  }
+  trap cleanup_download EXIT HUP INT TERM
+  curl -fsSL "$COMPOSE_URL" -o "$temporary" ||
     die "Could not download the current Compose definition."
-  }
-  docker compose -f "$temporary" config >/dev/null 2>&1 || {
-    rm -f "$temporary"
+  docker compose -f "$temporary" config >/dev/null 2>&1 ||
     die "The downloaded Compose definition failed validation."
-  }
-  mv "$temporary" "$COMPOSE_FILE"
+  mv -f "$temporary" "$COMPOSE_FILE"
+  trap - EXIT HUP INT TERM
 }
 
 ensure_compose() {
