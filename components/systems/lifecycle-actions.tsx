@@ -34,7 +34,9 @@ export function LifecycleActions({ systemId, canRetry }: { systemId: string; can
       setMessage(
         action === "retry"
           ? "Installation was queued again."
-          : `The agent was revoked; uninstall is ${payload.uninstall ?? "pending/manual"}.`,
+          : payload.uninstall === "complete"
+            ? "The agent was revoked and removed from the system."
+            : "The agent was revoked; uninstall is pending/manual.",
       );
       if (action === "retry") {
         window.location.reload();

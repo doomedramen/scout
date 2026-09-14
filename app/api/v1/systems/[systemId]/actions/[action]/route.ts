@@ -21,7 +21,7 @@ export async function POST(
   if (!action.success) return jsonError("The requested system action is invalid.", 404);
   try {
     const result =
-      action.data === "retry" ? retryEnrollment(systemId) : decommissionSystem(systemId);
+      action.data === "retry" ? retryEnrollment(systemId) : await decommissionSystem(systemId);
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof LifecycleError)
