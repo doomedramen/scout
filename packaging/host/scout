@@ -57,7 +57,7 @@ run_ops() {
   operation=$1
   archive=$2
   passphrase=$3
-  archive_directory=$(CDPATH= cd -- "$(dirname "$archive")" && pwd)
+  archive_directory=$(CDPATH="" cd -- "$(dirname "$archive")" && pwd)
   archive_name=$(basename "$archive")
   printf '%s\n' "$passphrase" | compose run --rm --no-deps -v "$archive_directory:/backup" \
     --entrypoint node scout /usr/local/bin/scout-ops.mjs "$operation" "/backup/$archive_name"
@@ -82,7 +82,7 @@ compose_image() {
 
 write_rollback_override() {
   rollback_override=$SCOUT_DIR/.scout-rollback-compose.$$
-  printf 'services:\n  scout:\n    image: %s\n' "$rollback_tag" > "$rollback_override"
+  printf 'services:\n  scout:\n    image: %s\n' "$rollback_tag" >"$rollback_override"
 }
 
 rollback_update() {
@@ -177,7 +177,7 @@ case "$command" in
     ensure_compose
     compose logs --no-color scout | grep 'Scout owner setup token' || die "No unused setup token is visible in the logs."
     ;;
-trust-pin)
+  trust-pin)
     ensure_compose
     public_url=${SCOUT_PUBLIC_URL:-}
     if [ -z "$public_url" ] && [ -f "$SCOUT_DIR/.env" ]; then

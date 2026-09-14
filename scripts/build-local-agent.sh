@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repository_directory=$(CDPATH= cd -- "$script_directory/.." && pwd)
+script_directory=$(CDPATH="" cd -- "$(dirname -- "$0")" && pwd)
+repository_directory=$(CDPATH="" cd -- "$script_directory/.." && pwd)
 artifact_directory=${SCOUT_AGENT_ARTIFACT_DIR:-agent-artifacts}
 artifact_binary=${SCOUT_AGENT_BINARY:-}
 agent_platform=${SCOUT_AGENT_PLATFORM:-}
@@ -39,8 +39,8 @@ fi
 
 if [ -z "$agent_architecture" ]; then
   case "$(uname -m 2>/dev/null || true)" in
-    x86_64|amd64) agent_architecture=x86_64 ;;
-    aarch64|arm64) agent_architecture=aarch64 ;;
+    x86_64 | amd64) agent_architecture=x86_64 ;;
+    aarch64 | arm64) agent_architecture=aarch64 ;;
     *)
       printf '%s\n' "scout agent build: set SCOUT_AGENT_ARCHITECTURE on this host" >&2
       exit 1
@@ -74,7 +74,7 @@ artifact_name="scout-agent-$agent_platform-$agent_architecture"
 cp "$artifact_binary" "$artifact_directory/$artifact_name"
 chmod 0755 "$artifact_directory/$artifact_name"
 SCOUT_AGENT_ARTIFACT_DIR="$artifact_directory" \
-SCOUT_AGENT_PLATFORM="$agent_platform" \
-SCOUT_AGENT_ARCHITECTURE="$agent_architecture" \
+  SCOUT_AGENT_PLATFORM="$agent_platform" \
+  SCOUT_AGENT_ARCHITECTURE="$agent_architecture" \
   node "$repository_directory/scripts/create-release-manifest.mjs"
 printf '%s\n' "Prepared $artifact_directory/$artifact_name"

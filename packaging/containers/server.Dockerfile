@@ -30,6 +30,6 @@ COPY --from=build --chown=scout:scout /app/public ./public
 COPY --from=build --chown=scout:scout /app/agent-artifacts ./agent-artifacts
 COPY --chown=scout:scout packaging/containers/scout-ops.mjs /usr/local/bin/scout-ops.mjs
 RUN mkdir -p /data && chown scout:scout /data
-USER scout
+USER 1001
 EXPOSE 8080
 CMD ["node", "server.js"]

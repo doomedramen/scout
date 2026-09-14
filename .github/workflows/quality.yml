@@ -9,6 +9,39 @@ permissions:
   contents: read
 
 jobs:
+  static-tools:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Install static-analysis tools
+        env:
+          GOBIN: ${{ runner.temp }}/scout-tools
+        run: |
+          set -eu
+          mkdir -p "$GOBIN"
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            | tar -xz -C "$GOBIN" actionlint
+          curl -fsSL https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64 \
+            -o "$GOBIN/hadolint"
+          chmod 0755 "$GOBIN/actionlint" "$GOBIN/hadolint"
+      - name: Check shell scripts
+        env:
+          TOOL_BIN: ${{ runner.temp }}/scout-tools
+        run: |
+          set -eu
+          shellcheck scripts/*.sh packaging/host/scout
+          "$TOOL_BIN/shfmt" -d -i 2 -ci scripts/*.sh packaging/host/scout
+      - name: Check workflows
+        run: ${{ runner.temp }}/scout-tools/actionlint .github/workflows/*.yml
+      - name: Check container files
+        run: ${{ runner.temp }}/scout-tools/hadolint packaging/containers/server.Dockerfile
+
   web:
     runs-on: ubuntu-24.04
     steps:

@@ -3,8 +3,8 @@ set -eu
 
 umask 077
 
-script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repository_directory=$(CDPATH= cd -- "$script_directory/.." && pwd)
+script_directory=$(CDPATH="" cd -- "$(dirname -- "$0")" && pwd)
+repository_directory=$(CDPATH="" cd -- "$script_directory/.." && pwd)
 work_directory=${SCOUT_QEMU_WORK_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/scout-qemu-acceptance.XXXXXX")}
 keep_work_directory=${SCOUT_QEMU_KEEP_WORK_DIR:-0}
 server_port=${SCOUT_QEMU_SERVER_PORT:-18084}
@@ -77,7 +77,7 @@ make_seed_iso() {
   seed_directory="$work_directory/seed"
   mkdir -p "$seed_directory"
   password_hash=$(openssl passwd -6 -salt scouttest "$test_password")
-  cat > "$seed_directory/user-data" <<EOF
+  cat >"$seed_directory/user-data" <<EOF
 #cloud-config
 hostname: scout-linux-target
 manage_etc_hosts: true
@@ -100,7 +100,7 @@ runcmd:
   - sh -c "printf 'Port 22\\nPasswordAuthentication yes\\n' > /etc/ssh/sshd_config.d/scout-test.conf"
   - systemctl restart ssh
 EOF
-  cat > "$seed_directory/meta-data" <<EOF
+  cat >"$seed_directory/meta-data" <<EOF
 instance-id: scout-qemu-acceptance
 local-hostname: scout-linux-target
 EOF
@@ -234,7 +234,7 @@ while [ "$attempt" -le 90 ]; do
   job=$(curl --fail --silent --cookie "$cookie_file" "$server_url/api/v1/enrollment-jobs/$job_id")
   case "$job" in
     *'"status":"complete"'*) break ;;
-    *'"status":"failed"'*|*'"status":"blocked"'*)
+    *'"status":"failed"'* | *'"status":"blocked"'*)
       printf '%s\n' "$job" >&2
       fail "the real Linux enrollment job did not complete"
       ;;
