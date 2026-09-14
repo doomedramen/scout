@@ -10,7 +10,12 @@ describe("credential encryption", () => {
   it("round-trips the secret and binds it to its system context", () => {
     process.env.SCOUT_DATA_DIR = "/tmp/scout-test-credentials";
     const encrypted = encryptCredential(
-      { authType: "password", secret: "correct horse", passphrase: null },
+      {
+        authType: "password",
+        secret: "correct horse",
+        passphrase: null,
+        privilegePassword: null,
+      },
       { systemId: "system-1", method: "ssh", username: "root" },
     );
 
@@ -21,6 +26,7 @@ describe("credential encryption", () => {
       authType: "password",
       secret: "correct horse",
       passphrase: null,
+      privilegePassword: null,
     });
     expect(() =>
       decryptCredential(encrypted, { systemId: "system-2", method: "ssh", username: "root" }),

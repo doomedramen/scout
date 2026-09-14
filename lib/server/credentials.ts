@@ -6,6 +6,7 @@ export type CredentialSecret = {
   authType: "password" | "private-key";
   secret: string;
   passphrase: string | null;
+  privilegePassword: string | null;
 };
 
 export type CredentialContext = {
@@ -67,8 +68,14 @@ export function decryptCredential(
   const secret = JSON.parse(decoded) as CredentialSecret;
   if (secret.authType !== "password" && secret.authType !== "private-key")
     throw new Error("Encrypted credential type is invalid");
-  if (!secret.secret || (secret.passphrase !== null && typeof secret.passphrase !== "string")) {
+  if (
+    !secret.secret ||
+    (secret.passphrase !== null && typeof secret.passphrase !== "string") ||
+    (secret.privilegePassword !== undefined &&
+      secret.privilegePassword !== null &&
+      typeof secret.privilegePassword !== "string")
+  ) {
     throw new Error("Encrypted credential contents are invalid");
   }
-  return secret;
+  return { ...secret, privilegePassword: secret.privilegePassword ?? null };
 }

@@ -203,10 +203,15 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
     throw new EnrollmentFailure("The SSH host identity has not been trusted.", "host-identity");
   }
 
-  const credential = decryptCredential(
+  const decrypted = decryptCredential(
     { ciphertext: row.secretCiphertext, nonce: row.nonce },
     { systemId: row.systemId, method: row.method, username: row.username },
   );
+  const credential = {
+    ...decrypted,
+    privilegePassword:
+      decrypted.privilegePassword ?? (decrypted.authType === "password" ? decrypted.secret : null),
+  };
   const callbackUrl = callbackOrigin(row.address);
   const invitation = createAgentInvitation(row.systemId, now);
   return {
@@ -251,17 +256,18 @@ async function runSshInstallation(
       "Could not transfer the Scout installer.",
       script,
     );
-    if (context.credential.authType === "password") {
+    if (context.credential.privilegePassword) {
       await execOrThrow(
         connection,
         `cat > '${privilegePath}'; chmod 600 '${privilegePath}'`,
         "Could not prepare the privilege credential.",
-        `${context.credential.secret}\n`,
+        `${context.credential.privilegePassword}\n`,
       );
     }
     setStage("installation");
-    const privilegeEnvironment =
-      context.credential.authType === "password" ? `SCOUT_PRIVILEGE_FILE='${privilegePath}' ` : "";
+    const privilegeEnvironment = context.credential.privilegePassword
+      ? `SCOUT_PRIVILEGE_FILE='${privilegePath}' `
+      : "";
     const install = await connection.exec(`${privilegeEnvironment}/bin/sh '${scriptPath}'`);
     if (install.code !== 0 && /Scout callback is unreachable/i.test(install.stderr)) {
       throw new EnrollmentFailure(

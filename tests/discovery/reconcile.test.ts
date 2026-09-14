@@ -162,7 +162,12 @@ describe("scan reconciliation", () => {
         .run(`${systemId}-evidence`, systemId, "192.0.2.2", 22, "SHA256:host", now, now + 10_000);
     }
     const encrypted = encryptCredential(
-      { authType: "password", secret: "CorrectHorse1", passphrase: null },
+      {
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        privilegePassword: null,
+      },
       { systemId: "system-a", method: "ssh", username: "root" },
     );
     sqlite

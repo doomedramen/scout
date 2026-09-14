@@ -12,6 +12,7 @@ export type AccessGrantInput = {
   authType: "password" | "private-key";
   secret: string;
   passphrase: string | null;
+  privilegePassword?: string | null;
   fingerprint: string;
   trust: boolean;
   idempotencyKey: string;
@@ -119,7 +120,13 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
     }
 
     const encrypted = encryptCredential(
-      { authType: input.authType, secret: input.secret, passphrase: input.passphrase },
+      {
+        authType: input.authType,
+        secret: input.secret,
+        passphrase: input.passphrase,
+        privilegePassword:
+          input.privilegePassword ?? (input.authType === "password" ? input.secret : null),
+      },
       { systemId, method: input.method, username: input.username },
     );
     const credentialId = randomUUID();

@@ -6,6 +6,7 @@ export type SshCredential = {
   authType: "password" | "private-key";
   secret: string;
   passphrase: string | null;
+  privilegePassword: string | null;
 };
 
 export type SshCommandResult = {

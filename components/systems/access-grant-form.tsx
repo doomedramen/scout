@@ -106,6 +106,7 @@ export function AccessGrantForm({
   const [authType, setAuthType] = useState<"password" | "private-key">("password");
   const [secret, setSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [privilegePassword, setPrivilegePassword] = useState("");
   const [trust, setTrust] = useState(false);
   const [job, setJob] = useState<Job | null>(initialJob);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
@@ -181,6 +182,7 @@ export function AccessGrantForm({
           authType,
           secret,
           passphrase: authType === "private-key" ? passphrase : null,
+          privilegePassword: privilegePassword || null,
           fingerprint: preflight.fingerprint,
           trust,
           scope: "exact-host",
@@ -196,6 +198,7 @@ export function AccessGrantForm({
       }
       setSecret("");
       setPassphrase("");
+      setPrivilegePassword("");
       setIdempotencyKey(null);
       setJob(payload);
     } catch {
@@ -303,6 +306,22 @@ export function AccessGrantForm({
                 />
               </Field>
             ) : null}
+            <Field>
+              <FieldLabel htmlFor="ssh-privilege-password">
+                Privilege password (optional)
+              </FieldLabel>
+              <Input
+                id="ssh-privilege-password"
+                type="password"
+                value={privilegePassword}
+                onChange={(event) => setPrivilegePassword(event.target.value)}
+                autoComplete="off"
+              />
+              <FieldDescription>
+                Used for sudo when your SSH password differs. Leave blank to reuse the SSH password;
+                root accounts do not need one.
+              </FieldDescription>
+            </Field>
             {error ? (
               <Alert variant="destructive">
                 <AlertTitle>Installation could not be queued</AlertTitle>

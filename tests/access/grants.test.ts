@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
 import { createAccessGrant } from "@/lib/server/access";
+import { decryptCredential } from "@/lib/server/credentials";
 
 describe("access grants", () => {
   afterEach(() => {
@@ -84,5 +85,50 @@ describe("access grants", () => {
         2_000,
       ),
     ).toThrow(/fingerprint/i);
+  });
+
+  it("encrypts a separate privilege password with the SSH credential", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = "/tmp/scout-test-access-privilege";
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, display_name, status, created_at, updated_at) VALUES (?, ?, 'needs-trust', ?, ?)",
+      )
+      .run("system-1", "192.0.2.10", 1_000, 1_000);
+
+    const result = createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "scout",
+        authType: "private-key",
+        secret: "-----BEGIN OPENSSH PRIVATE KEY-----\\nkey\\n-----END OPENSSH PRIVATE KEY-----",
+        passphrase: "key-passphrase",
+        privilegePassword: "sudo-password",
+        fingerprint: "SHA256:test",
+        trust: true,
+        idempotencyKey: "privilege-password-idempotency",
+      },
+      1_000,
+    );
+
+    const row = sqlite
+      .prepare(
+        "SELECT system_id AS systemId, method, username, secret_ciphertext AS ciphertext, nonce FROM credential_grant WHERE id = (SELECT credential_id FROM enrollment_job WHERE id = ?)",
+      )
+      .get(result.jobId) as {
+      systemId: string;
+      method: string;
+      username: string;
+      ciphertext: string;
+      nonce: string;
+    };
+    expect(decryptCredential(row, row)).toEqual({
+      authType: "private-key",
+      secret: expect.stringContaining("BEGIN OPENSSH PRIVATE KEY"),
+      passphrase: "key-passphrase",
+      privilegePassword: "sudo-password",
+    });
   });
 });
