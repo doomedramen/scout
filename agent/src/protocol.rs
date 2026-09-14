@@ -11,6 +11,17 @@ pub struct EnrollmentRequest {
     pub platform: String,
     pub architecture: String,
     pub version: String,
+    pub proof: String,
+}
+
+pub fn enrollment_message(
+    invitation: &str,
+    public_key: &str,
+    platform: &str,
+    architecture: &str,
+    version: &str,
+) -> String {
+    [invitation, public_key, platform, architecture, version].join("\n")
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -7,6 +7,7 @@ import { recordVerifiedSshIdentity, resolveSystemId } from "@/lib/server/system-
 
 export type AccessGrantInput = {
   systemId: string;
+  ownerId?: string;
   method: "ssh";
   username: string;
   authType: "password" | "private-key";
@@ -38,6 +39,23 @@ export type EnrollmentJobReceipt = {
   updatedAt: string;
   leaseExpiresAt: string | null;
 };
+
+export function getAccessGrantReceipt(
+  idempotencyKey: string,
+  ownerId: string,
+  requestedSystemId: string,
+): EnrollmentJobReceipt | null {
+  const { sqlite } = getDatabase();
+  const systemId = resolveSystemId(sqlite, requestedSystemId);
+  const row = sqlite
+    .prepare(
+      "SELECT operation, scope_id AS scopeId, resource_id AS resourceId FROM idempotency_receipt WHERE key = ?",
+    )
+    .get(idempotencyKey) as { operation: string; scopeId: string; resourceId: string } | undefined;
+  if (!row || row.operation !== "access-grant") return null;
+  if (row.scopeId !== `${ownerId}:${systemId}`) return null;
+  return readEnrollmentReceipt(sqlite, row.resourceId);
+}
 
 export function sshEndpointForSystem(systemId: string, now = Date.now()): SshEndpoint {
   const { sqlite } = getDatabase();
@@ -78,10 +96,14 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
   const create = sqlite.transaction(() => {
     const systemId = resolveSystemId(sqlite, input.systemId);
     const prior = sqlite
-      .prepare("SELECT operation, resource_id AS resourceId FROM idempotency_receipt WHERE key = ?")
-      .get(input.idempotencyKey) as { operation: string; resourceId: string } | undefined;
+      .prepare(
+        "SELECT operation, scope_id AS scopeId, resource_id AS resourceId FROM idempotency_receipt WHERE key = ?",
+      )
+      .get(input.idempotencyKey) as
+      { operation: string; scopeId: string; resourceId: string } | undefined;
     if (prior) {
-      if (prior.operation !== "access-grant")
+      const requestedScope = `${input.ownerId ?? "owner"}:${resolveSystemId(sqlite, input.systemId)}`;
+      if (prior.operation !== "access-grant" || prior.scopeId !== requestedScope)
         throw new AccessError("This idempotency key was already used.", "conflict");
       const job = sqlite
         .prepare("SELECT status, stage FROM enrollment_job WHERE id = ?")
@@ -168,9 +190,9 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
       .run(now, systemId);
     sqlite
       .prepare(
-        "INSERT INTO idempotency_receipt (key, operation, resource_id, created_at) VALUES (?, 'access-grant', ?, ?)",
+        "INSERT INTO idempotency_receipt (key, operation, scope_id, resource_id, created_at) VALUES (?, 'access-grant', ?, ?, ?)",
       )
-      .run(input.idempotencyKey, job.id, now);
+      .run(input.idempotencyKey, `${input.ownerId ?? "owner"}:${systemId}`, job.id, now);
     return { jobId: job.id, status: job.status, stage: job.stage };
   });
   const receipt = create();
@@ -189,6 +211,36 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
   if (!details) throw new AccessError("The enrollment job is unavailable.", "conflict");
   return {
     ...receipt,
+    attempt: details.attempt,
+    createdAt: new Date(details.createdAt).toISOString(),
+    updatedAt: new Date(details.updatedAt).toISOString(),
+    leaseExpiresAt: details.leaseExpiresAt ? new Date(details.leaseExpiresAt).toISOString() : null,
+  };
+}
+
+function readEnrollmentReceipt(
+  sqlite: ReturnType<typeof getDatabase>["sqlite"],
+  jobId: string,
+): EnrollmentJobReceipt | null {
+  const details = sqlite
+    .prepare(
+      "SELECT status, stage, attempt, created_at AS createdAt, updated_at AS updatedAt, lease_expires_at AS leaseExpiresAt FROM enrollment_job WHERE id = ?",
+    )
+    .get(jobId) as
+    | {
+        status: string;
+        stage: string;
+        attempt: number;
+        createdAt: number;
+        updatedAt: number;
+        leaseExpiresAt: number | null;
+      }
+    | undefined;
+  if (!details) return null;
+  return {
+    jobId,
+    status: details.status,
+    stage: details.stage,
     attempt: details.attempt,
     createdAt: new Date(details.createdAt).toISOString(),
     updatedAt: new Date(details.updatedAt).toISOString(),

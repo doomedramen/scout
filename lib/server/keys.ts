@@ -1,6 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import Database from "better-sqlite3";
+
+const KEY_FILES = ["auth.secret", "credentials.key", "control-signing.key"] as const;
+const INITIALIZED_MARKER = "keys.initialized";
 
 function dataDirectory(): string {
   return process.env.SCOUT_DATA_DIR ?? ".scout-data";
@@ -11,6 +15,12 @@ export function persistentKey(name: string, size = 32): Buffer {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const filename = path.join(directory, name);
 
+  if (!fs.existsSync(filename)) {
+    if (fs.existsSync(path.join(directory, INITIALIZED_MARKER)) || hasApplicationData(directory)) {
+      throw new Error(`Persistent key ${name} is missing; restore Scout data and keys together`);
+    }
+  }
+
   try {
     const key = randomBytes(size);
     const descriptor = fs.openSync(filename, "wx", 0o600);
@@ -19,6 +29,7 @@ export function persistentKey(name: string, size = 32): Buffer {
     } finally {
       fs.closeSync(descriptor);
     }
+    markInitialized(directory);
     return key;
   } catch (error) {
     if (!(error instanceof Error) || !((error as NodeJS.ErrnoException).code === "EEXIST")) {
@@ -30,7 +41,56 @@ export function persistentKey(name: string, size = 32): Buffer {
   if (key.length !== size) {
     throw new Error(`Persistent key ${name} has an invalid length`);
   }
+  const mode = fs.statSync(filename).mode & 0o777;
+  if (mode & 0o077) {
+    throw new Error(`Persistent key ${name} has unsafe permissions`);
+  }
+  markInitialized(directory);
   return key;
+}
+
+function markInitialized(directory: string): void {
+  if (!KEY_FILES.every((name) => fs.existsSync(path.join(directory, name)))) return;
+  const marker = path.join(directory, INITIALIZED_MARKER);
+  try {
+    const descriptor = fs.openSync(marker, "wx", 0o600);
+    fs.closeSync(descriptor);
+  } catch (error) {
+    if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== "EEXIST")
+      throw error;
+  }
+}
+
+function hasApplicationData(directory: string): boolean {
+  const configured = process.env.SCOUT_DATABASE_URL;
+  const filename = configured?.startsWith("file:")
+    ? configured.slice("file:".length) || ":memory:"
+    : path.join(directory, "scout.sqlite");
+  if (filename === ":memory:" || !fs.existsSync(filename)) return false;
+
+  let sqlite: Database.Database | undefined;
+  try {
+    sqlite = new Database(filename, { readonly: true, fileMustExist: true });
+    for (const table of [
+      "user",
+      "setup_token",
+      "network_segment",
+      "system",
+      "credential_grant",
+      "agent",
+      "app_setting",
+    ]) {
+      const exists = sqlite
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(table);
+      if (exists && (sqlite.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get() ?? null)) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  } finally {
+    sqlite?.close();
+  }
 }
 
 export function authSecret(): string {

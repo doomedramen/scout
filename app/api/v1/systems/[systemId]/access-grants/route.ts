@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { AccessError, createAccessGrant, preflightSsh } from "@/lib/server/access";
+import {
+  AccessError,
+  createAccessGrant,
+  getAccessGrantReceipt,
+  preflightSsh,
+} from "@/lib/server/access";
 import { jsonError, sameOrigin } from "@/lib/server/http";
 import { requireApiSession } from "@/lib/server/session";
 
@@ -39,6 +44,15 @@ export async function POST(
   if (!idempotencyKey || idempotencyKey.length > 128)
     return jsonError("An idempotency key is required.", 400);
 
+  const { systemId } = await params;
+  const existing = getAccessGrantReceipt(idempotencyKey, session.user.id, systemId);
+  if (existing) {
+    return Response.json(
+      { ...existing, target: null, jobUrl: `/api/v1/enrollment-jobs/${existing.jobId}` },
+      { status: 202, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   let input: z.infer<typeof grantInput>;
   try {
     input = grantInput.parse(await request.json());
@@ -46,7 +60,6 @@ export async function POST(
     return jsonError("Enter the SSH username, credential, and confirmed fingerprint.", 400);
   }
 
-  const { systemId } = await params;
   try {
     const current = await preflightSsh(systemId);
     if (current.fingerprint !== input.fingerprint)
@@ -54,6 +67,7 @@ export async function POST(
     const job = createAccessGrant(
       {
         systemId,
+        ownerId: session.user.id,
         ...input,
         passphrase: input.passphrase ?? null,
         privilegePassword: input.privilegePassword ?? null,

@@ -243,6 +243,13 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS system_alias_canonical_idx ON system_alias(canonical_system_id);
     `,
   },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE idempotency_receipt ADD COLUMN scope_id TEXT NOT NULL DEFAULT '';
+      CREATE INDEX IF NOT EXISTS idempotency_scope_idx ON idempotency_receipt(scope_id);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: Database.Database): void {

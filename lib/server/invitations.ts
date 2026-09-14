@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
 
 import { getDatabase } from "@/lib/server/db";
+import { enrollmentMessage, type EnrollmentInput } from "@/lib/server/agent-protocol";
 
 const INVITATION_TTL_MS = 10 * 60 * 1000;
 
@@ -49,6 +50,7 @@ export type EnrollAgentInput = {
   platform: "linux" | "macos";
   architecture: "x86_64" | "aarch64";
   version: string;
+  proof: string;
 };
 
 export class EnrollmentError extends Error {
@@ -71,6 +73,11 @@ export type EnrolledAgent = {
 };
 
 export function enrollAgent(input: EnrollAgentInput, now = Date.now()): EnrolledAgent {
+  if (!validEnrollmentProof(input))
+    throw new EnrollmentError(
+      "The agent did not prove possession of its private key.",
+      "invalid_input",
+    );
   const { sqlite } = getDatabase();
   const enroll = sqlite.transaction(() => {
     const invitation = sqlite
@@ -156,4 +163,24 @@ export function enrollAgent(input: EnrollAgentInput, now = Date.now()): Enrolled
     };
   });
   return enroll();
+}
+
+function validEnrollmentProof(input: EnrollAgentInput): boolean {
+  try {
+    const rawPublicKey = Buffer.from(input.publicKey, "base64url");
+    if (rawPublicKey.length !== 32) return false;
+    const publicKey = createPublicKey({
+      key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), rawPublicKey]),
+      format: "der",
+      type: "spki",
+    });
+    return verify(
+      null,
+      Buffer.from(enrollmentMessage(input as EnrollmentInput), "utf8"),
+      publicKey,
+      Buffer.from(input.proof, "base64url"),
+    );
+  } catch {
+    return false;
+  }
 }

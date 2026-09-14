@@ -11,7 +11,20 @@ export const enrollInput = z.object({
   platform: z.enum(["linux", "macos"]),
   architecture: z.enum(["x86_64", "aarch64"]),
   version: z.string().min(1).max(64),
+  proof: z.string().regex(/^[A-Za-z0-9_-]{86}$/),
 });
+
+export type EnrollmentInput = z.infer<typeof enrollInput>;
+
+export function enrollmentMessage(input: Omit<EnrollmentInput, "proof">): string {
+  return [
+    input.invitation,
+    input.publicKey,
+    input.platform,
+    input.architecture,
+    input.version,
+  ].join("\n");
+}
 
 export const heartbeatInput = z.object({
   agentId: z.string().min(1).max(128),

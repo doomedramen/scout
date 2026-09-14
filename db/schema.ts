@@ -268,6 +268,7 @@ export const idempotencyReceipts = sqliteTable(
   {
     key: text("key").primaryKey(),
     operation: text("operation").notNull(),
+    scopeId: text("scope_id").notNull().default(""),
     resourceId: text("resource_id").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },

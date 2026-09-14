@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
-import { createAccessGrant } from "@/lib/server/access";
+import { createAccessGrant, getAccessGrantReceipt } from "@/lib/server/access";
 import { decryptCredential } from "@/lib/server/credentials";
 
 describe("access grants", () => {
@@ -130,5 +130,37 @@ describe("access grants", () => {
       passphrase: "key-passphrase",
       privilegePassword: "sudo-password",
     });
+  });
+
+  it("recovers an accepted job without needing the credential again", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = "/tmp/scout-test-access-receipt";
+    const { sqlite } = getDatabase();
+    for (const systemId of ["system-1", "system-2"]) {
+      sqlite
+        .prepare(
+          "INSERT INTO system (id, display_name, status, created_at, updated_at) VALUES (?, ?, 'needs-trust', ?, ?)",
+        )
+        .run(systemId, systemId, 1_000, 1_000);
+    }
+    const input = {
+      systemId: "system-1",
+      ownerId: "owner-1",
+      method: "ssh" as const,
+      username: "root",
+      authType: "password" as const,
+      secret: "CorrectHorse1",
+      passphrase: null,
+      fingerprint: "SHA256:test",
+      trust: true,
+      idempotencyKey: "recoverable-receipt",
+    };
+    const first = createAccessGrant(input, 1_000);
+
+    expect(getAccessGrantReceipt("recoverable-receipt", "owner-1", "system-1")).toEqual(first);
+    expect(getAccessGrantReceipt("recoverable-receipt", "owner-2", "system-1")).toBeNull();
+    expect(() =>
+      createAccessGrant({ ...input, systemId: "system-2", ownerId: "owner-1" }, 2_000),
+    ).toThrow(/idempotency|already used|another/i);
   });
 });

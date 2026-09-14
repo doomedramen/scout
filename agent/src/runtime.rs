@@ -1,11 +1,11 @@
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
-
 use anyhow::{anyhow, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{SecondsFormat, Utc};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
@@ -14,8 +14,9 @@ use crate::buffer::TelemetryBuffer;
 use crate::collector::{HostCollector, SysinfoHostCollector};
 use crate::identity::{load_or_create, Identity};
 use crate::protocol::{
-    sign_request, verify_task, EnrollmentRequest, EnrollmentResponse, HeartbeatPayload,
-    HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope, TelemetryPayload,
+    enrollment_message, sign_request, verify_task, EnrollmentRequest, EnrollmentResponse,
+    HeartbeatPayload, HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope,
+    TelemetryPayload,
 };
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
@@ -175,6 +176,18 @@ async fn enroll(
         platform: platform_name().to_string(),
         architecture: architecture_name().to_string(),
         version: config.version.clone(),
+        proof: URL_SAFE_NO_PAD.encode(
+            identity.sign(
+                enrollment_message(
+                    invitation,
+                    &identity.public_key(),
+                    platform_name(),
+                    architecture_name(),
+                    &config.version,
+                )
+                .as_bytes(),
+            ),
+        ),
     };
     let response: EnrollmentResponse = client
         .post(format!("{}/api/agent/v1/enroll", config.server_url))
@@ -200,9 +213,14 @@ fn apply_heartbeat_response(
     enrollment: &mut EnrollmentState,
     response: &HeartbeatResponse,
 ) -> Result<()> {
-    if !response.control_public_key.is_empty()
-        && enrollment.control_public_key.as_deref() != Some(response.control_public_key.as_str())
-    {
+    if !response.control_public_key.is_empty() {
+        if let Some(current) = enrollment.control_public_key.as_deref() {
+            if current != response.control_public_key {
+                return Err(anyhow!("server control key changed after enrollment"));
+            }
+        }
+    }
+    if !response.control_public_key.is_empty() && enrollment.control_public_key.is_none() {
         enrollment.control_public_key = Some(response.control_public_key.clone());
         save_enrollment(state_path, enrollment).context("save control-plane key")?;
     }
