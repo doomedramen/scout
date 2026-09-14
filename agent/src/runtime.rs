@@ -52,6 +52,14 @@ struct EnrollmentState {
     release_sequence: u64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingTaskResult {
+    task_id: String,
+    generation: u64,
+    body: String,
+}
+
 impl AgentConfig {
     pub fn from_environment_and_args<I, S>(args: I) -> Result<Self>
     where
@@ -184,11 +192,17 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         dropped_samples = dropped_samples.saturating_add(1);
         eprintln!("scout-agent telemetry failed: {error:#}");
     }
-    if let Some(task) = response.and_then(|response| response.task) {
-        if let Err(error) =
-            process_task(&client, &identity, &mut enrollment, &state_path, task).await
+    if let Some(response) = response {
+        if let Some(task) = response.task {
+            if let Err(error) =
+                process_task(&client, &identity, &mut enrollment, &state_path, task).await
+            {
+                eprintln!("scout-agent task failed: {error:#}");
+            }
+        } else if let Err(error) =
+            retry_pending_task_result(&client, &identity, &mut enrollment, &state_path).await
         {
-            eprintln!("scout-agent task failed: {error:#}");
+            eprintln!("scout-agent task result retry failed: {error:#}");
         }
     }
     if config.once || update_applied {
@@ -215,6 +229,8 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                             if let Err(error) = process_task(&client, &identity, &mut enrollment, &state_path, task).await {
                                 eprintln!("scout-agent task failed: {error:#}");
                             }
+                        } else if let Err(error) = retry_pending_task_result(&client, &identity, &mut enrollment, &state_path).await {
+                            eprintln!("scout-agent task result retry failed: {error:#}");
                         }
                         match check_for_update(&client, &identity, &mut enrollment, &state_path, &config.data_dir).await {
                             Ok(true) => return Ok(()),
@@ -443,6 +459,67 @@ async fn send_telemetry(
     Ok(())
 }
 
+fn task_result_path(state_path: &std::path::Path) -> PathBuf {
+    state_path.with_file_name("task-result.json")
+}
+
+fn save_pending_task_result(path: &std::path::Path, result: &PendingTaskResult) -> Result<()> {
+    let contents = serde_json::to_vec_pretty(result)?;
+    write_private_atomically(path, &contents)
+}
+
+fn load_pending_task_result(path: &std::path::Path) -> Result<Option<PendingTaskResult>> {
+    match std::fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(
+            serde_json::from_str(&contents).context("decode pending task result")?,
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("read pending task result"),
+    }
+}
+
+fn clear_pending_task_result(path: &std::path::Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("clear pending task result"),
+    }
+}
+
+async fn deliver_pending_task_result(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &mut EnrollmentState,
+    state_path: &std::path::Path,
+    pending: PendingTaskResult,
+) -> Result<()> {
+    let path = format!("/api/agent/v1/tasks/{}/result", pending.task_id);
+    send_task_result(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        &path,
+        pending.body,
+    )
+    .await?;
+    record_task_watermark(state_path, enrollment, pending.generation)?;
+    clear_pending_task_result(&task_result_path(state_path))
+}
+
+async fn retry_pending_task_result(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &mut EnrollmentState,
+    state_path: &std::path::Path,
+) -> Result<()> {
+    let path = task_result_path(state_path);
+    if let Some(pending) = load_pending_task_result(&path)? {
+        deliver_pending_task_result(client, identity, enrollment, state_path, pending).await?;
+    }
+    Ok(())
+}
+
 async fn process_task(
     client: &Client,
     identity: &Identity,
@@ -462,26 +539,43 @@ async fn process_task(
             "server task envelope is stale or already processed"
         ));
     }
-    let payload = task.payload.clone();
-    match (task.kind.as_str(), payload) {
+
+    let pending_path = task_result_path(state_path);
+    if let Some(pending) = load_pending_task_result(&pending_path)? {
+        deliver_pending_task_result(client, identity, enrollment, state_path, pending).await?;
+        if task.generation <= enrollment.task_generation {
+            return Ok(());
+        }
+    }
+
+    let body = match (task.kind.as_str(), task.payload.clone()) {
         ("network-scan", TaskPayload::Scan(payload)) => {
-            process_scan_task(client, identity, enrollment, task.clone(), payload).await
+            serde_json::to_string(&process_scan_task(enrollment, task.clone(), payload).await?)?
         }
-        ("relay-connect", TaskPayload::Relay(payload)) => {
-            process_relay_task(client, identity, enrollment, task.clone(), payload).await
-        }
-        _ => Err(anyhow!("server task kind and payload do not match")),
-    }?;
-    record_task_watermark(state_path, enrollment, task.generation)
+        ("relay-connect", TaskPayload::Relay(payload)) => serde_json::to_string(
+            &process_relay_task(client, identity, enrollment, task.clone(), payload).await?,
+        )?,
+        _ => return Err(anyhow!("server task kind and payload do not match")),
+    };
+    save_pending_task_result(
+        &pending_path,
+        &PendingTaskResult {
+            task_id: task.task_id,
+            generation: task.generation,
+            body,
+        },
+    )?;
+    let pending = load_pending_task_result(&pending_path)?
+        .ok_or_else(|| anyhow!("saved task result could not be reopened"))?;
+    deliver_pending_task_result(client, identity, enrollment, state_path, pending).await?;
+    Ok(())
 }
 
 async fn process_scan_task(
-    client: &Client,
-    identity: &Identity,
     enrollment: &EnrollmentState,
     task: TaskEnvelope,
     payload: ScanTaskPayload,
-) -> Result<()> {
+) -> Result<ScanTaskResult> {
     let semaphore = Arc::new(Semaphore::new(64));
     let mut handles = Vec::with_capacity(payload.addresses.len());
     for address in &payload.addresses {
@@ -522,18 +616,7 @@ async fn process_scan_task(
         payload_digest: task.payload_digest,
         results,
     };
-    let body = serde_json::to_string(&payload)?;
-    let path = format!("/api/agent/v1/tasks/{}/result", task.task_id);
-    send_task_result(
-        client,
-        identity,
-        &enrollment.server_url,
-        &enrollment.agent_id,
-        &path,
-        body,
-    )
-    .await?;
-    Ok(())
+    Ok(payload)
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -570,7 +653,7 @@ async fn process_relay_task(
     enrollment: &EnrollmentState,
     task: TaskEnvelope,
     payload: RelayTaskPayload,
-) -> Result<()> {
+) -> Result<RelayTaskResult> {
     let target = tokio::time::timeout(
         Duration::from_secs(5),
         TcpStream::connect((payload.target_address.as_str(), payload.port)),
@@ -599,17 +682,7 @@ async fn process_relay_task(
         payload_digest: task.payload_digest,
         kind: "relay-connect".to_string(),
     };
-    let path = format!("/api/agent/v1/tasks/{}/result", task.task_id);
-    send_task_result(
-        client,
-        identity,
-        &enrollment.server_url,
-        &enrollment.agent_id,
-        &path,
-        serde_json::to_string(&result)?,
-    )
-    .await?;
-    Ok(())
+    Ok(result)
 }
 
 async fn open_relay_channel(
@@ -805,7 +878,12 @@ async fn send_task_result(
 ) -> Result<()> {
     let response =
         send_signed_method_raw(client, identity, server_url, agent_id, "POST", path, body).await?;
-    if response.status().is_success() || response.status() == StatusCode::CONFLICT {
+    if response.status().is_success()
+        || matches!(
+            response.status(),
+            StatusCode::CONFLICT | StatusCode::NOT_FOUND | StatusCode::PRECONDITION_FAILED
+        )
+    {
         return Ok(());
     }
     response
@@ -902,10 +980,19 @@ fn load_enrollment(path: &std::path::Path) -> Option<EnrollmentState> {
 }
 
 fn save_enrollment(path: &std::path::Path, state: &EnrollmentState) -> Result<()> {
+    let contents = serde_json::to_vec_pretty(state)?;
+    write_private_atomically(path, &contents)
+}
+
+fn write_private_atomically(path: &std::path::Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
+        }
     }
-    let contents = serde_json::to_vec_pretty(state)?;
     let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
@@ -916,7 +1003,7 @@ fn save_enrollment(path: &std::path::Path, state: &EnrollmentState) -> Result<()
     }
     let mut file = options.open(&temporary)?;
     use std::io::Write;
-    if let Err(error) = file.write_all(&contents).and_then(|_| file.sync_all()) {
+    if let Err(error) = file.write_all(contents).and_then(|_| file.sync_all()) {
         drop(file);
         let _ = std::fs::remove_file(&temporary);
         return Err(error.into());
@@ -1078,6 +1165,24 @@ mod tests {
         let directory = tempfile::tempdir()?;
         let identity = load_or_create(&directory.path().join("identity.json"))?;
         let control_key = SigningKey::generate(&mut OsRng);
+        let target_listener = TcpListener::bind("127.0.0.1:0").await?;
+        let target_port = target_listener.local_addr()?.port();
+        let target = tokio::spawn(async move {
+            let mut connections = 0;
+            while let Ok(Ok((stream, _))) = tokio::time::timeout(
+                std::time::Duration::from_millis(250),
+                target_listener.accept(),
+            )
+            .await
+            {
+                drop(stream);
+                connections += 1;
+                if connections == 2 {
+                    break;
+                }
+            }
+            connections
+        });
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let server_url = format!("http://{}", listener.local_addr()?);
         let server = tokio::spawn(async move {
@@ -1095,8 +1200,8 @@ mod tests {
         let now = Utc::now();
         let payload = TaskPayload::Scan(ScanTaskPayload {
             cidr: "127.0.0.0/8".to_string(),
-            port: 22,
-            addresses: Vec::new(),
+            port: target_port,
+            addresses: vec!["127.0.0.1".to_string()],
         });
         let mut task = TaskEnvelope {
             task_id: "55555555-5555-4555-8555-555555555555".to_string(),
@@ -1137,6 +1242,7 @@ mod tests {
         .expect_err("a failed result must not advance the watermark");
         assert_eq!(enrollment.task_generation, 0);
         assert!(!state_path.exists());
+        assert!(directory.path().join("task-result.json").exists());
 
         process_task(
             &Client::new(),
@@ -1147,7 +1253,9 @@ mod tests {
         )
         .await?;
         assert_eq!(enrollment.task_generation, 1);
+        assert!(!directory.path().join("task-result.json").exists());
         server.await??;
+        assert_eq!(target.await?, 1);
         Ok(())
     }
 }
