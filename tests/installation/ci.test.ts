@@ -43,6 +43,16 @@ describe("release CI", () => {
     expect(workflow).toContain("npm run test:e2e:packaged");
   });
 
+  it("tests the release image before publishing its tags", () => {
+    const workflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
+    const packagedScript = fs.readFileSync("scripts/playwright-packaged.sh", "utf8");
+
+    expect(workflow).toContain("load: true");
+    expect(workflow).toContain('SCOUT_PACKAGED_E2E_SKIP_BUILD: "1"');
+    expect(workflow).toContain("docker push");
+    expect(packagedScript).toContain("SCOUT_PACKAGED_E2E_SKIP_BUILD");
+  });
+
   it("uses a runner-native agent target for the web build", () => {
     const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
 

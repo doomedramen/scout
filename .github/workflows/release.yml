@@ -141,8 +141,29 @@ jobs:
         with:
           context: .
           file: packaging/containers/server.Dockerfile
-          push: true
+          load: true
           platforms: linux/amd64
           build-args: SCOUT_USE_PREBUILT_ARTIFACTS=1
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Test the exact release image
+        env:
+          SCOUT_PACKAGED_E2E_IMAGE: ghcr.io/doomedramen/scout:sha-${{ github.sha }}
+          SCOUT_PACKAGED_E2E_SKIP_BUILD: "1"
+          SCOUT_PACKAGED_E2E_PORT: "18083"
+        run: npm run test:e2e:packaged
+      - name: Push the tested release tags
+        env:
+          RELEASE_TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          set -eu
+          printf '%s\n' "$RELEASE_TAGS" | while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done

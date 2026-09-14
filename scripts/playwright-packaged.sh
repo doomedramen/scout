@@ -7,6 +7,7 @@ server_port=${SCOUT_PACKAGED_E2E_PORT:-18083}
 image=${SCOUT_PACKAGED_E2E_IMAGE:-scout:packaged-e2e-$$}
 container="scout-packaged-e2e-$$"
 volume="scout-packaged-e2e-$$"
+image_built=0
 
 fail() {
   printf '%s\n' "scout packaged Playwright: $1" >&2
@@ -17,7 +18,7 @@ cleanup() {
   set +e
   docker rm --force "$container" >/dev/null 2>&1
   docker volume rm "$volume" >/dev/null 2>&1
-  if [ "${SCOUT_PACKAGED_E2E_KEEP_IMAGE:-0}" != 1 ]; then
+  if [ "$image_built" = 1 ] && [ "${SCOUT_PACKAGED_E2E_KEEP_IMAGE:-0}" != 1 ]; then
     docker image rm "$image" >/dev/null 2>&1
   fi
   if [ "$keep_work_directory" != 1 ]; then
@@ -34,10 +35,15 @@ if curl --silent --show-error --fail "http://127.0.0.1:$server_port/api/health/l
   fail "port $server_port is already in use"
 fi
 
-docker build \
-  --file packaging/containers/server.Dockerfile \
-  --tag "$image" \
-  . >/dev/null
+if [ "${SCOUT_PACKAGED_E2E_SKIP_BUILD:-0}" = 1 ]; then
+  docker image inspect "$image" >/dev/null 2>&1 || fail "the supplied packaged image is unavailable"
+else
+  docker build \
+    --file packaging/containers/server.Dockerfile \
+    --tag "$image" \
+    . >/dev/null
+  image_built=1
+fi
 docker volume create "$volume" >/dev/null
 docker run --detach \
   --name "$container" \
