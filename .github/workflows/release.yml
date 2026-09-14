@@ -13,7 +13,27 @@ env:
   IMAGE: ghcr.io/doomedramen/scout
 
 jobs:
+  release_config:
+    runs-on: ubuntu-24.04
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        name: Check for the release signing key
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.SCOUT_RELEASE_SIGNING_KEY }}
+        run: |
+          set -eu
+          if [ -n "$RELEASE_SIGNING_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Signed release publishing is disabled until SCOUT_RELEASE_SIGNING_KEY is configured."
+          fi
+
   agent:
+    needs: release_config
+    if: needs.release_config.outputs.enabled == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +82,8 @@ jobs:
           if-no-files-found: error
 
   image:
-    needs: agent
+    needs: [release_config, agent]
+    if: needs.release_config.outputs.enabled == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

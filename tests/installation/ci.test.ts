@@ -15,6 +15,8 @@ describe("release CI", () => {
   it("builds the complete native release and publishes only the server image", () => {
     const workflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
 
+    expect(workflow).toContain("release_config:");
+    expect(workflow).toContain("needs.release_config.outputs.enabled");
     expect(workflow).toContain("scout-agent-linux-x86_64");
     expect(workflow).toContain("scout-agent-linux-aarch64");
     expect(workflow).toContain("scout-agent-macos-x86_64");
