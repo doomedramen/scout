@@ -33,7 +33,11 @@ describe("agent installer", () => {
     expect(script).toContain("/usr/local/lib/scout-agent/current/scout-agent");
     expect(script).toContain("scout-agent-launcher");
     expect(script).toContain("systemctl enable --now scout-agent.service");
-    expect(script).toContain('runuser -u scout-agent -- env SCOUT_SERVER_URL="$SCOUT_SERVER_URL"');
+    expect(script).toContain("runuser_binary=$(command -v runuser");
+    expect(script).toContain("/usr/sbin/runuser");
+    expect(script).toContain(
+      '"$runuser_binary" -u scout-agent -- env SCOUT_SERVER_URL="$SCOUT_SERVER_URL"',
+    );
     expect(script).toContain("launchctl bootstrap system");
     expect(script).toContain("SCOUT_TRUST_PIN");
     expect(script).toContain("SCOUT_REQUIRE_TRUST_PIN=1");
