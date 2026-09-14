@@ -17,6 +17,7 @@
     "test:e2e": "playwright test",
     "test:e2e:packaged": "./scripts/playwright-packaged.sh",
     "test:acceptance:linux": "./scripts/qemu-linux-acceptance.sh",
+    "test:proxmox-helper": "bash scripts/test-proxmox-helper.sh",
     "test:all": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",

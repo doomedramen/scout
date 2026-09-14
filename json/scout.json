@@ -1,0 +1,47 @@
+{
+  "name": "Scout",
+  "slug": "scout",
+  "categories": [9],
+  "date_created": "2026-09-14",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 8080,
+  "documentation": "https://github.com/doomedramen/scout/blob/main/README.md",
+  "website": "https://github.com/doomedramen/scout",
+  "repository": "https://github.com/doomedramen/scout",
+  "logo": "https://github.com/doomedramen.png",
+  "description": "Scout is a self-hosted network monitor with distributed agents, durable discovery, and host telemetry.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/scout.sh",
+      "config_path": "/opt/scout/.env",
+      "resources": {
+        "cpu": 2,
+        "ram": 2048,
+        "hdd": 12,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "Open http://<IP>:8080 after installation. Read the one-time setup token with: scout setup-token",
+      "type": "info"
+    },
+    {
+      "text": "Scout stores SQLite, authentication keys, credential keys, and control-signing keys together in the scout-data Docker volume. Include that volume in backups.",
+      "type": "warning"
+    },
+    {
+      "text": "This helper exposes Scout over plain HTTP on port 8080. Use it only on a trusted network or put a TLS reverse proxy in front of it before remote access.",
+      "type": "warning"
+    }
+  ]
+}

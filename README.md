@@ -57,6 +57,37 @@ chmod 0755 /usr/local/bin/scout
 It uses `/opt/scout` by default. Set `SCOUT_DIR` when the instance lives
 elsewhere.
 
+## Install on Proxmox VE
+
+Run this command on the Proxmox VE host to create an unprivileged Debian 13
+LXC and install Scout with Docker Compose:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/doomedramen/scout/main/ct/scout.sh)"
+```
+
+The installer uses two CPU cores, 2 GiB of memory, and a 12 GiB root disk by
+default. Scout is served at `http://<LXC-IP>:8080`; enter the LXC and run
+`scout setup-token` to print the one-time owner setup token.
+
+Updates are available from the LXC console or over SSH:
+
+```bash
+scout update
+# `update` is also installed as a Proxmox VE helper-compatible command.
+```
+
+Each update fetches and validates the current repository `compose.yaml` before
+replacing the local definition. The `.env` file and `scout-data` volume stay in
+place. The updater snapshots Scout's SQLite database and persistent keys,
+pulls the exact image digest, waits for readiness, and restores the previous
+definition, image, and snapshot if the update fails. Set `SCOUT_COMPOSE_URL` in
+`/opt/scout/.env` to use an owner-controlled Compose mirror.
+
+The Proxmox entrypoint is [`ct/scout.sh`](ct/scout.sh); its LXC installer and
+metadata are [`install/scout-install.sh`](install/scout-install.sh) and
+[`json/scout.json`](json/scout.json).
+
 ## Operations
 
 ```bash

@@ -1,8 +1,23 @@
 #!/bin/sh
 set -eu
 
-SCOUT_DIR=${SCOUT_DIR:-/opt/scout}
+SCOUT_DIR=${SCOUT_DIR:-${SCOUT_INSTALL_DIR:-/opt/scout}}
 COMPOSE_FILE=$SCOUT_DIR/compose.yaml
+
+read_env_value() {
+  key=$1
+  [ -f "$SCOUT_DIR/.env" ] || return 0
+  value=$(sed -n "s/^${key}=//p" "$SCOUT_DIR/.env" | tail -n 1)
+  value=${value#\"}
+  value=${value%\"}
+  value=${value#\'}
+  value=${value%\'}
+  printf '%s' "$value"
+}
+
+if [ -z "${SCOUT_COMPOSE_URL:-}" ]; then
+  SCOUT_COMPOSE_URL=$(read_env_value SCOUT_COMPOSE_URL || true)
+fi
 COMPOSE_URL=${SCOUT_COMPOSE_URL:-https://raw.githubusercontent.com/doomedramen/scout/main/compose.yaml}
 
 die() {
