@@ -32,23 +32,33 @@ require_docker() {
 
 download_compose() {
   temporary=$(mktemp "$SCOUT_DIR/.compose.yaml.tmp.XXXXXX") ||
-    die "Could not create a temporary Compose definition."
+    return 1
   cleanup_download() {
     rm -f "$temporary"
   }
   trap cleanup_download EXIT HUP INT TERM
-  curl -fsSL "$COMPOSE_URL" -o "$temporary" ||
-    die "Could not download the current Compose definition."
-  docker compose -f "$temporary" config >/dev/null 2>&1 ||
-    die "The downloaded Compose definition failed validation."
-  mv -f "$temporary" "$COMPOSE_FILE"
+  if ! curl -fsSL "$COMPOSE_URL" -o "$temporary"; then
+    trap - EXIT HUP INT TERM
+    rm -f "$temporary"
+    return 1
+  fi
+  if ! docker compose -f "$temporary" config >/dev/null 2>&1; then
+    trap - EXIT HUP INT TERM
+    rm -f "$temporary"
+    return 1
+  fi
+  if ! mv -f "$temporary" "$COMPOSE_FILE"; then
+    trap - EXIT HUP INT TERM
+    rm -f "$temporary"
+    return 1
+  fi
   trap - EXIT HUP INT TERM
 }
 
 ensure_compose() {
   mkdir -p "$SCOUT_DIR"
   if [ ! -s "$COMPOSE_FILE" ]; then
-    download_compose
+    download_compose || die "Could not download or validate the Compose definition."
   fi
 }
 
@@ -168,7 +178,7 @@ case "$command" in
     run_data_op snapshot "$update_snapshot" >/dev/null || rollback_update
     run_data_op pause >/dev/null || rollback_update
     cp "$COMPOSE_FILE" "$previous"
-    download_compose
+    download_compose || rollback_update
     image_ref=$(compose_image)
     compose pull scout || rollback_update
     new_image_id=$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || true)

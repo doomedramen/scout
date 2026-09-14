@@ -26,7 +26,8 @@ var_ram="${var_ram:-2048}"
 var_disk="${var_disk:-12}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-13}"
-var_arm64="${var_arm64:-yes}"
+# Keep unset until the published image has an arm64 manifest; the core then
+# rejects ARM64 hosts clearly instead of creating an LXC that cannot start.
 var_unprivileged="${var_unprivileged:-1}"
 
 # The current community build engine still uses its own repository URL when it
