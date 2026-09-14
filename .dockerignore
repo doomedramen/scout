@@ -9,6 +9,8 @@ test-results
 .env
 *.sqlite
 *.sqlite-*
+agent-artifacts/*
+!agent-artifacts/.gitkeep
 README.md
 specs
 tests

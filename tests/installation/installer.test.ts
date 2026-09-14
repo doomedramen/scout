@@ -27,6 +27,11 @@ describe("agent installer", () => {
     }
     expect(script).toContain("https://scout.example.test:18443");
     expect(script).toContain("SCOUT_OTI=${SCOUT_OTI:-'oti-with-'\\''-quote'}");
+    expect(script).toContain("SCOUT_AGENT_VERSION=${SCOUT_AGENT_VERSION:-'0.1.0'}");
+    expect(script).toContain("scout-agent-install.lock");
+    expect(script).toContain("/usr/local/lib/scout-agent/releases/$SCOUT_AGENT_VERSION");
+    expect(script).toContain("/usr/local/lib/scout-agent/current/scout-agent");
+    expect(script).toContain("scout-agent-launcher");
     expect(script).toContain("systemctl enable --now scout-agent.service");
     expect(script).toContain('runuser -u scout-agent -- env SCOUT_SERVER_URL="$SCOUT_SERVER_URL"');
     expect(script).toContain("launchctl bootstrap system");
