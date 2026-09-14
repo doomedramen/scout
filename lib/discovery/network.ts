@@ -153,8 +153,9 @@ export function hostAddresses(cidr: string): string[] {
 }
 
 export function configuredDiscoveryBoundary(): NetworkBoundary | null {
-  const cidr = process.env.SCOUT_DISCOVERY_CIDR?.trim();
-  if (!cidr) return null;
+  const configuredCidr = process.env.SCOUT_DISCOVERY_CIDR?.trim();
+  if (!configuredCidr) return null;
+  const cidr = cappedConfiguredCidr(configuredCidr);
   const addresses = hostAddresses(cidr);
   const sourceAddress = process.env.SCOUT_DISCOVERY_SOURCE_ADDRESS?.trim() || addresses[0];
   if (!sourceAddress) throw new Error("SCOUT_DISCOVERY_CIDR contains no usable address.");
@@ -166,6 +167,12 @@ export function configuredDiscoveryBoundary(): NetworkBoundary | null {
     sourceAddress,
     provenanceKey: `configured|${interfaceName}|${cidr}`,
   };
+}
+
+function cappedConfiguredCidr(cidr: string): string {
+  const { network, prefix } = parseCidr(cidr);
+  const boundedPrefix = Math.max(prefix, 24);
+  return `${numberToIpv4(network & prefixMask(boundedPrefix))}/${boundedPrefix}`;
 }
 
 function interfaceLooksNonRoutable(name: string): boolean {

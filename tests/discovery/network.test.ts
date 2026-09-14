@@ -73,6 +73,16 @@ describe("default-route discovery", () => {
     });
     expect(configuredSshPort()).toBe(2222);
   });
+
+  it("caps an explicitly configured broad CIDR before scanning", () => {
+    process.env.SCOUT_DISCOVERY_CIDR = "10.20.0.0/16";
+    delete process.env.SCOUT_DISCOVERY_SOURCE_ADDRESS;
+    expect(configuredDiscoveryBoundary()).toMatchObject({
+      cidr: "10.20.0.0/24",
+      sourceAddress: "10.20.0.1",
+      provenanceKey: "configured|test-loopback|10.20.0.0/24",
+    });
+  });
 });
 
 describe("bounded TCP scanner", () => {
