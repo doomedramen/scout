@@ -43,11 +43,15 @@ describe("enrollment worker", () => {
         seenStages.push(stage);
         setStage(stage);
       }
+      const agentReadyAt = Date.now();
       sqlite
         .prepare(
           "INSERT INTO agent (id, system_id, public_key, platform, architecture, version, last_heartbeat_at, created_at, updated_at) VALUES (?, ?, ?, 'linux', 'x86_64', '0.1.0', ?, ?, ?)",
         )
-        .run("agent-1", context.systemId, "a".repeat(43), 2_000, 2_000, 2_000);
+        .run("agent-1", context.systemId, "a".repeat(43), agentReadyAt, agentReadyAt, agentReadyAt);
+      sqlite
+        .prepare("UPDATE agent SET last_telemetry_at = ? WHERE id = ?")
+        .run(agentReadyAt, "agent-1");
     }, 2_000);
 
     expect(result).toEqual({
@@ -72,6 +76,67 @@ describe("enrollment worker", () => {
         .get("system-1"),
     ).toEqual({
       count: 1,
+    });
+  });
+
+  it("waits for first telemetry before completing installation", async () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = `/tmp/scout-test-enrollment-telemetry-${Date.now()}`;
+    process.env.SCOUT_PUBLIC_URL = "http://192.0.2.5:18081";
+    const { sqlite } = getDatabase();
+    insertSystemAndEvidence(sqlite, 1_000);
+    const receipt = createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "root",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:test",
+        trust: true,
+        idempotencyKey: "job-idempotency-telemetry",
+      },
+      1_000,
+    );
+    let telemetryReportedAt: number | null = null;
+    let reportTelemetry!: () => void;
+    const telemetryReported = new Promise<void>((resolve) => {
+      reportTelemetry = resolve;
+    });
+
+    const resultPromise = processNextEnrollmentJob(async (context) => {
+      const agentReadyAt = Date.now();
+      sqlite
+        .prepare(
+          "INSERT INTO agent (id, system_id, public_key, platform, architecture, version, last_heartbeat_at, created_at, updated_at) VALUES (?, ?, ?, 'linux', 'x86_64', '0.1.0', ?, ?, ?)",
+        )
+        .run(
+          "agent-telemetry",
+          context.systemId,
+          "b".repeat(43),
+          agentReadyAt,
+          agentReadyAt,
+          agentReadyAt,
+        );
+      setTimeout(() => {
+        telemetryReportedAt = Date.now();
+        sqlite
+          .prepare("UPDATE agent SET last_telemetry_at = ? WHERE id = ?")
+          .run(telemetryReportedAt, "agent-telemetry");
+        reportTelemetry();
+      }, 50);
+    }, 2_000);
+    const result = await resultPromise;
+    const completedAt = Date.now();
+    await telemetryReported;
+
+    expect(completedAt).toBeGreaterThanOrEqual(telemetryReportedAt!);
+    expect(result).toEqual({
+      jobId: receipt.jobId,
+      status: "complete",
+      stage: "complete",
+      errorMessage: null,
     });
   });
 

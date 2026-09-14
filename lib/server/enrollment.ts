@@ -112,10 +112,11 @@ export async function processNextEnrollmentJob(
 
   try {
     const context = buildEnrollmentContext(claimed, now);
+    const installationStartedAt = Date.now();
     setStage("identity-verification");
     await executor(context, setStage);
     setStage("agent-wait");
-    await waitForAgent(context.systemId);
+    await waitForAgent(context.systemId, installationStartedAt);
     completeJob(claimed, now);
     return { jobId: claimed.id, status: "complete", stage: "complete", errorMessage: null };
   } catch (error) {
@@ -370,18 +371,32 @@ function ensureCommandSucceeded(
   if (result.code !== 0) throw new EnrollmentFailure(message, code);
 }
 
-async function waitForAgent(systemId: string, timeoutMs = AGENT_WAIT_MS): Promise<void> {
+async function waitForAgent(
+  systemId: string,
+  minimumTelemetryAt: number,
+  timeoutMs = AGENT_WAIT_MS,
+): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const { sqlite } = getDatabase();
     const agent = sqlite
-      .prepare("SELECT 1 FROM agent WHERE system_id = ? AND revoked_at IS NULL LIMIT 1")
-      .get(systemId);
-    if (agent) return;
+      .prepare(
+        "SELECT last_heartbeat_at AS lastHeartbeatAt, last_telemetry_at AS lastTelemetryAt FROM agent WHERE system_id = ? AND revoked_at IS NULL LIMIT 1",
+      )
+      .get(systemId) as
+      { lastHeartbeatAt: number | null; lastTelemetryAt: number | null } | undefined;
+    if (
+      agent?.lastHeartbeatAt !== null &&
+      agent?.lastHeartbeatAt !== undefined &&
+      agent.lastTelemetryAt !== null &&
+      agent.lastTelemetryAt !== undefined &&
+      agent.lastTelemetryAt >= minimumTelemetryAt
+    )
+      return;
     await new Promise((resolve) => setTimeout(resolve, AGENT_POLL_MS));
   }
   throw new EnrollmentFailure(
-    "The agent did not enroll before the installation window expired.",
+    "The agent did not report its first telemetry before the installation window expired.",
     "agent-timeout",
   );
 }
