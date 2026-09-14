@@ -18,6 +18,10 @@ describe("macOS lifecycle acceptance harness", () => {
     expect(script).toContain('"kickstart", "-k"');
     expect(script).toContain('"bootout", "system"');
     expect(script).toContain("SCOUT_MACOS_AGENT_BINARY");
+    expect(script).toContain(
+      "timeout: Number(process.env.SCOUT_MACOS_INSTALL_TIMEOUT_MS ?? 120_000)",
+    );
+    expect(script).toContain('execFileSync("sh", ["-x", installerPath]');
     expect(script).toContain("127.0.0.1");
     expect(script).not.toContain("scout.lab.rtin.page");
     expect(script).not.toContain("192.168.1.");

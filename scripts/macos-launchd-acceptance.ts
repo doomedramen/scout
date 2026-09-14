@@ -143,9 +143,9 @@ async function main(): Promise<void> {
   });
   fs.writeFileSync(installerPath, installer, { mode: 0o700 });
 
-  let installed = false;
+  let cleanupRequired = true;
   try {
-    execFileSync("sh", [installerPath], {
+    execFileSync("sh", ["-x", installerPath], {
       env: {
         ...process.env,
         SCOUT_SERVER_URL: serverUrl,
@@ -154,8 +154,9 @@ async function main(): Promise<void> {
         SCOUT_AGENT_VERSION: `acceptance-${process.pid}`,
       },
       stdio: "inherit",
+      timeout: Number(process.env.SCOUT_MACOS_INSTALL_TIMEOUT_MS ?? 120_000),
+      killSignal: "SIGTERM",
     });
-    installed = true;
 
     if (counts.enrollments !== 1) {
       throw new Error(`expected one enrollment during installation, got ${counts.enrollments}`);
@@ -177,16 +178,16 @@ async function main(): Promise<void> {
     );
     runPrivileged("rm", "-f", launchdPlist, launcher);
     runPrivileged("rm", "-rf", agentRoot);
-    installed = false;
     if (fs.existsSync(launchdPlist) || fs.existsSync(agentRoot) || fs.existsSync(launcher)) {
       throw new Error("macOS agent cleanup left installation files behind");
     }
+    cleanupRequired = false;
 
     process.stdout.write(
       `Scout macOS launchd acceptance passed: installed, enrolled, received telemetry, restarted, and removed the agent (${counts.heartbeats} heartbeats).`,
     );
   } finally {
-    if (installed) {
+    if (cleanupRequired) {
       runQuietly("launchctl", "bootout", "system", launchdPlist);
       runQuietly("rm", "-f", launchdPlist, launcher);
       runQuietly("rm", "-rf", agentRoot);
