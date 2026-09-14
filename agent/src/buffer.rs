@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use uuid::Uuid;
 
 use crate::protocol::TelemetryPayload;
 
@@ -125,28 +126,13 @@ impl TelemetryBuffer {
     }
 
     fn write(&self, entries: &[QueuedSample]) -> Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-            set_private_directory(parent)?;
-        }
-        let temporary = self
-            .path
-            .with_extension(format!("tmp-{}", std::process::id()));
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
-        for entry in entries {
-            serde_json::to_writer(&mut file, entry)?;
-            file.write_all(b"\n")?;
-        }
-        file.sync_all()?;
-        fs::rename(temporary, &self.path)?;
-        Ok(())
+        atomic_write(&self.path, |file| {
+            for entry in entries {
+                serde_json::to_writer(&mut *file, entry)?;
+                file.write_all(b"\n")?;
+            }
+            Ok(())
+        })
     }
 
     fn reported_drops_path(&self) -> PathBuf {
@@ -174,31 +160,73 @@ impl TelemetryBuffer {
     fn write_reported_drops(&self, count: u64) -> Result<()> {
         let path = self.reported_drops_path();
         if count == 0 {
-            match fs::remove_file(path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            let removed = match fs::remove_file(&path) {
+                Ok(()) => true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
                 Err(error) => return Err(error).context("clear dropped telemetry count"),
+            };
+            if removed {
+                sync_directory(parent).context("sync dropped telemetry count directory")?;
             }
             return Ok(());
         }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-            set_private_directory(parent)?;
-        }
-        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary)?;
-        write!(file, "{count}")?;
-        file.sync_all()?;
-        fs::rename(temporary, path)?;
-        Ok(())
+        atomic_write(&path, |file| {
+            write!(file, "{count}")?;
+            Ok(())
+        })
     }
+}
+
+fn atomic_write<F>(path: &Path, write_contents: F) -> Result<()>
+where
+    F: FnOnce(&mut fs::File) -> Result<()>,
+{
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).context("create telemetry buffer directory")?;
+    set_private_directory(parent).context("secure telemetry buffer directory")?;
+
+    let temporary = temporary_path(path);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut temporary_created = false;
+    let result = (|| {
+        let mut file = options
+            .open(&temporary)
+            .context("open telemetry buffer temporary file")?;
+        temporary_created = true;
+        write_contents(&mut file)?;
+        file.sync_all().context("sync telemetry buffer")?;
+        fs::rename(&temporary, path).context("replace telemetry buffer")?;
+        sync_directory(parent).context("sync telemetry buffer directory")?;
+        Ok(())
+    })();
+    if temporary_created && result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("telemetry.queue");
+    parent.join(format!(".{name}.tmp-{}", Uuid::new_v4()))
+}
+
+fn sync_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        fs::File::open(path)?.sync_all()?;
+    }
+    Ok(())
 }
 
 fn serialized_size(entries: &[QueuedSample]) -> Result<usize> {
@@ -214,4 +242,34 @@ fn set_private_directory(path: &Path) -> std::io::Result<()> {
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::atomic_write;
+    use std::fs;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn failed_atomic_write_removes_its_temporary_file() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("telemetry.queue");
+
+        let result = atomic_write(&path, |file| {
+            file.write_all(b"partial").unwrap();
+            Err(anyhow::anyhow!("simulated write failure"))
+        });
+
+        assert!(result.is_err());
+        assert!(!path.exists());
+        assert_eq!(
+            fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+                .count(),
+            0
+        );
+    }
 }
