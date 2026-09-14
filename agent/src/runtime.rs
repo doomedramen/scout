@@ -875,17 +875,30 @@ fn save_enrollment(path: &std::path::Path, state: &EnrollmentState) -> Result<()
         std::fs::create_dir_all(parent)?;
     }
     let contents = serde_json::to_vec_pretty(state)?;
+    let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
+    let mut file = options.open(&temporary)?;
     use std::io::Write;
-    file.write_all(&contents)?;
-    file.sync_all()?;
+    if let Err(error) = file.write_all(&contents).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.into());
+    }
+    drop(file);
+    if let Err(error) = std::fs::rename(&temporary, path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.into());
+    }
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
     Ok(())
 }
 
@@ -973,6 +986,58 @@ mod tests {
         );
         assert_eq!(enrollment.task_generation, 1);
         assert!(!directory.path().join("enrollment.json").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn saving_enrollment_replaces_the_live_file_atomically() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("enrollment.json");
+        let snapshot = directory.path().join("enrollment.snapshot.json");
+        let initial = EnrollmentState {
+            server_url: "http://127.0.0.1:1".to_string(),
+            agent_id: "agent-1".to_string(),
+            system_id: "system-1".to_string(),
+            control_public_key: None,
+            publisher_public_key: None,
+            task_generation: 1,
+            release_sequence: 0,
+        };
+        save_enrollment(&path, &initial)?;
+        std::fs::hard_link(&path, &snapshot)?;
+
+        let updated = EnrollmentState {
+            task_generation: 2,
+            ..initial.clone()
+        };
+        save_enrollment(&path, &updated)?;
+
+        assert_eq!(
+            load_enrollment(&path)
+                .expect("updated enrollment")
+                .task_generation,
+            2
+        );
+        assert_eq!(
+            load_enrollment(&snapshot)
+                .expect("unchanged enrollment snapshot")
+                .task_generation,
+            1
+        );
+        assert_eq!(
+            directory
+                .path()
+                .read_dir()?
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("enrollment.tmp-")
+                })
+                .count(),
+            0
+        );
         Ok(())
     }
 }
