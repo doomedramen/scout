@@ -4,6 +4,7 @@ import { closeDatabase, getDatabase } from "@/lib/server/db";
 import { encryptCredential } from "@/lib/server/credentials";
 import {
   ensureNetworkSegment,
+  nextScanDueAt,
   reconcileScanResults,
   setNetworkSegmentPaused,
 } from "@/lib/server/discovery";
@@ -14,6 +15,14 @@ describe("scan reconciliation", () => {
   afterEach(() => {
     delete process.env.SCOUT_DATABASE_URL;
     closeDatabase();
+  });
+
+  it("keeps recurring scans within the ten-minute schedule jitter window", () => {
+    const dueAt = nextScanDueAt("segment-with-jitter", 1_000);
+
+    expect(dueAt).toBeGreaterThanOrEqual(1_000 + 9 * 60 * 1_000);
+    expect(dueAt).toBeLessThanOrEqual(1_000 + 11 * 60 * 1_000);
+    expect(nextScanDueAt("segment-with-jitter", 1_000)).toBe(dueAt);
   });
 
   it("updates one candidate across repeated scans and removes it after a closed result", () => {

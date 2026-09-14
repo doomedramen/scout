@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { getDatabase } from "@/lib/server/db";
 import {
@@ -19,6 +19,7 @@ import {
 
 const EVIDENCE_TTL_MS = 30 * 60 * 1000;
 const SCAN_INTERVAL_MS = 10 * 60 * 1000;
+const SCAN_JITTER_MS = 60 * 1000;
 
 let discoveryRun: Promise<DiscoveryState> | undefined;
 
@@ -35,6 +36,13 @@ export type SegmentRecord = {
   provenanceKey: string;
   lastScanAt: number | null;
 };
+
+/** Return a stable recurring scan deadline within ±60 seconds of ten minutes. */
+export function nextScanDueAt(segmentId: string, lastScanAt: number): number {
+  const digest = createHash("sha256").update(segmentId, "utf8").digest();
+  const jitter = (digest.readUInt32BE(0) % (SCAN_JITTER_MS * 2 + 1)) - SCAN_JITTER_MS;
+  return lastScanAt + SCAN_INTERVAL_MS + jitter;
+}
 
 function setting(key: string): string | null {
   const { sqlite } = getDatabase();
@@ -466,7 +474,11 @@ export async function discoverNow(
     setDiscoveryState(next, startedAt);
     return next;
   }
-  if (!options.force && segment.lastScanAt && segment.lastScanAt > startedAt - SCAN_INTERVAL_MS) {
+  if (
+    !options.force &&
+    segment.lastScanAt !== null &&
+    nextScanDueAt(segment.id, segment.lastScanAt) > startedAt
+  ) {
     const next = {
       status: "current" as const,
       cidr: segment.cidr,
