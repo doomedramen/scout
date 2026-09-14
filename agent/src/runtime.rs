@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{SecondsFormat, Utc};
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::Client;
+use reqwest::{Client, Method};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,11 +13,13 @@ use uuid::Uuid;
 use crate::buffer::TelemetryBuffer;
 use crate::collector::{HostCollector, SysinfoHostCollector};
 use crate::identity::{load_or_create, Identity};
+use crate::platform::{FilesystemUpdatePlatform, UpdatePlatform};
 use crate::protocol::{
     enrollment_message, sign_request, verify_task, EnrollmentRequest, EnrollmentResponse,
     HeartbeatPayload, HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope,
     TelemetryPayload,
 };
+use crate::release::verify_release_manifest;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 const TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
@@ -26,6 +28,7 @@ const TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
 pub struct AgentConfig {
     pub server_url: String,
     pub invitation: Option<String>,
+    pub publisher_public_key: Option<String>,
     pub data_dir: PathBuf,
     pub once: bool,
     pub version: String,
@@ -39,6 +42,10 @@ struct EnrollmentState {
     system_id: String,
     #[serde(default)]
     control_public_key: Option<String>,
+    #[serde(default)]
+    publisher_public_key: Option<String>,
+    #[serde(default)]
+    release_sequence: u64,
 }
 
 impl AgentConfig {
@@ -49,6 +56,7 @@ impl AgentConfig {
     {
         let mut server_url = std::env::var("SCOUT_SERVER_URL").ok();
         let mut invitation = std::env::var("SCOUT_INVITATION").ok();
+        let publisher_public_key = configured_publisher_public_key();
         let mut data_dir = std::env::var("SCOUT_DATA_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/var/lib/scout-agent"));
@@ -79,6 +87,7 @@ impl AgentConfig {
         Ok(Self {
             server_url: server_url.trim_end_matches('/').to_string(),
             invitation,
+            publisher_public_key,
             data_dir,
             once,
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -108,11 +117,32 @@ pub async fn run(config: AgentConfig) -> Result<()> {
             state
         }
     };
+    let configured_publisher_key = config.publisher_public_key.clone();
+    if let Some(configured) = configured_publisher_key {
+        if let Some(persisted) = enrollment.publisher_public_key.as_deref() {
+            if persisted != configured {
+                return Err(anyhow!(
+                    "release publisher key changed after agent enrollment"
+                ));
+            }
+        } else {
+            enrollment.publisher_public_key = Some(configured);
+            save_enrollment(&state_path, &enrollment).context("save release publisher key")?;
+        }
+    }
 
     let mut collector = SysinfoHostCollector::new();
     let telemetry_buffer = TelemetryBuffer::new(config.data_dir.join("telemetry.queue"));
     let mut dropped_samples = 0;
-    let response = match send_heartbeat(&client, &identity, &enrollment, 0, 0).await {
+    let response = match send_heartbeat(
+        &client,
+        &identity,
+        &enrollment,
+        0,
+        enrollment.release_sequence,
+    )
+    .await
+    {
         Ok(response) => {
             apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
             Some(response)
@@ -121,6 +151,25 @@ pub async fn run(config: AgentConfig) -> Result<()> {
             eprintln!("scout-agent heartbeat failed: {error:#}");
             None
         }
+    };
+    let update_applied = if response.is_some() {
+        match check_for_update(
+            &client,
+            &identity,
+            &mut enrollment,
+            &state_path,
+            &config.data_dir,
+        )
+        .await
+        {
+            Ok(applied) => applied,
+            Err(error) => {
+                eprintln!("scout-agent release check failed: {error:#}");
+                false
+            }
+        }
+    } else {
+        false
     };
     if let Err(error) = send_telemetry(
         &client,
@@ -140,7 +189,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
             eprintln!("scout-agent task failed: {error:#}");
         }
     }
-    if config.once {
+    if config.once || update_applied {
         return Ok(());
     }
 
@@ -152,7 +201,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => return Ok(()),
             _ = heartbeat.tick() => {
-                match send_heartbeat(&client, &identity, &enrollment, 0, 0).await {
+                match send_heartbeat(&client, &identity, &enrollment, 0, enrollment.release_sequence).await {
                     Ok(response) => {
                         if let Err(error) = apply_heartbeat_response(&state_path, &mut enrollment, &response) {
                             eprintln!("scout-agent state save failed: {error:#}");
@@ -161,6 +210,11 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                             if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
                                 eprintln!("scout-agent task failed: {error:#}");
                             }
+                        }
+                        match check_for_update(&client, &identity, &mut enrollment, &state_path, &config.data_dir).await {
+                            Ok(true) => return Ok(()),
+                            Ok(false) => {}
+                            Err(error) => eprintln!("scout-agent release check failed: {error:#}"),
                         }
                     }
                     Err(error) => eprintln!("scout-agent heartbeat failed: {error:#}"),
@@ -219,7 +273,67 @@ async fn enroll(
         agent_id: response.agent_id,
         system_id: response.system_id,
         control_public_key: Some(response.control_public_key),
+        publisher_public_key: config.publisher_public_key.clone(),
+        release_sequence: 0,
     })
+}
+
+async fn check_for_update(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &mut EnrollmentState,
+    state_path: &std::path::Path,
+    data_dir: &std::path::Path,
+) -> Result<bool> {
+    let Some(publisher_public_key) = enrollment.publisher_public_key.as_deref() else {
+        return Ok(false);
+    };
+    let manifest_path = "/api/agent/v1/releases/manifest";
+    let manifest = send_signed_get(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        manifest_path,
+    )
+    .await?
+    .bytes()
+    .await
+    .context("read signed release manifest")?;
+    let artifact_path = format!(
+        "/api/agent/v1/releases/artifact?platform={}&architecture={}",
+        platform_name(),
+        architecture_name()
+    );
+    let artifact = send_signed_get(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        &artifact_path,
+    )
+    .await?
+    .bytes()
+    .await
+    .context("read signed agent artifact")?;
+    let verified = verify_release_manifest(
+        &manifest,
+        publisher_public_key,
+        platform_name(),
+        architecture_name(),
+        enrollment.release_sequence,
+        &artifact,
+    )?;
+    let updater = FilesystemUpdatePlatform::new(data_dir);
+    updater
+        .stage(&verified.version, &artifact)
+        .map_err(|error| anyhow!("stage verified agent release: {error}"))?;
+    updater
+        .activate(&verified.version)
+        .map_err(|error| anyhow!("activate verified agent release: {error}"))?;
+    enrollment.release_sequence = verified.sequence;
+    save_enrollment(state_path, enrollment).context("save verified release watermark")?;
+    Ok(true)
 }
 
 fn apply_heartbeat_response(
@@ -378,11 +492,42 @@ async fn send_signed(
     path: &str,
     body: String,
 ) -> Result<reqwest::Response> {
+    send_signed_method(client, identity, server_url, agent_id, "POST", path, body).await
+}
+
+async fn send_signed_get(
+    client: &Client,
+    identity: &Identity,
+    server_url: &str,
+    agent_id: &str,
+    path: &str,
+) -> Result<reqwest::Response> {
+    send_signed_method(
+        client,
+        identity,
+        server_url,
+        agent_id,
+        "GET",
+        path,
+        String::new(),
+    )
+    .await
+}
+
+async fn send_signed_method(
+    client: &Client,
+    identity: &Identity,
+    server_url: &str,
+    agent_id: &str,
+    method: &str,
+    path: &str,
+    body: String,
+) -> Result<reqwest::Response> {
     let timestamp = Utc::now().timestamp().to_string();
     let request_id = Uuid::new_v4().to_string();
     let signature = sign_request(
         identity.signing_key(),
-        "POST",
+        method,
         path,
         &timestamp,
         &request_id,
@@ -393,17 +538,29 @@ async fn send_signed(
     headers.insert("x-scout-timestamp", HeaderValue::from_str(&timestamp)?);
     headers.insert("x-scout-request-id", HeaderValue::from_str(&request_id)?);
     headers.insert("x-scout-signature", HeaderValue::from_str(&signature)?);
-    let response = client
-        .post(format!("{server_url}{path}"))
+    let request = client
+        .request(
+            Method::from_bytes(method.as_bytes())?,
+            format!("{server_url}{path}"),
+        )
         .headers(headers)
-        .header("content-type", "application/json")
-        .body(body)
-        .send()
-        .await
-        .context("send signed agent request")?
-        .error_for_status()
-        .context("signed agent request was rejected")?;
+        .header("content-type", "application/json");
+    let response = if method == "GET" {
+        request.send().await
+    } else {
+        request.body(body).send().await
+    }
+    .context("send signed agent request")?
+    .error_for_status()
+    .context("signed agent request was rejected")?;
     Ok(response)
+}
+
+fn configured_publisher_public_key() -> Option<String> {
+    std::env::var("SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn load_enrollment(path: &std::path::Path) -> Option<EnrollmentState> {

@@ -133,13 +133,7 @@ export async function authenticateAgentRequest(
     const valid = verify(
       null,
       Buffer.from(
-        signedRequestMessage(
-          request.method,
-          new URL(request.url).pathname,
-          timestamp,
-          requestId,
-          body,
-        ),
+        signedRequestMessage(request.method, requestPath(request), timestamp, requestId, body),
         "utf8",
       ),
       publicKeyFromRaw(Buffer.from(agent.publicKey, "base64url")),
@@ -160,4 +154,9 @@ export async function authenticateAgentRequest(
     return jsonError("Agent request was already received.", 409);
   }
   return { agentId };
+}
+
+function requestPath(request: Request): string {
+  const url = new URL(request.url);
+  return `${url.pathname}${url.search}`;
 }

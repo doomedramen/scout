@@ -5,6 +5,7 @@ import { decryptCredential } from "@/lib/server/credentials";
 import { inferDefaultRoute } from "@/lib/discovery/network";
 import { authorizeAgentInvitation, createAgentInvitation } from "@/lib/server/invitations";
 import { renderInstallerScript } from "@/lib/server/installer";
+import { readPublisherPublicKey } from "@/lib/server/releases";
 import { getDatabase } from "@/lib/server/db";
 import {
   connectSsh,
@@ -40,6 +41,7 @@ export type EnrollmentContext = {
   serverUrl: string;
   callbackUrl: string;
   invitation: string;
+  publisherPublicKey: string | null;
 };
 
 export type EnrollmentExecutor = (
@@ -214,6 +216,14 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
   };
   const callbackUrl = callbackOrigin(row.address);
   const invitation = createAgentInvitation(row.systemId, now);
+  let publisherPublicKey: string | null = null;
+  try {
+    publisherPublicKey = readPublisherPublicKey();
+  } catch {
+    // The artifact endpoint remains the final verification boundary. A
+    // missing local release key makes installation fail closed there, while
+    // keeping unit tests and development installs able to render a script.
+  }
   return {
     jobId: row.id,
     systemId: row.systemId,
@@ -223,6 +233,7 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
     serverUrl: callbackUrl,
     callbackUrl,
     invitation: invitation.token,
+    publisherPublicKey,
   };
 }
 
@@ -249,6 +260,7 @@ async function runSshInstallation(
       serverUrl: context.serverUrl,
       callbackUrl: context.callbackUrl,
       invitation: context.invitation,
+      publisherPublicKey: context.publisherPublicKey ?? undefined,
     });
     await execOrThrow(
       connection,

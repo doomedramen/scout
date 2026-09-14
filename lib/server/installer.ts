@@ -48,12 +48,14 @@ export function renderInstallerScript(input: {
   callbackUrl: string;
   invitation: string;
   agentVersion?: string;
+  publisherPublicKey?: string;
   requireHttpTrustPin?: boolean;
 }): string {
   const serverUrl = shellQuote(input.serverUrl);
   const callbackUrl = shellQuote(input.callbackUrl);
   const invitation = shellQuote(input.invitation);
   const agentVersion = shellQuote(input.agentVersion ?? "0.1.0");
+  const publisherPublicKey = shellQuote(input.publisherPublicKey ?? "");
   const requireHttpTrustPin = input.requireHttpTrustPin === true ? "1" : "0";
   const lines = [
     "#!/bin/sh",
@@ -63,6 +65,10 @@ export function renderInstallerScript(input: {
     "SCOUT_CALLBACK_URL=${SCOUT_CALLBACK_URL:-" + callbackUrl + "}",
     "SCOUT_OTI=${SCOUT_OTI:-" + invitation + "}",
     "SCOUT_AGENT_VERSION=${SCOUT_AGENT_VERSION:-" + agentVersion + "}",
+    "SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY=${SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY:-" +
+      publisherPublicKey +
+      "}",
+    "SCOUT_AGENT_ROOT=${SCOUT_AGENT_ROOT:-/var/lib/scout-agent}",
     "SCOUT_PRIVILEGE_FILE=${SCOUT_PRIVILEGE_FILE:-}",
     `SCOUT_REQUIRE_TRUST_PIN=${requireHttpTrustPin}`,
     "SCOUT_TRUST_PIN=${SCOUT_TRUST_PIN:-}",
@@ -166,7 +172,7 @@ export function renderInstallerScript(input: {
     "}",
     "",
     "activate_current() {",
-    "  current_link=/usr/local/lib/scout-agent/current",
+    '  current_link="$SCOUT_AGENT_ROOT/current"',
     '  temporary_link="$current_link.tmp.$$"',
     '  run_privileged rm -f "$temporary_link"',
     '  run_privileged ln -s "$release_dir" "$temporary_link"',
@@ -177,7 +183,7 @@ export function renderInstallerScript(input: {
     "cat > \"$launcher\" <<'EOF'",
     "#!/bin/sh",
     "set -eu",
-    'exec /usr/local/lib/scout-agent/current/scout-agent "$@"',
+    'exec "${SCOUT_AGENT_ROOT:-/var/lib/scout-agent}/current/scout-agent" "$@"',
     "EOF",
     "",
     "acquire_install_lock",
@@ -185,9 +191,11 @@ export function renderInstallerScript(input: {
     "run_agent_once() {",
     '  if [ "$(id -u)" -eq 0 ]; then',
     '    SCOUT_SERVER_URL="$SCOUT_SERVER_URL" SCOUT_INVITATION="$SCOUT_OTI" \\',
+    '      SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY="$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY" SCOUT_AGENT_ROOT="$SCOUT_AGENT_ROOT" \\',
     '      SCOUT_DATA_DIR="$1" "$2" --once',
     "  else",
     '    run_privileged env SCOUT_SERVER_URL="$SCOUT_SERVER_URL" SCOUT_INVITATION="$SCOUT_OTI" \\',
+    '      SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY="$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY" SCOUT_AGENT_ROOT="$SCOUT_AGENT_ROOT" \\',
     '      SCOUT_DATA_DIR="$1" "$2" --once',
     "  fi",
     "}",
@@ -202,14 +210,17 @@ export function renderInstallerScript(input: {
     "run_linux_agent_once() {",
     '  if [ "$(id -u)" -eq 0 ]; then',
     '    "$runuser_binary" -u scout-agent -- env SCOUT_SERVER_URL="$SCOUT_SERVER_URL" \\',
-    '      SCOUT_INVITATION="$SCOUT_OTI" SCOUT_DATA_DIR="$1" "$2" --once',
+    '      SCOUT_INVITATION="$SCOUT_OTI" SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY="$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY" \\',
+    '      SCOUT_AGENT_ROOT="$SCOUT_AGENT_ROOT" SCOUT_DATA_DIR="$1" "$2" --once',
     "  elif command -v sudo >/dev/null 2>&1; then",
     '    if [ -n "$SCOUT_PRIVILEGE_FILE" ] && [ -s "$SCOUT_PRIVILEGE_FILE" ]; then',
     "      sudo -S -p '' -u scout-agent env SCOUT_SERVER_URL=\"$SCOUT_SERVER_URL\" \\",
-    '        SCOUT_INVITATION="$SCOUT_OTI" SCOUT_DATA_DIR="$1" "$2" --once < "$SCOUT_PRIVILEGE_FILE"',
+    '        SCOUT_INVITATION="$SCOUT_OTI" SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY="$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY" \\',
+    '        SCOUT_AGENT_ROOT="$SCOUT_AGENT_ROOT" SCOUT_DATA_DIR="$1" "$2" --once < "$SCOUT_PRIVILEGE_FILE"',
     "    else",
     '      sudo -u scout-agent env SCOUT_SERVER_URL="$SCOUT_SERVER_URL" \\',
-    '        SCOUT_INVITATION="$SCOUT_OTI" SCOUT_DATA_DIR="$1" "$2" --once',
+    '        SCOUT_INVITATION="$SCOUT_OTI" SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY="$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY" \\',
+    '        SCOUT_AGENT_ROOT="$SCOUT_AGENT_ROOT" SCOUT_DATA_DIR="$1" "$2" --once',
     "    fi",
     "  else",
     '    fail "root or sudo access is required to initialize the Scout agent"',
@@ -219,8 +230,9 @@ export function renderInstallerScript(input: {
     'case "$platform" in',
     "  linux)",
     '    [ -n "$runuser_binary" ] || fail "runuser is required for the Linux service account"',
-    '    release_dir="/usr/local/lib/scout-agent/releases/$SCOUT_AGENT_VERSION"',
-    '    run_privileged install -d -m 0755 "$release_dir" /var/lib/scout-agent',
+    "    SCOUT_AGENT_ROOT=/var/lib/scout-agent",
+    '    release_dir="$SCOUT_AGENT_ROOT/releases/$SCOUT_AGENT_VERSION"',
+    '    run_privileged install -d -m 0755 "$release_dir" "$SCOUT_AGENT_ROOT" /usr/local/lib/scout-agent',
     '    run_privileged install -m 0755 "$artifact" "$release_dir/scout-agent"',
     '    run_privileged install -m 0755 "$launcher" /usr/local/lib/scout-agent/scout-agent-launcher',
     "    activate_current",
@@ -239,6 +251,8 @@ export function renderInstallerScript(input: {
     "[Service]",
     "Type=simple",
     "User=scout-agent",
+    "Environment=SCOUT_AGENT_ROOT=/var/lib/scout-agent",
+    "Environment=SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY=$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY",
     "ExecStart=/usr/local/lib/scout-agent/scout-agent-launcher --server $SCOUT_SERVER_URL --data-dir /var/lib/scout-agent",
     "Restart=always",
     "RestartSec=5",
@@ -256,9 +270,10 @@ export function renderInstallerScript(input: {
     "    run_privileged systemctl enable --now scout-agent.service",
     "    ;;",
     "  macos)",
-    '    release_dir="/usr/local/lib/scout-agent/releases/$SCOUT_AGENT_VERSION"',
+    '    SCOUT_AGENT_ROOT="/Library/Application Support/ScoutAgent"',
+    '    release_dir="$SCOUT_AGENT_ROOT/releases/$SCOUT_AGENT_VERSION"',
     '    run_privileged install -d -m 0755 "$release_dir" \\',
-    '      "/Library/Application Support/ScoutAgent"',
+    '      "$SCOUT_AGENT_ROOT" /usr/local/lib/scout-agent',
     '    run_privileged install -m 0755 "$artifact" "$release_dir/scout-agent"',
     '    run_privileged install -m 0755 "$launcher" /usr/local/lib/scout-agent/scout-agent-launcher',
     "    activate_current",
@@ -272,6 +287,10 @@ export function renderInstallerScript(input: {
     "  <key>ProgramArguments</key><array>",
     "    <string>/usr/local/lib/scout-agent/scout-agent-launcher</string><string>--server</string><string>$SCOUT_SERVER_URL</string><string>--data-dir</string><string>/Library/Application Support/ScoutAgent</string>",
     "  </array>",
+    "  <key>EnvironmentVariables</key><dict>",
+    "    <key>SCOUT_AGENT_ROOT</key><string>/Library/Application Support/ScoutAgent</string>",
+    "    <key>SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY</key><string>$SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY</string>",
+    "  </dict>",
     "  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>",
     "</dict></plist>",
     "EOF",

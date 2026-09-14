@@ -122,6 +122,13 @@ export function readReleaseManifest(): SignedReleaseManifest {
   return readManifest(artifactDirectory());
 }
 
+export function readVerifiedReleaseManifest(): SignedReleaseManifest {
+  const directory = artifactDirectory();
+  const manifest = readManifest(directory);
+  verifyReleaseManifest(manifest, readPublisherPublicKey(directory));
+  return manifest;
+}
+
 export function artifactDirectory(): string {
   return process.env.SCOUT_AGENT_ARTIFACT_DIR ?? path.join(process.cwd(), ARTIFACT_DIRECTORY);
 }
@@ -139,7 +146,7 @@ function readManifest(directory: string): SignedReleaseManifest {
   return releaseManifestInput.parse(JSON.parse(raw));
 }
 
-function readPublisherPublicKey(directory: string): string {
+export function readPublisherPublicKey(directory = artifactDirectory()): string {
   const configured = process.env.SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY?.trim();
   const encoded = configured || fs.readFileSync(publisherPublicKeyPath(directory), "utf8").trim();
   publicKeyFromRaw(encoded);

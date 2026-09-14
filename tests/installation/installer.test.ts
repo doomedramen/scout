@@ -15,6 +15,7 @@ describe("agent installer", () => {
       callbackUrl: "http://192.0.2.5:18443",
       invitation: "oti-with-'-quote",
       requireHttpTrustPin: true,
+      publisherPublicKey: "publisher-key",
     });
     const filename = path.join(tmpdir(), `scout-installer-${randomUUID()}.sh`);
     writeFileSync(filename, script, { mode: 0o700 });
@@ -29,8 +30,10 @@ describe("agent installer", () => {
     expect(script).toContain("SCOUT_OTI=${SCOUT_OTI:-'oti-with-'\\''-quote'}");
     expect(script).toContain("SCOUT_AGENT_VERSION=${SCOUT_AGENT_VERSION:-'0.1.0'}");
     expect(script).toContain("scout-agent-install.lock");
-    expect(script).toContain("/usr/local/lib/scout-agent/releases/$SCOUT_AGENT_VERSION");
-    expect(script).toContain("/usr/local/lib/scout-agent/current/scout-agent");
+    expect(script).toContain('release_dir="$SCOUT_AGENT_ROOT/releases/$SCOUT_AGENT_VERSION"');
+    expect(script).toContain(
+      'exec "${SCOUT_AGENT_ROOT:-/var/lib/scout-agent}/current/scout-agent" "$@"',
+    );
     expect(script).toContain("scout-agent-launcher");
     expect(script).toContain("systemctl enable --now scout-agent.service");
     expect(script).toContain("runuser_binary=$(command -v runuser");
@@ -40,6 +43,7 @@ describe("agent installer", () => {
     );
     expect(script).toContain("launchctl bootstrap system");
     expect(script).toContain("SCOUT_TRUST_PIN");
+    expect(script).toContain("SCOUT_RELEASE_PUBLISHER_PUBLIC_KEY");
     expect(script).toContain("SCOUT_REQUIRE_TRUST_PIN=1");
     expect(script).toContain("Scout callback is unreachable at $SCOUT_CALLBACK_URL");
     expect(script).toContain("run_linux_agent_once()");

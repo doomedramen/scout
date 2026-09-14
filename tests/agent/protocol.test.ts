@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { generateKeyPairSync, sign as signMessage } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
 import { heartbeatInput, signedRequestMessage, telemetryInput } from "@/lib/server/agent-protocol";
 import { POST as heartbeat } from "@/app/api/agent/v1/heartbeat/route";
 import { POST as telemetry } from "@/app/api/agent/v1/telemetry/route";
+import { GET as releaseArtifact } from "@/app/api/agent/v1/releases/artifact/route";
+import { GET as releaseManifest } from "@/app/api/agent/v1/releases/manifest/route";
+import { releaseManifestMessage, sha256Hex } from "@/lib/server/releases";
 
 const AGENT_ID = "agent-1";
 const SYSTEM_ID = "system-1";
@@ -13,6 +19,7 @@ describe("signed agent protocol", () => {
   afterEach(() => {
     delete process.env.SCOUT_DATABASE_URL;
     delete process.env.SCOUT_DATA_DIR;
+    delete process.env.SCOUT_AGENT_ARTIFACT_DIR;
     closeDatabase();
   });
 
@@ -133,6 +140,60 @@ describe("signed agent protocol", () => {
       status: "online",
     });
   });
+
+  it("authenticates signed release reads including their query string", async () => {
+    const fixture = createAgent();
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-release-route-"));
+    const signingKeys = generateKeyPairSync("ed25519");
+    const publisherPublicKey = signingKeys.publicKey
+      .export({ format: "der", type: "spki" })
+      .subarray(-32)
+      .toString("base64url");
+    const artifact = Buffer.from("signed-agent-artifact");
+    const payload = {
+      schemaVersion: 1 as const,
+      releaseSequence: 2,
+      artifacts: [
+        {
+          platform: "linux" as const,
+          architecture: "x86_64" as const,
+          version: "0.2.0",
+          sequence: 2,
+          sha256: sha256Hex(artifact),
+          size: artifact.byteLength,
+          minimumProtocol: 1,
+        },
+      ],
+    };
+    const manifest = {
+      ...payload,
+      signature: signMessage(
+        null,
+        Buffer.from(releaseManifestMessage(payload)),
+        signingKeys.privateKey,
+      ).toString("base64url"),
+    };
+    fs.writeFileSync(path.join(directory, "release-manifest.json"), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(directory, "publisher-public.key"), publisherPublicKey);
+    fs.writeFileSync(path.join(directory, "scout-agent-linux-x86_64"), artifact);
+    process.env.SCOUT_AGENT_ARTIFACT_DIR = directory;
+
+    const manifestResponse = await releaseManifest(
+      signedGetRequest(fixture, "/api/agent/v1/releases/manifest", "release-manifest"),
+    );
+    expect(manifestResponse.status).toBe(200);
+    expect(await manifestResponse.json()).toEqual(manifest);
+
+    const artifactResponse = await releaseArtifact(
+      signedGetRequest(
+        fixture,
+        "/api/agent/v1/releases/artifact?platform=linux&architecture=x86_64",
+        "release-artifact",
+      ),
+    );
+    expect(artifactResponse.status).toBe(200);
+    expect(Buffer.from(await artifactResponse.arrayBuffer())).toEqual(artifact);
+  });
 });
 
 function createAgent() {
@@ -181,5 +242,27 @@ function signedRequest(
       "x-scout-signature": signature,
     },
     body,
+  });
+}
+
+function signedGetRequest(
+  fixture: ReturnType<typeof createAgent>,
+  requestPath: string,
+  requestId: string,
+) {
+  const timestamp = String(Math.floor(Date.now() / 1_000));
+  const signature = signMessage(
+    null,
+    Buffer.from(signedRequestMessage("GET", requestPath, timestamp, requestId, "")),
+    fixture.privateKey,
+  ).toString("base64url");
+  return new Request(`http://localhost${requestPath}`, {
+    method: "GET",
+    headers: {
+      "x-scout-agent-id": AGENT_ID,
+      "x-scout-timestamp": timestamp,
+      "x-scout-request-id": requestId,
+      "x-scout-signature": signature,
+    },
   });
 }
