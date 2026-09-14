@@ -1,4 +1,5 @@
 import { Client } from "ssh2";
+import type { Readable } from "node:stream";
 
 export type SshEndpoint = { address: string; port: number };
 
@@ -23,6 +24,7 @@ export type SshConnection = {
 export async function readSshFingerprint(
   endpoint: SshEndpoint,
   timeoutMs = 5_000,
+  sock?: Readable,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const client = new Client();
@@ -46,6 +48,7 @@ export async function readSshFingerprint(
         finish(null, fingerprint);
         return false;
       },
+      ...(sock ? { sock } : {}),
       readyTimeout: timeoutMs,
       timeout: timeoutMs,
     });
@@ -57,6 +60,7 @@ export function connectSsh(
   credential: SshCredential & { username: string },
   expectedFingerprint: string,
   timeoutMs = 15_000,
+  sock?: Readable,
 ): Promise<SshConnection> {
   return new Promise((resolve, reject) => {
     const client = new Client();
@@ -102,6 +106,7 @@ export function connectSsh(
         }
         return true;
       },
+      ...(sock ? { sock } : {}),
       readyTimeout: timeoutMs,
       timeout: timeoutMs,
     });

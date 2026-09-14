@@ -299,7 +299,14 @@ export function getRelayServerChannel(
   now = Date.now(),
 ): RelayServerChannel | null {
   const record = relayRecord(relayId);
-  if (!record || record.expiresAt <= now) return null;
+  if (
+    !record ||
+    record.expiresAt <= now ||
+    !record.upstreamSignature ||
+    !record.downstreamSignature
+  ) {
+    return null;
+  }
   const live = liveRelays.get(relayId);
   if (!live) return null;
   return serverChannel(relayId, record, live);

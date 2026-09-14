@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getDatabase } from "@/lib/server/db";
 import { decryptCredential, encryptCredential } from "@/lib/server/credentials";
 import { readSshFingerprint, type SshEndpoint } from "@/lib/server/ssh";
+import { prepareRelaySocket } from "@/lib/server/relay-client";
 import { recordVerifiedSshIdentity, resolveSystemId } from "@/lib/server/system-identity";
 
 export type AccessGrantInput = {
@@ -145,7 +146,19 @@ export async function preflightSsh(systemId: string, now = Date.now()) {
   const { sqlite } = getDatabase();
   const requestedId = resolveSystemId(sqlite, systemId);
   const endpoint = sshEndpointForSystem(requestedId, now);
-  const fingerprint = await readSshFingerprint(endpoint);
+  let fingerprint: string;
+  try {
+    fingerprint = await readSshFingerprint(endpoint);
+  } catch (directError) {
+    const directMessage = directError instanceof Error ? directError.message : "direct SSH failed";
+    try {
+      const relaySocket = await prepareRelaySocket(requestedId, endpoint);
+      fingerprint = await readSshFingerprint(endpoint, 5_000, relaySocket);
+    } catch (relayError) {
+      const relayMessage = relayError instanceof Error ? relayError.message : "SSH relay failed";
+      throw new Error(`SSH host is unreachable directly (${directMessage}); ${relayMessage}`);
+    }
+  }
   const canonicalId = sqlite.transaction(() =>
     recordVerifiedSshIdentity(sqlite, requestedId, endpoint, fingerprint, now),
   )();

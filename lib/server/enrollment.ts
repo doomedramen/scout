@@ -7,6 +7,7 @@ import { authorizeAgentInvitation, createAgentInvitation } from "@/lib/server/in
 import { renderInstallerScript } from "@/lib/server/installer";
 import { readPublisherPublicKey } from "@/lib/server/releases";
 import { getDatabase } from "@/lib/server/db";
+import { prepareRelaySocket } from "@/lib/server/relay-client";
 import {
   connectSsh,
   type SshCommandResult,
@@ -261,7 +262,29 @@ async function runSshInstallation(
   const scriptPath = `${remoteDirectory}/install.sh`;
   const privilegePath = `${remoteDirectory}/privilege-password`;
   try {
-    connection = await connectSsh(context.endpoint, context.credential, context.fingerprint);
+    try {
+      connection = await connectSsh(context.endpoint, context.credential, context.fingerprint);
+    } catch (directError) {
+      if (!isLikelyUnreachableSsh(directError)) throw directError;
+      const directMessage =
+        directError instanceof Error ? directError.message : "direct SSH connection failed";
+      try {
+        const relaySocket = await prepareRelaySocket(context.systemId, context.endpoint);
+        connection = await connectSsh(
+          context.endpoint,
+          context.credential,
+          context.fingerprint,
+          15_000,
+          relaySocket,
+        );
+      } catch (relayError) {
+        const relayMessage = relayError instanceof Error ? relayError.message : "SSH relay failed";
+        throw new EnrollmentFailure(
+          `SSH connection failed directly (${directMessage}); ${relayMessage}`,
+          "authentication",
+        );
+      }
+    }
     setStage("authentication");
     const privilege = await connection.exec("id -u");
     ensureCommandSucceeded(privilege, "The SSH account could not run commands.", "privilege");
@@ -319,6 +342,13 @@ async function runSshInstallation(
       connection.close();
     }
   }
+}
+
+function isLikelyUnreachableSsh(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|timed out|no response/i.test(
+    message,
+  );
 }
 
 async function execOrThrow(
