@@ -2,7 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 
 import { renderInstallerScript } from "@/lib/server/installer";
 
@@ -53,6 +53,36 @@ function assertAbsent(target: string): void {
   if (fs.existsSync(target)) {
     throw new Error(`refusing to use a non-disposable existing path: ${target}`);
   }
+}
+
+function runInstaller(installerPath: string, environment: NodeJS.ProcessEnv): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeoutMs = Number(process.env.SCOUT_MACOS_INSTALL_TIMEOUT_MS ?? 120_000);
+    const child = spawn("sh", ["-x", installerPath], {
+      env: environment,
+      stdio: "inherit",
+    });
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5_000).unref();
+    }, timeoutMs);
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("close", (code, signal) => {
+      clearTimeout(timeout);
+      if (timedOut) {
+        reject(new Error(`installer exceeded the ${timeoutMs}ms timeout`));
+      } else if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`installer exited with ${code ?? `signal ${signal}`}`));
+      }
+    });
+  });
 }
 
 async function main(): Promise<void> {
@@ -145,17 +175,12 @@ async function main(): Promise<void> {
 
   let cleanupRequired = true;
   try {
-    execFileSync("sh", ["-x", installerPath], {
-      env: {
-        ...process.env,
-        SCOUT_SERVER_URL: serverUrl,
-        SCOUT_CALLBACK_URL: serverUrl,
-        SCOUT_OTI: "macos-acceptance-invitation",
-        SCOUT_AGENT_VERSION: `acceptance-${process.pid}`,
-      },
-      stdio: "inherit",
-      timeout: Number(process.env.SCOUT_MACOS_INSTALL_TIMEOUT_MS ?? 120_000),
-      killSignal: "SIGTERM",
+    await runInstaller(installerPath, {
+      ...process.env,
+      SCOUT_SERVER_URL: serverUrl,
+      SCOUT_CALLBACK_URL: serverUrl,
+      SCOUT_OTI: "macos-acceptance-invitation",
+      SCOUT_AGENT_VERSION: `acceptance-${process.pid}`,
     });
 
     if (counts.enrollments !== 1) {
