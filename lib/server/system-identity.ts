@@ -224,20 +224,32 @@ export function repairDuplicateSystems(sqlite: Sqlite, now = Date.now()): number
     .all() as Array<{ address: string; port: number }>;
   let merged = 0;
   for (const endpoint of endpoints) {
-    let candidates = verifiedEndpointCandidates(sqlite, endpoint);
-    for (const candidate of [...candidates].sort(compareIdentityCandidates)) {
-      const canonical = candidates.find((item) => item.id === candidate.id);
-      if (!canonical) continue;
-      const duplicate = candidates
-        .filter((item) => item.id !== canonical.id)
-        .find((item) => candidatesCanJoin(sqlite, canonical, item));
-      if (!duplicate) continue;
+    const attemptedPairs = new Set<string>();
+    while (true) {
+      const candidates = verifiedEndpointCandidates(sqlite, endpoint).sort(
+        compareIdentityCandidates,
+      );
+      let pair: [VerifiedEndpointCandidate, VerifiedEndpointCandidate] | undefined;
+      for (let leftIndex = 0; leftIndex < candidates.length && !pair; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < candidates.length; rightIndex += 1) {
+          const left = candidates[leftIndex];
+          const right = candidates[rightIndex];
+          const pairKey = `${left.id}:${right.id}`;
+          if (!attemptedPairs.has(pairKey) && candidatesCanJoin(sqlite, left, right)) {
+            pair = [left, right];
+            break;
+          }
+        }
+      }
+      if (!pair) break;
+
+      const [canonical, duplicate] = pair;
+      attemptedPairs.add(`${canonical.id}:${duplicate.id}`);
       try {
         sqlite.transaction(() => {
           mergeSystems(sqlite, duplicate.id, canonical.id, "startup-duplicate-repair", now);
         })();
         merged += 1;
-        candidates = verifiedEndpointCandidates(sqlite, endpoint);
       } catch {
         // A conflicting agent or unavailable credential key is a data safety
         // blocker. Leave both records visible for explicit owner review.
