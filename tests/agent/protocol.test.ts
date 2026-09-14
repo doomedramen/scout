@@ -50,6 +50,32 @@ describe("signed agent protocol", () => {
     });
   });
 
+  it("marks a restored agent reconciled only after its authenticated heartbeat", async () => {
+    const fixture = createAgent();
+    fixture.sqlite
+      .prepare("UPDATE agent SET reconciliation_required = 1 WHERE id = ?")
+      .run(AGENT_ID);
+
+    const payload = {
+      agentId: AGENT_ID,
+      observedAt: new Date().toISOString(),
+      taskGeneration: 12,
+      releaseSequence: 7,
+    };
+    const response = await heartbeat(
+      signedRequest(fixture, "/api/agent/v1/heartbeat", payload, "restore-reconcile"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      fixture.sqlite
+        .prepare(
+          "SELECT reconciliation_required, task_generation, release_sequence FROM agent WHERE id = ?",
+        )
+        .get(AGENT_ID),
+    ).toEqual({ reconciliation_required: 0, task_generation: 12, release_sequence: 7 });
+  });
+
   it("rejects a replayed request id", async () => {
     const fixture = createAgent();
     const payload = {

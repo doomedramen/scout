@@ -24,6 +24,7 @@ export function electScannerAgent(segmentId: string, now = Date.now()): ScannerS
         INNER JOIN system s ON s.id = a.system_id
         WHERE s.segment_id = ?
           AND a.revoked_at IS NULL
+          AND a.reconciliation_required = 0
           AND a.last_heartbeat_at IS NOT NULL
           AND a.last_heartbeat_at > ?
         ORDER BY a.last_heartbeat_at DESC, a.id ASC

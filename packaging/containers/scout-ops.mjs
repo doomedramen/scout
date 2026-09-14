@@ -187,13 +187,36 @@ async function restore(input, secret) {
   for (const [name, value] of Object.entries(keys))
     writeAtomically(path.join(dataDirectory, name), value);
   const restored = new Database(path.join(dataDirectory, "scout.sqlite"));
-  restored
+  try {
+    markRestoredAuthorityForReview(restored);
+  } finally {
+    restored.close();
+  }
+  process.stdout.write(`Scout backup restored. Previous files are retained in ${previous}\n`);
+}
+
+function markRestoredAuthorityForReview(database) {
+  const now = Date.now();
+  database
+    .prepare(
+      "UPDATE scan_task SET status = 'superseded', lease_expires_at = NULL, completed_at = NULL WHERE status IN ('queued', 'leased')",
+    )
+    .run();
+  database
+    .prepare(
+      "UPDATE agent SET reconciliation_required = 1, reconciled_at = NULL, updated_at = ? WHERE revoked_at IS NULL",
+    )
+    .run(now);
+  database
+    .prepare(
+      "UPDATE enrollment_job SET status = 'blocked', stage = 'queued', error_code = 'restore-review', error_message = 'Restore requires owner review before installation resumes.', lease_owner = NULL, lease_expires_at = NULL, updated_at = ?",
+    )
+    .run(now);
+  database
     .prepare(
       "INSERT INTO app_setting (key, value, updated_at) VALUES ('authority_paused', 'true', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     )
-    .run(Date.now());
-  restored.close();
-  process.stdout.write(`Scout backup restored. Previous files are retained in ${previous}\n`);
+    .run(now);
 }
 
 function validateSQLite(filename) {

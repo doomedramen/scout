@@ -17,6 +17,7 @@ describe("SQLite foundation", () => {
       { version: 7 },
       { version: 8 },
       { version: 9 },
+      { version: 10 },
     ]);
     first.sqlite.close();
 

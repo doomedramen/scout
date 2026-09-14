@@ -39,6 +39,26 @@ describe("segment scanner election", () => {
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM scan_task").get()).toEqual({ count: 1 });
   });
 
+  it("does not elect an agent until it reconciles after restore", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const segment = ensureNetworkSegment(
+      {
+        cidr: "192.0.2.0/30",
+        interfaceName: "eth0",
+        gateway: "192.0.2.1",
+        sourceAddress: "192.0.2.2",
+        provenanceKey: "restore-election-segment",
+      },
+      1_000,
+    );
+    insertAgent(sqlite, "agent-a", "system-a", segment.id, 2_000);
+    sqlite.prepare("UPDATE agent SET reconciliation_required = 1 WHERE id = 'agent-a'").run();
+
+    expect(electScannerAgent(segment.id, 2_001)).toBeNull();
+    expect(ensureSegmentScanTask(segment.id, 2_001)).toBeNull();
+  });
+
   it("fails over after the selected heartbeat becomes unavailable", () => {
     process.env.SCOUT_DATABASE_URL = "file::memory:";
     const { sqlite } = getDatabase();

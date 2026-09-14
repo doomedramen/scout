@@ -25,9 +25,9 @@ export async function POST(request: Request) {
   const { sqlite } = getDatabase();
   const changed = sqlite
     .prepare(
-      "UPDATE agent SET last_heartbeat_at = ?, task_generation = MAX(task_generation, ?), release_sequence = MAX(release_sequence, ?), updated_at = ? WHERE id = ? AND revoked_at IS NULL",
+      "UPDATE agent SET last_heartbeat_at = ?, task_generation = MAX(task_generation, ?), release_sequence = MAX(release_sequence, ?), reconciliation_required = 0, reconciled_at = CASE WHEN reconciliation_required = 1 THEN ? ELSE reconciled_at END, updated_at = ? WHERE id = ? AND revoked_at IS NULL",
     )
-    .run(now, input.taskGeneration, input.releaseSequence, now, identity.agentId);
+    .run(now, input.taskGeneration, input.releaseSequence, now, now, identity.agentId);
   if (changed.changes !== 1) return jsonError("Agent identity is not authorized.", 401);
   return Response.json(
     {

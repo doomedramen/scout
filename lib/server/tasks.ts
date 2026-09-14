@@ -158,7 +158,7 @@ export function createSignedScanTask(
   if (segment.paused === 1) throw new Error("Network segment discovery is paused.");
   const agent = sqlite
     .prepare(
-      "SELECT 1 FROM agent a INNER JOIN system s ON s.id = a.system_id WHERE a.id = ? AND s.segment_id = ? AND a.revoked_at IS NULL AND a.last_heartbeat_at IS NOT NULL AND a.last_heartbeat_at > ?",
+      "SELECT 1 FROM agent a INNER JOIN system s ON s.id = a.system_id WHERE a.id = ? AND s.segment_id = ? AND a.revoked_at IS NULL AND a.reconciliation_required = 0 AND a.last_heartbeat_at IS NOT NULL AND a.last_heartbeat_at > ?",
     )
     .get(agentId, segmentId, now - 45_000);
   if (!agent) throw new Error("Scanner agent is not healthy.");
@@ -244,7 +244,7 @@ export function createSignedRelayTask(
   if (segment.paused === 1) throw new Error("Network segment discovery is paused.");
   const agent = sqlite
     .prepare(
-      "SELECT system_id AS systemId FROM agent a INNER JOIN system s ON s.id = a.system_id WHERE a.id = ? AND s.segment_id = ? AND a.revoked_at IS NULL AND a.last_heartbeat_at IS NOT NULL AND a.last_heartbeat_at > ?",
+      "SELECT system_id AS systemId FROM agent a INNER JOIN system s ON s.id = a.system_id WHERE a.id = ? AND s.segment_id = ? AND a.revoked_at IS NULL AND a.reconciliation_required = 0 AND a.last_heartbeat_at IS NOT NULL AND a.last_heartbeat_at > ?",
     )
     .get(agentId, segmentId, now - 45_000) as { systemId: string } | undefined;
   if (!agent) throw new Error("Scanner agent is not healthy.");
@@ -350,7 +350,7 @@ export function getPendingTaskEnvelope(agentId: string, now = Date.now()): TaskE
   const { sqlite } = getDatabase();
   const row = sqlite
     .prepare(
-      "SELECT st.id AS taskId, st.scanner_agent_id AS agentId, st.kind, st.generation, st.policy_version AS policyVersion, st.payload, st.signature, st.issued_at AS issuedAt, st.deadline_at AS deadlineAt, st.lease_expires_at AS expiresAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id INNER JOIN agent a ON a.id = st.scanner_agent_id WHERE st.scanner_agent_id = ? AND st.status = 'leased' AND st.lease_expires_at > ? AND ns.paused = 0 AND a.revoked_at IS NULL ORDER BY st.created_at LIMIT 1",
+      "SELECT st.id AS taskId, st.scanner_agent_id AS agentId, st.kind, st.generation, st.policy_version AS policyVersion, st.payload, st.signature, st.issued_at AS issuedAt, st.deadline_at AS deadlineAt, st.lease_expires_at AS expiresAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id INNER JOIN agent a ON a.id = st.scanner_agent_id WHERE st.scanner_agent_id = ? AND st.status = 'leased' AND st.lease_expires_at > ? AND ns.paused = 0 AND a.revoked_at IS NULL AND a.reconciliation_required = 0 ORDER BY st.created_at LIMIT 1",
     )
     .get(agentId, now) as
     | {
@@ -395,7 +395,7 @@ export function completeScanTask(
   const { sqlite } = getDatabase();
   const row = sqlite
     .prepare(
-      "SELECT st.segment_id AS segmentId, st.scanner_agent_id AS scannerAgentId, st.kind, st.generation, st.payload, st.status, st.deadline_at AS deadlineAt, st.lease_expires_at AS leaseExpiresAt, st.policy_version AS policyVersion, ns.policy_version AS currentPolicyVersion, ns.paused, a.revoked_at AS revokedAt, a.last_heartbeat_at AS lastHeartbeatAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id LEFT JOIN agent a ON a.id = st.scanner_agent_id WHERE st.id = ?",
+      "SELECT st.segment_id AS segmentId, st.scanner_agent_id AS scannerAgentId, st.kind, st.generation, st.payload, st.status, st.deadline_at AS deadlineAt, st.lease_expires_at AS leaseExpiresAt, st.policy_version AS policyVersion, ns.policy_version AS currentPolicyVersion, ns.paused, a.revoked_at AS revokedAt, a.last_heartbeat_at AS lastHeartbeatAt, a.reconciliation_required AS reconciliationRequired FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id LEFT JOIN agent a ON a.id = st.scanner_agent_id WHERE st.id = ?",
     )
     .get(input.taskId) as
     | {
@@ -412,6 +412,7 @@ export function completeScanTask(
         paused: number;
         revokedAt: number | null;
         lastHeartbeatAt: number | null;
+        reconciliationRequired: number | null;
       }
     | undefined;
   if (!row) return { accepted: false, reason: "unknown" };
@@ -423,6 +424,7 @@ export function completeScanTask(
     row.paused === 1 ||
     row.policyVersion !== row.currentPolicyVersion ||
     row.revokedAt !== null ||
+    row.reconciliationRequired !== 0 ||
     row.lastHeartbeatAt === null ||
     row.lastHeartbeatAt <= now - 45_000
   )
@@ -454,7 +456,7 @@ export function completeRelayTask(
   const { sqlite } = getDatabase();
   const row = sqlite
     .prepare(
-      "SELECT st.scanner_agent_id AS scannerAgentId, st.kind, st.generation, st.payload, st.status, st.deadline_at AS deadlineAt, st.lease_expires_at AS leaseExpiresAt, st.policy_version AS policyVersion, ns.policy_version AS currentPolicyVersion, ns.paused, a.revoked_at AS revokedAt, a.last_heartbeat_at AS lastHeartbeatAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id LEFT JOIN agent a ON a.id = st.scanner_agent_id WHERE st.id = ?",
+      "SELECT st.scanner_agent_id AS scannerAgentId, st.kind, st.generation, st.payload, st.status, st.deadline_at AS deadlineAt, st.lease_expires_at AS leaseExpiresAt, st.policy_version AS policyVersion, ns.policy_version AS currentPolicyVersion, ns.paused, a.revoked_at AS revokedAt, a.last_heartbeat_at AS lastHeartbeatAt, a.reconciliation_required AS reconciliationRequired FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id LEFT JOIN agent a ON a.id = st.scanner_agent_id WHERE st.id = ?",
     )
     .get(input.taskId) as
     | {
@@ -470,6 +472,7 @@ export function completeRelayTask(
         paused: number;
         revokedAt: number | null;
         lastHeartbeatAt: number | null;
+        reconciliationRequired: number | null;
       }
     | undefined;
   if (!row) return { accepted: false, reason: "unknown" };
@@ -481,6 +484,7 @@ export function completeRelayTask(
     row.paused === 1 ||
     row.policyVersion !== row.currentPolicyVersion ||
     row.revokedAt !== null ||
+    row.reconciliationRequired !== 0 ||
     row.lastHeartbeatAt === null ||
     row.lastHeartbeatAt <= now - 45_000
   )

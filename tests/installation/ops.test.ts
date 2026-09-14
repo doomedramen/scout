@@ -30,6 +30,7 @@ describe("packaged operational safeguards", () => {
     expect(ops).toContain('"set-authority"');
     expect(ops).toContain("database.backup");
     expect(ops).toContain("authority_paused");
+    expect(ops).toContain("reconciliation_required");
   });
 
   it("round-trips an update snapshot and preserves authority state", () => {

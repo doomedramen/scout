@@ -302,6 +302,15 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS scan_kind_idx ON scan_task(kind, status);
     `,
   },
+  {
+    version: 10,
+    sql: `
+      ALTER TABLE agent ADD COLUMN reconciliation_required INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE agent ADD COLUMN reconciled_at INTEGER;
+      CREATE INDEX IF NOT EXISTS agent_reconciliation_idx
+        ON agent(reconciliation_required, revoked_at);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

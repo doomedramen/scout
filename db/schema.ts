@@ -259,6 +259,10 @@ export const agents = sqliteTable(
     lastTelemetryAt: integer("last_telemetry_at", { mode: "timestamp_ms" }),
     taskGeneration: integer("task_generation").notNull().default(0),
     releaseSequence: integer("release_sequence").notNull().default(0),
+    reconciliationRequired: integer("reconciliation_required", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    reconciledAt: integer("reconciled_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
