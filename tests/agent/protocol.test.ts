@@ -182,6 +182,53 @@ describe("signed agent protocol", () => {
     ).toBeGreaterThanOrEqual(receivedBefore);
   });
 
+  it("rejects telemetry timestamps outside the buffered observation window", async () => {
+    const fixture = createAgent();
+    const base = {
+      agentId: AGENT_ID,
+      droppedSamples: 0,
+      host: {
+        hostname: "timestamp-host",
+        operatingSystem: "Linux",
+        kernelVersion: "6.1",
+        cpuUsagePercent: null,
+        memoryUsedBytes: null,
+        memoryTotalBytes: null,
+        uptimeSeconds: null,
+        filesystems: [],
+        interfaces: [],
+      },
+    };
+    const future = {
+      ...base,
+      batchId: "future-telemetry",
+      observedAt: new Date(Date.now() + 5 * 60 * 1_000).toISOString(),
+    };
+    expect(
+      (
+        await telemetry(
+          signedRequest(fixture, "/api/agent/v1/telemetry", future, "future-telemetry-request"),
+        )
+      ).status,
+    ).toBe(400);
+
+    const tooOld = {
+      ...base,
+      batchId: "too-old-telemetry",
+      observedAt: new Date(Date.now() - 24 * 60 * 60 * 1_000 - 1_000).toISOString(),
+    };
+    expect(
+      (
+        await telemetry(
+          signedRequest(fixture, "/api/agent/v1/telemetry", tooOld, "too-old-telemetry-request"),
+        )
+      ).status,
+    ).toBe(400);
+    expect(fixture.sqlite.prepare("SELECT COUNT(*) AS count FROM telemetry_sample").get()).toEqual({
+      count: 0,
+    });
+  });
+
   it("authenticates signed release reads including their query string", async () => {
     const fixture = createAgent();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-release-route-"));

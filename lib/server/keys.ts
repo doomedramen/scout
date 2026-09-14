@@ -12,20 +12,23 @@ function dataDirectory(): string {
 
 export function persistentKey(name: string, size = 32): Buffer {
   const directory = dataDirectory();
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const filename = path.join(directory, name);
+  fs.mkdirSync(/*turbopackIgnore: true*/ directory, { recursive: true, mode: 0o700 });
+  const filename = path.join(/*turbopackIgnore: true*/ directory, name);
 
-  if (!fs.existsSync(filename)) {
-    if (fs.existsSync(path.join(directory, INITIALIZED_MARKER)) || hasApplicationData(directory)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ filename)) {
+    if (
+      fs.existsSync(/*turbopackIgnore: true*/ path.join(directory, INITIALIZED_MARKER)) ||
+      hasApplicationData(directory)
+    ) {
       throw new Error(`Persistent key ${name} is missing; restore Scout data and keys together`);
     }
   }
 
   try {
     const key = randomBytes(size);
-    const descriptor = fs.openSync(filename, "wx", 0o600);
+    const descriptor = fs.openSync(/*turbopackIgnore: true*/ filename, "wx", 0o600);
     try {
-      fs.writeFileSync(descriptor, key);
+      fs.writeFileSync(/*turbopackIgnore: true*/ descriptor, key);
     } finally {
       fs.closeSync(descriptor);
     }
@@ -37,11 +40,11 @@ export function persistentKey(name: string, size = 32): Buffer {
     }
   }
 
-  const key = fs.readFileSync(filename);
+  const key = fs.readFileSync(/*turbopackIgnore: true*/ filename);
   if (key.length !== size) {
     throw new Error(`Persistent key ${name} has an invalid length`);
   }
-  const mode = fs.statSync(filename).mode & 0o777;
+  const mode = fs.statSync(/*turbopackIgnore: true*/ filename).mode & 0o777;
   if (mode & 0o077) {
     throw new Error(`Persistent key ${name} has unsafe permissions`);
   }
@@ -50,10 +53,13 @@ export function persistentKey(name: string, size = 32): Buffer {
 }
 
 function markInitialized(directory: string): void {
-  if (!KEY_FILES.every((name) => fs.existsSync(path.join(directory, name)))) return;
-  const marker = path.join(directory, INITIALIZED_MARKER);
+  if (
+    !KEY_FILES.every((name) => fs.existsSync(/*turbopackIgnore: true*/ path.join(directory, name)))
+  )
+    return;
+  const marker = path.join(/*turbopackIgnore: true*/ directory, INITIALIZED_MARKER);
   try {
-    const descriptor = fs.openSync(marker, "wx", 0o600);
+    const descriptor = fs.openSync(/*turbopackIgnore: true*/ marker, "wx", 0o600);
     fs.closeSync(descriptor);
   } catch (error) {
     if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== "EEXIST")
@@ -65,8 +71,8 @@ function hasApplicationData(directory: string): boolean {
   const configured = process.env.SCOUT_DATABASE_URL;
   const filename = configured?.startsWith("file:")
     ? configured.slice("file:".length) || ":memory:"
-    : path.join(directory, "scout.sqlite");
-  if (filename === ":memory:" || !fs.existsSync(filename)) return false;
+    : path.join(/*turbopackIgnore: true*/ directory, "scout.sqlite");
+  if (filename === ":memory:" || !fs.existsSync(/*turbopackIgnore: true*/ filename)) return false;
 
   let sqlite: Database.Database | undefined;
   try {

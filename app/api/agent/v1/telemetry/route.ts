@@ -24,6 +24,9 @@ export async function POST(request: Request) {
   const observedAt = Date.parse(input.observedAt);
   if (!Number.isFinite(observedAt)) return jsonError("Agent telemetry timestamp is invalid.", 400);
   const now = Date.now();
+  if (observedAt > now + 2 * 60 * 1_000 || observedAt < now - 24 * 60 * 60 * 1_000) {
+    return jsonError("Agent telemetry timestamp is outside the allowed observation window.", 400);
+  }
   const { sqlite } = getDatabase();
   const store = sqlite.transaction(() => {
     const inserted = sqlite

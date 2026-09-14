@@ -28,7 +28,10 @@ export function artifactPath(
 ): string {
   const artifactDirectory =
     process.env.SCOUT_AGENT_ARTIFACT_DIR ?? path.join(process.cwd(), "agent-artifacts");
-  return path.join(artifactDirectory, artifactName(platform, architecture));
+  return path.join(
+    /*turbopackIgnore: true*/ artifactDirectory,
+    artifactName(platform, architecture),
+  );
 }
 
 export function readAgentArtifact(
@@ -36,7 +39,7 @@ export function readAgentArtifact(
   architecture: InstallerArchitecture,
 ): Buffer | null {
   try {
-    return fs.readFileSync(artifactPath(platform, architecture));
+    return fs.readFileSync(/*turbopackIgnore: true*/ artifactPath(platform, architecture));
   } catch (error) {
     if (error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;

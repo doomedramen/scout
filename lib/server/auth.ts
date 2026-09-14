@@ -18,7 +18,10 @@ export const auth = betterAuth({
     transaction: false,
   }),
   secret: authSecret(),
-  baseURL: process.env.SCOUT_PUBLIC_URL || undefined,
+  baseURL:
+    process.env.BETTER_AUTH_URL ||
+    process.env.SCOUT_PUBLIC_URL ||
+    `http://127.0.0.1:${process.env.SCOUT_PORT ?? process.env.PORT ?? "8080"}`,
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
