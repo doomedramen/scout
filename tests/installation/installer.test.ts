@@ -62,4 +62,20 @@ describe("agent installer", () => {
     expect(script).toContain('fail "SCOUT_TRUST_PIN is required for HTTP bootstrap"');
     expect(script).toContain("/api/v1/bootstrap/fingerprint");
   });
+
+  it("keeps the service lock portable and protects macOS agent state", () => {
+    const script = renderInstallerScript({
+      serverUrl: "https://scout.example.test",
+      callbackUrl: "https://scout.example.test",
+      invitation: "oti",
+    });
+
+    expect(script).toContain("lock_dir=/var/run/scout-agent-install.lock");
+    expect(script).toContain("run_privileged install -d -m 0755 /var/run");
+    expect(script).toContain('run_privileged rm -rf "$lock_dir"');
+    expect(script).toContain('run_privileged install -d -m 0700 "$SCOUT_AGENT_ROOT"');
+    expect(script).toContain(
+      "run_privileged chown root:wheel /Library/LaunchDaemons/page.rtin.scout-agent.plist",
+    );
+  });
 });
