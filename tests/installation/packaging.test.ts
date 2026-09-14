@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -11,6 +11,7 @@ import { createAgentInvitation } from "@/lib/server/invitations";
 import { closeDatabase, getDatabase } from "@/lib/server/db";
 import packageJson from "../../package.json";
 import { readAgentArtifact } from "@/lib/server/installer";
+import { releaseManifestMessage, sha256Hex } from "@/lib/server/releases";
 
 const temporaryDirectories: string[] = [];
 
@@ -48,6 +49,10 @@ describe("agent packaging", () => {
     expect(fs.readFileSync(path.join(output, "scout-agent-linux-x86_64"), "utf8")).toBe(
       "verified-agent-binary",
     );
+    expect(fs.existsSync(path.join(output, "release-manifest.json"))).toBe(true);
+    expect(fs.readFileSync(path.join(output, "publisher-public.key"), "utf8")).toMatch(
+      /^[A-Za-z0-9_-]{43}\n?$/,
+    );
   });
 
   it("stages a prebuilt agent for the requested macOS architecture", () => {
@@ -70,6 +75,7 @@ describe("agent packaging", () => {
     expect(fs.readFileSync(path.join(output, "scout-agent-macos-aarch64"), "utf8")).toBe(
       "verified-macos-agent-binary",
     );
+    expect(fs.existsSync(path.join(output, "release-manifest.json"))).toBe(true);
   });
 
   it("reads the packaged artifact when the server runs outside the repository root", () => {
@@ -84,7 +90,7 @@ describe("agent packaging", () => {
   it("serves the staged artifact through the invitation-authorized bootstrap route", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-route-"));
     temporaryDirectories.push(directory);
-    fs.writeFileSync(path.join(directory, "scout-agent-linux-x86_64"), "verified-agent-binary");
+    writeSignedArtifact(directory, "linux", "x86_64", Buffer.from("verified-agent-binary"));
     process.env.SCOUT_AGENT_ARTIFACT_DIR = directory;
     process.env.SCOUT_DATABASE_URL = "file::memory:";
     const { sqlite } = getDatabase();
@@ -106,3 +112,42 @@ describe("agent packaging", () => {
     expect(Buffer.from(await response.arrayBuffer()).toString()).toBe("verified-agent-binary");
   });
 });
+
+function writeSignedArtifact(
+  directory: string,
+  platform: "linux" | "macos",
+  architecture: "x86_64" | "aarch64",
+  artifact: Buffer,
+) {
+  const keys = generateKeyPairSync("ed25519");
+  const publicKey = keys.publicKey
+    .export({ format: "der", type: "spki" })
+    .subarray(-32)
+    .toString("base64url");
+  const payload = {
+    schemaVersion: 1 as const,
+    releaseSequence: 1,
+    artifacts: [
+      {
+        platform,
+        architecture,
+        version: "0.1.0",
+        sequence: 1,
+        sha256: sha256Hex(artifact),
+        size: artifact.byteLength,
+        minimumProtocol: 1,
+      },
+    ],
+  };
+  const signature = sign(
+    null,
+    Buffer.from(releaseManifestMessage(payload)),
+    keys.privateKey,
+  ).toString("base64url");
+  fs.writeFileSync(path.join(directory, `scout-agent-${platform}-${architecture}`), artifact);
+  fs.writeFileSync(path.join(directory, "publisher-public.key"), `${publicKey}\n`);
+  fs.writeFileSync(
+    path.join(directory, "release-manifest.json"),
+    JSON.stringify({ ...payload, signature }),
+  );
+}

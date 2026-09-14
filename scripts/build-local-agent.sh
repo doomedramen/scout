@@ -56,4 +56,8 @@ mkdir -p "$artifact_directory"
 artifact_name="scout-agent-$agent_platform-$agent_architecture"
 cp "$artifact_binary" "$artifact_directory/$artifact_name"
 chmod 0755 "$artifact_directory/$artifact_name"
+SCOUT_AGENT_ARTIFACT_DIR="$artifact_directory" \
+SCOUT_AGENT_PLATFORM="$agent_platform" \
+SCOUT_AGENT_ARCHITECTURE="$agent_architecture" \
+  node "$repository_directory/scripts/create-release-manifest.mjs"
 printf '%s\n' "Prepared $artifact_directory/$artifact_name"
