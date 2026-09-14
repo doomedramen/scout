@@ -5,7 +5,7 @@ import path from "node:path";
 
 import Database from "better-sqlite3";
 
-import { migrateDatabase } from "@/db/migrations";
+import { LATEST_SCHEMA_VERSION, migrateDatabase } from "@/db/migrations";
 import { getDatabase } from "@/lib/server/db";
 
 const KEY_FILES = ["auth.secret", "credentials.key", "control-signing.key"] as const;
@@ -78,17 +78,44 @@ export function restoreEncryptedBackup(
       return [name, value];
     }),
   );
-  fs.mkdirSync(destinationDirectory, { recursive: true, mode: 0o700 });
-  writeAtomically(
-    path.join(destinationDirectory, "scout.sqlite"),
-    Buffer.from(payload.database, "base64"),
-  );
-  for (const [name, value] of Object.entries(keys))
-    writeAtomically(path.join(destinationDirectory, name), value);
+  const database = Buffer.from(payload.database, "base64");
+  if (database.length === 0) throw new Error("Backup database snapshot is empty.");
 
-  const sqlite = new Database(path.join(destinationDirectory, "scout.sqlite"));
+  const parent = path.dirname(destinationDirectory);
+  fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const stagingDirectory = fs.mkdtempSync(path.join(parent, ".scout-restore-"));
   try {
+    writeAtomically(path.join(stagingDirectory, "scout.sqlite"), database);
+    for (const [name, value] of Object.entries(keys))
+      writeAtomically(path.join(stagingDirectory, name), value);
+    validateAndPrepareRestoredDatabase(path.join(stagingDirectory, "scout.sqlite"));
+
+    if (fs.existsSync(destinationDirectory) && fs.readdirSync(destinationDirectory).length > 0)
+      throw new Error("Restore destination must be a clean directory.");
+    fs.mkdirSync(destinationDirectory, { recursive: true, mode: 0o700 });
+    for (const name of ["scout.sqlite", ...KEY_FILES])
+      fs.renameSync(path.join(stagingDirectory, name), path.join(destinationDirectory, name));
+  } finally {
+    fs.rmSync(stagingDirectory, { recursive: true, force: true });
+  }
+}
+
+function validateAndPrepareRestoredDatabase(filename: string): void {
+  const sqlite = new Database(filename, { fileMustExist: true });
+  try {
+    const beforeMigration = sqlite.pragma("integrity_check", { simple: true });
+    if (beforeMigration !== "ok")
+      throw new Error(`Backup SQLite integrity check failed: ${String(beforeMigration)}`);
+
     migrateDatabase(sqlite);
+    const migration = sqlite
+      .prepare("SELECT 1 FROM schema_migration WHERE version = ?")
+      .get(LATEST_SCHEMA_VERSION);
+    if (!migration) throw new Error("Backup database migrations are incomplete.");
+
+    const afterMigration = sqlite.pragma("integrity_check", { simple: true });
+    if (afterMigration !== "ok")
+      throw new Error(`Restored SQLite integrity check failed: ${String(afterMigration)}`);
     sqlite.exec("DELETE FROM agent_invitation;");
     sqlite
       .prepare(

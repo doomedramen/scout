@@ -8,13 +8,15 @@ import { e2eDataDirectory } from "../../playwright.config";
 process.env.SCOUT_DATA_DIR = e2eDataDirectory;
 delete process.env.SCOUT_DATABASE_URL;
 
+function setupTokenPath(): string {
+  return process.env.SCOUT_E2E_SETUP_TOKEN_FILE ?? `${e2eDataDirectory}/setup-token`;
+}
+
 test("owner setup lands on Systems and future visits use sign-in", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Protect your Scout workspace", { exact: true })).toBeVisible();
 
-  await page
-    .getByLabel("One-time setup token")
-    .fill(fs.readFileSync(`${e2eDataDirectory}/setup-token`, "utf8"));
+  await page.getByLabel("One-time setup token").fill(fs.readFileSync(setupTokenPath(), "utf8"));
   await page.getByLabel("Username").fill("owner");
   await page.getByLabel("Password").fill("ValidPass1");
   await page.getByRole("button", { name: "Create owner account" }).click();
@@ -37,6 +39,10 @@ test("owner setup lands on Systems and future visits use sign-in", async ({ page
 });
 
 test("retry installation reloads the current job state", async ({ page }) => {
+  test.skip(
+    process.env.SCOUT_E2E_PACKAGED === "1",
+    "this fixture intentionally uses the in-process test database",
+  );
   await page.goto("/sign-in");
   await page.getByLabel("Username").fill("owner");
   await page.getByLabel("Password").fill("ValidPass1");

@@ -108,6 +108,7 @@ async function restoreSnapshot(input) {
   const marker = JSON.parse(fs.readFileSync(path.join(input, "snapshot.json"), "utf8"));
   if (marker.version !== 1) throw new Error("Update snapshot format is unsupported.");
   const database = fs.readFileSync(path.join(input, "scout.sqlite"));
+  validateSQLite(path.join(input, "scout.sqlite"));
   const keys = Object.fromEntries(
     keyFiles.map((name) => {
       const value = fs.readFileSync(path.join(input, name));
@@ -156,6 +157,7 @@ async function restore(input, secret) {
     throw new Error("The backup archive format is invalid.");
   }
   const database = Buffer.from(payload.database, "base64");
+  if (database.length === 0) throw new Error("Backup database snapshot is empty.");
   const keys = Object.fromEntries(
     keyFiles.map((name) => {
       const value = payload.keys[name];
@@ -166,6 +168,14 @@ async function restore(input, secret) {
       return [name, decoded];
     }),
   );
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-restore-"));
+  const temporaryDatabase = path.join(temporaryDirectory, "scout.sqlite");
+  fs.writeFileSync(temporaryDatabase, database, { mode: 0o600 });
+  try {
+    validateSQLite(temporaryDatabase);
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
   fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
   const previous = path.join(dataDirectory, `.restore-previous-${Date.now()}`);
   fs.mkdirSync(previous, { mode: 0o700 });
@@ -184,6 +194,20 @@ async function restore(input, secret) {
     .run(Date.now());
   restored.close();
   process.stdout.write(`Scout backup restored. Previous files are retained in ${previous}\n`);
+}
+
+function validateSQLite(filename) {
+  const database = new Database(filename, { readonly: true, fileMustExist: true });
+  try {
+    const integrity = database.pragma("integrity_check", { simple: true });
+    if (integrity !== "ok") throw new Error(`SQLite integrity check failed: ${String(integrity)}`);
+    const schema = database
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migration'")
+      .get();
+    if (!schema) throw new Error("SQLite snapshot has no Scout schema.");
+  } finally {
+    database.close();
+  }
 }
 
 function encrypt(plaintext, secret) {

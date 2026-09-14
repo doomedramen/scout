@@ -33,4 +33,11 @@ describe("release CI", () => {
     expect(workflow).toContain("latest");
     expect(workflow).toContain("ghcr.io/doomedramen/scout");
   });
+
+  it("runs Playwright against the packaged Docker image", () => {
+    const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
+
+    expect(workflow).toContain("playwright install --with-deps chromium");
+    expect(workflow).toContain("npm run test:e2e:packaged");
+  });
 });

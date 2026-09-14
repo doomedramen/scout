@@ -123,6 +123,15 @@ describe("agent packaging", () => {
     ]);
   });
 
+  it("provides a packaged-image Playwright runner", () => {
+    const runner = fs.readFileSync("scripts/playwright-packaged.sh", "utf8");
+    expect(runner).toContain("docker build");
+    expect(runner).toContain("docker run");
+    expect(runner).toContain("SCOUT_E2E_SETUP_TOKEN_FILE");
+    expect(runner).toContain("npm run test:e2e");
+    expect(packageJson.scripts["test:e2e:packaged"]).toBe("./scripts/playwright-packaged.sh");
+  });
+
   it("reads the packaged artifact when the server runs outside the repository root", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-runtime-"));
     temporaryDirectories.push(directory);

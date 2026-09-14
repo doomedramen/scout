@@ -68,6 +68,33 @@ describe("packaged operational safeguards", () => {
       fs.rmSync(snapshot, { recursive: true, force: true });
     }
   });
+
+  it("rejects a corrupt update snapshot before overwriting the live database", () => {
+    const data = fs.mkdtempSync(path.join(os.tmpdir(), "scout-ops-corrupt-data-"));
+    const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), "scout-ops-corrupt-snapshot-"));
+    try {
+      const database = new Database(path.join(data, "scout.sqlite"));
+      migrateDatabase(database);
+      database
+        .prepare("INSERT INTO app_setting (key, value, updated_at) VALUES ('example', 'before', 1)")
+        .run();
+      database.close();
+      fs.writeFileSync(path.join(snapshot, "snapshot.json"), JSON.stringify({ version: 1 }));
+      fs.writeFileSync(path.join(snapshot, "scout.sqlite"), "not a sqlite database");
+      for (const name of ["auth.secret", "credentials.key", "control-signing.key"])
+        fs.writeFileSync(path.join(snapshot, name), Buffer.alloc(32, 7), { mode: 0o600 });
+
+      expect(() => runOps(data, "restore-snapshot", snapshot)).toThrow(/sqlite|integrity/i);
+      const unchanged = new Database(path.join(data, "scout.sqlite"), { readonly: true });
+      expect(
+        unchanged.prepare("SELECT value FROM app_setting WHERE key = 'example'").get(),
+      ).toEqual({ value: "before" });
+      unchanged.close();
+    } finally {
+      fs.rmSync(data, { recursive: true, force: true });
+      fs.rmSync(snapshot, { recursive: true, force: true });
+    }
+  });
 });
 
 function runOps(data: string, operation: string, target?: string): string {

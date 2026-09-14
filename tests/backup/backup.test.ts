@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes, scryptSync } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -73,4 +74,45 @@ describe("encrypted backup and restore", () => {
     fs.writeFileSync(path.join(destination, "do-not-overwrite"), "present");
     expect(() => restoreEncryptedBackup(archive, destination, "correct horse")).toThrow(/clean/i);
   });
+
+  it("rejects a corrupt SQLite snapshot without leaving a partial restore", () => {
+    const destination = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-corrupt-destination-"));
+    const archive = path.join(os.tmpdir(), `scout-${Date.now()}-corrupt.scoutbak`);
+    directories.push(destination, archive);
+    writeTestArchive(archive, "correct horse", {
+      version: 1,
+      database: Buffer.from("not a sqlite database").toString("base64"),
+      keys: Object.fromEntries(
+        ["auth.secret", "credentials.key", "control-signing.key"].map((name) => [
+          name,
+          Buffer.alloc(32, 7).toString("base64"),
+        ]),
+      ),
+    });
+
+    expect(() => restoreEncryptedBackup(archive, destination, "correct horse")).toThrow(
+      /sqlite|integrity|database/i,
+    );
+    expect(fs.readdirSync(destination)).toEqual([]);
+  });
 });
+
+function writeTestArchive(archivePath: string, passphrase: string, payload: unknown): void {
+  const salt = randomBytes(16);
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", scryptSync(passphrase, salt, 32), nonce);
+  const ciphertext = Buffer.concat([
+    cipher.update(Buffer.from(JSON.stringify(payload), "utf8")),
+    cipher.final(),
+  ]);
+  fs.writeFileSync(
+    archivePath,
+    JSON.stringify({
+      version: 1,
+      salt: salt.toString("base64url"),
+      nonce: nonce.toString("base64url"),
+      tag: cipher.getAuthTag().toString("base64url"),
+      ciphertext: ciphertext.toString("base64url"),
+    }),
+  );
+}
