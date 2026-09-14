@@ -40,4 +40,10 @@ describe("release CI", () => {
     expect(workflow).toContain("playwright install --with-deps chromium");
     expect(workflow).toContain("npm run test:e2e:packaged");
   });
+
+  it("uses a runner-native agent target for the web build", () => {
+    const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
+
+    expect(workflow).toContain("SCOUT_AGENT_TARGET: x86_64-unknown-linux-gnu");
+  });
 });

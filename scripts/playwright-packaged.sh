@@ -68,6 +68,6 @@ printf '%s' "$setup_token" >"$work_directory/setup-token"
 chmod 0600 "$work_directory/setup-token"
 
 PLAYWRIGHT_BASE_URL="http://127.0.0.1:$server_port" \
-SCOUT_E2E_PACKAGED=1 \
-SCOUT_E2E_SETUP_TOKEN_FILE="$work_directory/setup-token" \
+  SCOUT_E2E_PACKAGED=1 \
+  SCOUT_E2E_SETUP_TOKEN_FILE="$work_directory/setup-token" \
   npm run test:e2e
