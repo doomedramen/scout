@@ -11,6 +11,9 @@ test-results
 *.sqlite-*
 agent-artifacts/*
 !agent-artifacts/.gitkeep
+!agent-artifacts/scout-agent-*
+!agent-artifacts/release-manifest.json
+!agent-artifacts/publisher-public.key
 README.md
 specs
 tests

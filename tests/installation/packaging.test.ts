@@ -29,6 +29,15 @@ describe("agent packaging", () => {
     expect(packageJson.scripts.build).toContain("npm run agent:build");
   });
 
+  it("lets release image builds retain the complete prebuilt artifact set", () => {
+    const dockerfile = fs.readFileSync("packaging/containers/server.Dockerfile", "utf8");
+    expect(dockerfile).toContain("ARG SCOUT_USE_PREBUILT_ARTIFACTS=0");
+    expect(dockerfile).toContain("ENV SCOUT_USE_PREBUILT_ARTIFACTS=$SCOUT_USE_PREBUILT_ARTIFACTS");
+    expect(fs.readFileSync(".dockerignore", "utf8")).toContain(
+      "!agent-artifacts/release-manifest.json",
+    );
+  });
+
   it("stages a prebuilt agent binary for image builds", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-packaging-"));
     temporaryDirectories.push(directory);
@@ -76,6 +85,42 @@ describe("agent packaging", () => {
       "verified-macos-agent-binary",
     );
     expect(fs.existsSync(path.join(output, "release-manifest.json"))).toBe(true);
+  });
+
+  it("accepts a complete signed artifact set for packaged image builds", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-packaging-image-"));
+    temporaryDirectories.push(directory);
+    const output = path.join(directory, "agent-artifacts");
+    fs.mkdirSync(output);
+    for (const artifact of [
+      "scout-agent-linux-x86_64",
+      "scout-agent-linux-aarch64",
+      "scout-agent-macos-x86_64",
+      "scout-agent-macos-aarch64",
+    ]) {
+      fs.writeFileSync(path.join(output, artifact), "signed-artifact");
+    }
+    fs.writeFileSync(path.join(output, "release-manifest.json"), "signed-manifest");
+    fs.writeFileSync(path.join(output, "publisher-public.key"), "publisher-key");
+
+    execFileSync("sh", [path.resolve("scripts/build-local-agent.sh")], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        SCOUT_USE_PREBUILT_ARTIFACTS: "1",
+        SCOUT_AGENT_ARTIFACT_DIR: output,
+        SCOUT_AGENT_BINARY: path.join(directory, "missing-agent-binary"),
+      },
+    });
+
+    expect(fs.readdirSync(output).sort()).toEqual([
+      "publisher-public.key",
+      "release-manifest.json",
+      "scout-agent-linux-aarch64",
+      "scout-agent-linux-x86_64",
+      "scout-agent-macos-aarch64",
+      "scout-agent-macos-x86_64",
+    ]);
   });
 
   it("reads the packaged artifact when the server runs outside the repository root", () => {

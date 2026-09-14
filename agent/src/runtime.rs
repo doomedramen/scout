@@ -145,6 +145,9 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     {
         Ok(response) => {
             apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
+            FilesystemUpdatePlatform::new(&config.data_dir)
+                .mark_healthy()
+                .map_err(|error| anyhow!("mark agent release healthy: {error}"))?;
             Some(response)
         }
         Err(error) => {
@@ -205,6 +208,9 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                     Ok(response) => {
                         if let Err(error) = apply_heartbeat_response(&state_path, &mut enrollment, &response) {
                             eprintln!("scout-agent state save failed: {error:#}");
+                        }
+                        if let Err(error) = FilesystemUpdatePlatform::new(&config.data_dir).mark_healthy() {
+                            eprintln!("scout-agent release health save failed: {error}");
                         }
                         if let Some(task) = response.task {
                             if let Err(error) = process_task(&client, &identity, &enrollment, task).await {

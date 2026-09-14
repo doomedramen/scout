@@ -31,9 +31,10 @@ describe("agent installer", () => {
     expect(script).toContain("SCOUT_AGENT_VERSION=${SCOUT_AGENT_VERSION:-'0.1.0'}");
     expect(script).toContain("scout-agent-install.lock");
     expect(script).toContain('release_dir="$SCOUT_AGENT_ROOT/releases/$SCOUT_AGENT_VERSION"');
-    expect(script).toContain(
-      'exec "${SCOUT_AGENT_ROOT:-/var/lib/scout-agent}/current/scout-agent" "$@"',
-    );
+    expect(script).toContain("agent_root=${SCOUT_AGENT_ROOT:-/var/lib/scout-agent}");
+    expect(script).toContain('if [ -f "$agent_root/previous" ]; then');
+    expect(script).toContain("rollback_current()");
+    expect(script).toContain('exec "$current" "$@"');
     expect(script).toContain("scout-agent-launcher");
     expect(script).toContain("systemctl enable --now scout-agent.service");
     expect(script).toContain("runuser_binary=$(command -v runuser");

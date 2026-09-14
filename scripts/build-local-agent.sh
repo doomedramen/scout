@@ -9,6 +9,23 @@ agent_platform=${SCOUT_AGENT_PLATFORM:-}
 agent_architecture=${SCOUT_AGENT_ARCHITECTURE:-}
 agent_target=${SCOUT_AGENT_TARGET:-}
 
+if [ "${SCOUT_USE_PREBUILT_ARTIFACTS:-0}" = 1 ]; then
+  for prebuilt in \
+    scout-agent-linux-x86_64 \
+    scout-agent-linux-aarch64 \
+    scout-agent-macos-x86_64 \
+    scout-agent-macos-aarch64 \
+    release-manifest.json \
+    publisher-public.key; do
+    [ -s "$artifact_directory/$prebuilt" ] || {
+      printf '%s\n' "scout agent build: prebuilt artifact is missing: $artifact_directory/$prebuilt" >&2
+      exit 1
+    }
+  done
+  printf '%s\n' "Using the complete prebuilt Scout agent release set"
+  exit 0
+fi
+
 if [ -z "$agent_platform" ]; then
   case "$(uname -s 2>/dev/null || true)" in
     Linux) agent_platform=linux ;;

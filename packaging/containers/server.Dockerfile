@@ -12,6 +12,8 @@ RUN cargo build --release --locked -p scout-agent
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+ARG SCOUT_USE_PREBUILT_ARTIFACTS=0
+ENV SCOUT_USE_PREBUILT_ARTIFACTS=$SCOUT_USE_PREBUILT_ARTIFACTS
 COPY . .
 COPY --from=agent-build /src/target/release/scout-agent /tmp/scout-agent
 RUN SCOUT_AGENT_BINARY=/tmp/scout-agent npm run build

@@ -28,6 +28,21 @@ fn versioned_updates_switch_atomically_and_roll_back_to_last_version() {
 }
 
 #[test]
+fn a_release_stays_rollbackable_until_the_first_healthy_heartbeat() {
+    let directory = tempdir().unwrap();
+    let platform = FilesystemUpdatePlatform::new(directory.path());
+
+    platform.stage("1.0.0", b"one").unwrap();
+    platform.activate("1.0.0").unwrap();
+    platform.stage("1.1.0", b"two").unwrap();
+    platform.activate("1.1.0").unwrap();
+    assert!(directory.path().join("previous").exists());
+
+    platform.mark_healthy().unwrap();
+    assert!(!directory.path().join("previous").exists());
+}
+
+#[test]
 fn service_descriptors_keep_runtime_configuration_in_one_place() {
     let systemd = render_systemd_unit(
         "/usr/local/lib/scout-agent/scout-agent-launcher",

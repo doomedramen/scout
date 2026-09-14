@@ -39,6 +39,7 @@ pub trait Installer {
 pub trait UpdatePlatform {
     fn stage(&self, version: &str, executable: &[u8]) -> PlatformResult<()>;
     fn activate(&self, version: &str) -> PlatformResult<()>;
+    fn mark_healthy(&self) -> PlatformResult<()>;
     fn rollback(&self) -> PlatformResult<()>;
 }
 
@@ -125,6 +126,14 @@ impl UpdatePlatform for FilesystemUpdatePlatform {
 
     fn activate(&self, version: &str) -> PlatformResult<()> {
         self.activate_version(version, true)
+    }
+
+    fn mark_healthy(&self) -> PlatformResult<()> {
+        match fs::remove_file(self.root.join("previous")) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(io_failure(error)),
+        }
     }
 
     fn rollback(&self) -> PlatformResult<()> {
