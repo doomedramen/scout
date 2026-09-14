@@ -340,10 +340,10 @@ function isCompatibleCandidate(
     : undefined;
   if (!currentSegment || !candidateSegment || currentSegment.siteKey !== candidateSegment.siteKey)
     return false;
-  return (
-    candidate.fingerprint === result.fingerprint ||
-    candidate.trustedFingerprint === result.fingerprint
-  );
+  // A scan merely observes a host key. It is not proof that two otherwise
+  // disconnected network segments are the same physical host. Only a key
+  // explicitly accepted through the SSH trust flow can join provenance.
+  return candidate.trustedFingerprint === result.fingerprint;
 }
 
 function compareCandidates(left: EndpointCandidate, right: EndpointCandidate): number {

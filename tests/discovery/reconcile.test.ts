@@ -126,7 +126,7 @@ describe("scan reconciliation", () => {
     });
   });
 
-  it("joins duplicate endpoint records when verified SSH identity agrees across segments", () => {
+  it("keeps identical fingerprints isolated across disconnected segments", () => {
     process.env.SCOUT_DATABASE_URL = "file::memory:";
     process.env.SCOUT_DATA_DIR = `/tmp/scout-test-reconcile-${Date.now()}`;
     const { sqlite } = getDatabase();
@@ -182,10 +182,26 @@ describe("scan reconciliation", () => {
       now + 1_000,
     );
 
-    expect(getFleetSnapshot(now + 1_000).systems).toHaveLength(1);
+    expect(getFleetSnapshot(now + 1_000).systems).toHaveLength(2);
     expect(sqlite.prepare("SELECT system_id FROM credential_grant").get()).toEqual({
       system_id: "system-a",
     });
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM system_alias").get()).toEqual({
+      count: 0,
+    });
+
+    sqlite
+      .prepare(
+        "INSERT INTO trusted_host_key (id, system_id, method, fingerprint, accepted_at) VALUES (?, ?, 'ssh', ?, ?)",
+      )
+      .run("trusted-a", "system-a", "SHA256:host", now + 1_500);
+    reconcileScanResults(
+      "segment-b",
+      [{ address: "192.0.2.2", port: 22, outcome: "open", fingerprint: "SHA256:host" }],
+      now + 2_000,
+    );
+
+    expect(getFleetSnapshot(now + 2_000).systems).toHaveLength(1);
     expect(sqlite.prepare("SELECT canonical_system_id FROM system_alias").get()).toEqual({
       canonical_system_id: "system-a",
     });

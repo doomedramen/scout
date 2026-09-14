@@ -346,19 +346,70 @@ export function getSystemMetrics(systemId: string, now = Date.now()) {
   const samples = sqlite
     .prepare(
       `
-        SELECT ts.observed_at AS observedAt, ts.payload
+        SELECT ts.observed_at AS observedAt, ts.received_at AS receivedAt, ts.payload
         FROM telemetry_sample ts
-        INNER JOIN agent a ON a.id = ts.agent_id
-        WHERE a.system_id = ? AND ts.observed_at > ?
+        INNER JOIN agent a ON a.id = ts.agent_id AND a.revoked_at IS NULL
+        WHERE a.system_id = ? AND ts.observed_at > ? AND ts.observed_at <= ?
         ORDER BY ts.observed_at ASC
       `,
     )
-    .all(canonicalId, now - 24 * 60 * 60 * 1000) as Array<{ observedAt: number; payload: string }>;
+    .all(canonicalId, now - 24 * 60 * 60 * 1000, now) as Array<{
+    observedAt: number;
+    receivedAt: number;
+    payload: string;
+  }>;
+  const rollups = sqlite
+    .prepare(
+      `
+        SELECT tr.bucket_start AS bucketStart, tr.payload
+        FROM telemetry_rollup tr
+        INNER JOIN agent a ON a.id = tr.agent_id AND a.revoked_at IS NULL
+        WHERE a.system_id = ? AND tr.bucket_start > ? AND tr.bucket_start <= ?
+        ORDER BY tr.bucket_start ASC
+      `,
+    )
+    .all(canonicalId, now - 90 * 24 * 60 * 60 * 1_000, now) as Array<{
+    bucketStart: number;
+    payload: string;
+  }>;
+  const parsedSamples = samples.map((sample) => ({
+    observedAt: new Date(sample.observedAt).toISOString(),
+    receivedAt: new Date(sample.receivedAt).toISOString(),
+    payload: parseMetricPayload(sample.payload),
+  }));
   return {
     systemId: canonicalId,
-    samples: samples.map((sample) => ({
-      observedAt: new Date(sample.observedAt).toISOString(),
-      payload: JSON.parse(sample.payload),
+    current: parsedSamples.at(-1)
+      ? {
+          observedAt: parsedSamples.at(-1)!.observedAt,
+          receivedAt: parsedSamples.at(-1)!.receivedAt,
+          droppedSamples: droppedSamples(parsedSamples.at(-1)!.payload),
+        }
+      : null,
+    droppedSamples: parsedSamples.reduce(
+      (total, sample) => total + droppedSamples(sample.payload),
+      0,
+    ),
+    samples: parsedSamples,
+    rollups: rollups.map((rollup) => ({
+      bucketStart: new Date(rollup.bucketStart).toISOString(),
+      payload: parseMetricPayload(rollup.payload),
     })),
   };
+}
+
+function parseMetricPayload(payload: string): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(payload);
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function droppedSamples(payload: Record<string, unknown>): number {
+  const value = payload.droppedSamples;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }

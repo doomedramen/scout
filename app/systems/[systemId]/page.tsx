@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { AccessGrantForm } from "@/components/systems/access-grant-form";
 import { LifecycleActions } from "@/components/systems/lifecycle-actions";
+import { MetricsPanel } from "@/components/systems/metrics-panel";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { requirePageSession } from "@/lib/server/session";
@@ -164,6 +165,7 @@ export default async function SystemPage({ params }: { params: Promise<{ systemI
             </div>
           </CardContent>
         </Card>
+        <MetricsPanel systemId={system.id} />
       </div>
     </AppShell>
   );
