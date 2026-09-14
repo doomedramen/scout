@@ -278,6 +278,8 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
   },
 ];
 
+export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
 export function migrateDatabase(sqlite: Database.Database): void {
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("journal_mode = WAL");

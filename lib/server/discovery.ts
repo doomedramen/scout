@@ -124,6 +124,31 @@ export function ensureNetworkSegment(
   return { id, cidr: boundary.cidr, provenanceKey: boundary.provenanceKey, lastScanAt: null };
 }
 
+export function setNetworkSegmentPaused(
+  segmentId: string,
+  paused: boolean,
+  now = Date.now(),
+): boolean {
+  const { sqlite } = getDatabase();
+  const update = sqlite.transaction(() => {
+    const changed = sqlite
+      .prepare(
+        "UPDATE network_segment SET paused = ?, policy_version = policy_version + 1, updated_at = ? WHERE id = ?",
+      )
+      .run(paused ? 1 : 0, now, segmentId);
+    if (changed.changes !== 1) return false;
+    if (paused) {
+      sqlite
+        .prepare(
+          "UPDATE scan_task SET status = 'superseded', lease_expires_at = NULL WHERE segment_id = ? AND status IN ('queued', 'leased')",
+        )
+        .run(segmentId);
+    }
+    return true;
+  });
+  return update();
+}
+
 function reconcileOne(
   sqlite: ReturnType<typeof getDatabase>["sqlite"],
   segmentId: string,
@@ -425,6 +450,22 @@ export async function discoverNow(
     startedAt,
     options.source ?? "default-route",
   );
+  const segmentPaused =
+    (
+      getDatabase()
+        .sqlite.prepare("SELECT paused FROM network_segment WHERE id = ?")
+        .get(segment.id) as { paused: number } | undefined
+    )?.paused === 1;
+  if (segmentPaused) {
+    const next = {
+      status: "current" as const,
+      cidr: segment.cidr,
+      lastScanAt: segment.lastScanAt ? new Date(segment.lastScanAt).toISOString() : null,
+      reason: "Discovery is paused for this network segment.",
+    };
+    setDiscoveryState(next, startedAt);
+    return next;
+  }
   if (!options.force && segment.lastScanAt && segment.lastScanAt > startedAt - SCAN_INTERVAL_MS) {
     const next = {
       status: "current" as const,

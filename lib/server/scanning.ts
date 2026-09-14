@@ -39,10 +39,14 @@ export function ensureSegmentScanTask(
   now = Date.now(),
 ): { scanner: ScannerSelection; envelope: TaskEnvelope } | null {
   if (authorityPaused()) return null;
+  const { sqlite } = getDatabase();
+  const segment = sqlite
+    .prepare("SELECT paused FROM network_segment WHERE id = ?")
+    .get(segmentId) as { paused: number } | undefined;
+  if (!segment || segment.paused === 1) return null;
   const scanner = electScannerAgent(segmentId, now);
   if (!scanner) return null;
 
-  const { sqlite } = getDatabase();
   const pending = sqlite
     .prepare(
       "SELECT id FROM scan_task WHERE segment_id = ? AND scanner_agent_id = ? AND status = 'leased' AND lease_expires_at > ? ORDER BY created_at DESC LIMIT 1",

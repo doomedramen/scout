@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
 import { encryptCredential } from "@/lib/server/credentials";
-import { ensureNetworkSegment, reconcileScanResults } from "@/lib/server/discovery";
+import {
+  ensureNetworkSegment,
+  reconcileScanResults,
+  setNetworkSegmentPaused,
+} from "@/lib/server/discovery";
 import { repairDuplicateSystems } from "@/lib/server/system-identity";
 import { getFleetSnapshot } from "@/lib/server/systems";
 
@@ -270,5 +274,36 @@ describe("scan reconciliation", () => {
     expect(
       sqlite.prepare("SELECT fingerprint FROM access_evidence WHERE outcome = 'open'").get(),
     ).toEqual({ fingerprint: "SHA256:new" });
+  });
+
+  it("increments a segment policy version and supersedes queued scanner work when paused", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const segment = ensureNetworkSegment(
+      {
+        cidr: "192.0.2.0/30",
+        interfaceName: "test0",
+        gateway: "192.0.2.1",
+        sourceAddress: "192.0.2.2",
+        provenanceKey: "pause-policy",
+      },
+      1_000,
+    );
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO scan_task (id, segment_id, generation, policy_version, status, deadline_at, created_at) VALUES (?, ?, 1, 1, 'queued', ?, ?)",
+      )
+      .run("task-1", segment.id, 100_000, 1_000);
+
+    expect(setNetworkSegmentPaused(segment.id, true, 2_000)).toBe(true);
+    expect(
+      sqlite
+        .prepare("SELECT paused, policy_version AS policyVersion FROM network_segment WHERE id = ?")
+        .get(segment.id),
+    ).toEqual({ paused: 1, policyVersion: 2 });
+    expect(sqlite.prepare("SELECT status FROM scan_task WHERE id = ?").get("task-1")).toEqual({
+      status: "superseded",
+    });
+    expect(setNetworkSegmentPaused(segment.id, false, 3_000)).toBe(true);
   });
 });

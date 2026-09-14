@@ -59,6 +59,26 @@ describe("segment scanner election", () => {
     expect(electScannerAgent(segment.id, 66_001)?.agentId).toBe("agent-b");
     expect(electScannerAgent(segment.id, 90_001)).toBeNull();
   });
+
+  it("does not issue scan work for a paused segment", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const segment = ensureNetworkSegment(
+      {
+        cidr: "192.0.2.0/30",
+        interfaceName: "eth0",
+        gateway: "192.0.2.1",
+        sourceAddress: "192.0.2.2",
+        provenanceKey: "paused-segment",
+      },
+      1_000,
+    );
+    insertAgent(sqlite, "agent-a", "system-a", segment.id, 2_000);
+    sqlite.prepare("UPDATE network_segment SET paused = 1 WHERE id = ?").run(segment.id);
+
+    expect(ensureSegmentScanTask(segment.id, 2_001)).toBeNull();
+    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM scan_task").get()).toEqual({ count: 0 });
+  });
 });
 
 function insertAgent(

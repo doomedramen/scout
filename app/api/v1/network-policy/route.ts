@@ -3,15 +3,23 @@ import { z } from "zod";
 import { hostAddresses } from "@/lib/discovery/network";
 import { jsonError, readRequestBody, sameOrigin } from "@/lib/server/http";
 import { requireApiSession } from "@/lib/server/session";
-import { discoverNow, getDiscoveryState, ensureNetworkSegment } from "@/lib/server/discovery";
+import {
+  discoverNow,
+  ensureNetworkSegment,
+  getDiscoveryState,
+  setNetworkSegmentPaused,
+} from "@/lib/server/discovery";
 import { getDatabase } from "@/lib/server/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const policyInput = z.object({
-  cidr: z.string().regex(/^\d+\.\d+\.\d+\.\d+\/(\d|[12]\d|3[0-2])$/),
-});
+const policyInput = z.union([
+  z.object({
+    cidr: z.string().regex(/^\d+\.\d+\.\d+\.\d+\/(\d|[12]\d|3[0-2])$/),
+  }),
+  z.object({ segmentId: z.string().min(1).max(128), paused: z.boolean() }),
+]);
 
 function segments() {
   const { sqlite } = getDatabase();
@@ -56,9 +64,16 @@ export async function PUT(request: Request) {
   if (body instanceof Response) return body;
   try {
     input = policyInput.parse(JSON.parse(body));
-    hostAddresses(input.cidr);
+    if ("cidr" in input) hostAddresses(input.cidr);
   } catch {
     return jsonError("Enter a valid IPv4 network between /24 and /32.", 400);
+  }
+
+  if ("segmentId" in input) {
+    if (!setNetworkSegmentPaused(input.segmentId, input.paused))
+      return jsonError("Network segment not found.", 404);
+    if (!input.paused) void discoverNow({ force: true });
+    return Response.json(response(), { status: 202, headers: { "Cache-Control": "no-store" } });
   }
 
   const prefix = Number(input.cidr.split("/")[1]);

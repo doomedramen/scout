@@ -83,9 +83,18 @@ export function createSignedScanTask(
 ): CreatedScanTask {
   const { sqlite } = getDatabase();
   const segment = sqlite
-    .prepare("SELECT cidr, policy_version AS policyVersion FROM network_segment WHERE id = ?")
-    .get(segmentId) as { cidr: string; policyVersion: number } | undefined;
+    .prepare(
+      "SELECT cidr, paused, policy_version AS policyVersion FROM network_segment WHERE id = ?",
+    )
+    .get(segmentId) as { cidr: string; paused: number; policyVersion: number } | undefined;
   if (!segment) throw new Error("Network segment not found.");
+  if (segment.paused === 1) throw new Error("Network segment discovery is paused.");
+  const agent = sqlite
+    .prepare(
+      "SELECT 1 FROM agent a INNER JOIN system s ON s.id = a.system_id WHERE a.id = ? AND s.segment_id = ? AND a.revoked_at IS NULL AND a.last_heartbeat_at IS NOT NULL AND a.last_heartbeat_at > ?",
+    )
+    .get(agentId, segmentId, now - 45_000);
+  if (!agent) throw new Error("Scanner agent is not healthy.");
 
   const id = randomUUID();
   const generation =
@@ -152,7 +161,7 @@ export function getPendingTaskEnvelope(agentId: string, now = Date.now()): TaskE
   const { sqlite } = getDatabase();
   const row = sqlite
     .prepare(
-      "SELECT id AS taskId, scanner_agent_id AS agentId, generation, policy_version AS policyVersion, payload, signature, issued_at AS issuedAt, deadline_at AS deadlineAt, lease_expires_at AS expiresAt FROM scan_task WHERE scanner_agent_id = ? AND status = 'leased' AND lease_expires_at > ? ORDER BY created_at LIMIT 1",
+      "SELECT st.id AS taskId, st.scanner_agent_id AS agentId, st.generation, st.policy_version AS policyVersion, st.payload, st.signature, st.issued_at AS issuedAt, st.deadline_at AS deadlineAt, st.lease_expires_at AS expiresAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id INNER JOIN agent a ON a.id = st.scanner_agent_id WHERE st.scanner_agent_id = ? AND st.status = 'leased' AND st.lease_expires_at > ? AND ns.paused = 0 AND a.revoked_at IS NULL ORDER BY st.created_at LIMIT 1",
     )
     .get(agentId, now) as
     | {
@@ -196,7 +205,7 @@ export function completeScanTask(
   const { sqlite } = getDatabase();
   const row = sqlite
     .prepare(
-      "SELECT segment_id AS segmentId, scanner_agent_id AS scannerAgentId, generation, payload, status, deadline_at AS deadlineAt, lease_expires_at AS leaseExpiresAt FROM scan_task WHERE id = ?",
+      "SELECT st.segment_id AS segmentId, st.scanner_agent_id AS scannerAgentId, st.generation, st.payload, st.status, st.deadline_at AS deadlineAt, st.lease_expires_at AS leaseExpiresAt, st.policy_version AS policyVersion, ns.policy_version AS currentPolicyVersion, ns.paused, a.revoked_at AS revokedAt, a.last_heartbeat_at AS lastHeartbeatAt FROM scan_task st INNER JOIN network_segment ns ON ns.id = st.segment_id LEFT JOIN agent a ON a.id = st.scanner_agent_id WHERE st.id = ?",
     )
     .get(input.taskId) as
     | {
@@ -207,11 +216,24 @@ export function completeScanTask(
         status: string;
         deadlineAt: number;
         leaseExpiresAt: number | null;
+        policyVersion: number;
+        currentPolicyVersion: number;
+        paused: number;
+        revokedAt: number | null;
+        lastHeartbeatAt: number | null;
       }
     | undefined;
   if (!row) return { accepted: false, reason: "unknown" };
   if (row.status === "completed") return { accepted: false, reason: "already-complete" };
   if (row.scannerAgentId !== input.agentId || row.generation !== input.generation)
+    return { accepted: false, reason: "superseded" };
+  if (
+    row.paused === 1 ||
+    row.policyVersion !== row.currentPolicyVersion ||
+    row.revokedAt !== null ||
+    row.lastHeartbeatAt === null ||
+    row.lastHeartbeatAt <= now - 45_000
+  )
     return { accepted: false, reason: "superseded" };
   if (row.deadlineAt <= now || (row.leaseExpiresAt !== null && row.leaseExpiresAt <= now))
     return { accepted: false, reason: "expired" };

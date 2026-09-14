@@ -167,6 +167,64 @@ describe("enrollment worker", () => {
       errorMessage: expect.stringMatching(/127\.0\.0\.1|loopback|192\.0\.2\.10/),
     });
   });
+
+  it("does not claim queued installation work for a paused segment", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const segment = insertSegment(sqlite, 1_000);
+    insertSystemAndEvidence(sqlite, 1_000);
+    sqlite.prepare("UPDATE system SET segment_id = ? WHERE id = ?").run(segment, "system-1");
+    createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "root",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:test",
+        trust: true,
+        idempotencyKey: "paused-installation",
+      },
+      1_000,
+    );
+    sqlite.prepare("UPDATE network_segment SET paused = 1 WHERE id = ?").run(segment);
+
+    expect(claimNextEnrollmentJob(2_000)).toBeNull();
+  });
+
+  it("blocks a claimed installation when its segment is paused before the next stage", async () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const segment = insertSegment(sqlite, 1_000);
+    insertSystemAndEvidence(sqlite, 1_000);
+    sqlite.prepare("UPDATE system SET segment_id = ? WHERE id = ?").run(segment, "system-1");
+    const receipt = createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "root",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:test",
+        trust: true,
+        idempotencyKey: "paused-during-installation",
+      },
+      1_000,
+    );
+
+    const result = await processNextEnrollmentJob(async (_context, setStage) => {
+      sqlite.prepare("UPDATE network_segment SET paused = 1 WHERE id = ?").run(segment);
+      setStage("authentication");
+    }, 2_000);
+
+    expect(result).toMatchObject({
+      jobId: receipt.jobId,
+      status: "blocked",
+      errorMessage: "Enrollment is paused because its network segment is paused.",
+    });
+  });
 });
 
 function insertSystemAndEvidence(sqlite: ReturnType<typeof getDatabase>["sqlite"], now: number) {
@@ -180,4 +238,14 @@ function insertSystemAndEvidence(sqlite: ReturnType<typeof getDatabase>["sqlite"
       "INSERT INTO access_evidence (id, system_id, method, address, port, outcome, fingerprint, source, observed_at, expires_at) VALUES (?, ?, 'ssh', ?, ?, 'open', NULL, 'test', ?, ?)",
     )
     .run("evidence-1", "system-1", "192.0.2.10", 22, now, now + 60_000);
+}
+
+function insertSegment(sqlite: ReturnType<typeof getDatabase>["sqlite"], now: number): string {
+  const id = "segment-1";
+  sqlite
+    .prepare(
+      "INSERT INTO network_segment (id, site_key, provenance_key, cidr, source, created_at, updated_at) VALUES (?, 'site-1', 'segment-1', '192.0.2.0/30', 'manual', ?, ?)",
+    )
+    .run(id, now, now);
+  return id;
 }

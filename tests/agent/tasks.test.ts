@@ -124,4 +124,64 @@ describe("signed scanner tasks", () => {
     ).toEqual({ accepted: false, reason: "already-complete" });
     expect(sqlite.prepare("SELECT COUNT(*) AS count FROM system").get()).toEqual({ count: 1 });
   });
+
+  it("rejects results after a segment is paused or its scanner is no longer healthy", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    const segment = ensureNetworkSegment(
+      {
+        cidr: "192.0.2.0/30",
+        interfaceName: "eth0",
+        gateway: "192.0.2.1",
+        sourceAddress: "192.0.2.2",
+        provenanceKey: "authority-segment",
+      },
+      1_000,
+    );
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, segment_id, display_name, status, created_at, updated_at) VALUES (?, ?, ?, 'online', ?, ?)",
+      )
+      .run("system-1", segment.id, "host", 1_000, 1_000);
+    sqlite
+      .prepare(
+        "INSERT INTO agent (id, system_id, public_key, platform, architecture, version, last_heartbeat_at, created_at, updated_at) VALUES (?, ?, ?, 'linux', 'x86_64', '0.1.0', ?, ?, ?)",
+      )
+      .run("agent-1", "system-1", "a".repeat(43), 1_000, 1_000, 1_000);
+
+    const pausedTask = createSignedScanTask(segment.id, "agent-1", 2_000);
+    sqlite
+      .prepare(
+        "UPDATE network_segment SET paused = 1, policy_version = policy_version + 1 WHERE id = ?",
+      )
+      .run(segment.id);
+    expect(
+      completeScanTask(
+        {
+          taskId: pausedTask.id,
+          agentId: "agent-1",
+          generation: pausedTask.envelope.generation,
+          payloadDigest: pausedTask.envelope.payloadDigest,
+          results: [],
+        },
+        2_001,
+      ),
+    ).toEqual({ accepted: false, reason: "superseded" });
+
+    sqlite.prepare("UPDATE network_segment SET paused = 0 WHERE id = ?").run(segment.id);
+    const unhealthyTask = createSignedScanTask(segment.id, "agent-1", 3_000);
+    sqlite.prepare("UPDATE agent SET revoked_at = 3_001 WHERE id = ?").run("agent-1");
+    expect(
+      completeScanTask(
+        {
+          taskId: unhealthyTask.id,
+          agentId: "agent-1",
+          generation: unhealthyTask.envelope.generation,
+          payloadDigest: unhealthyTask.envelope.payloadDigest,
+          results: [],
+        },
+        3_002,
+      ),
+    ).toEqual({ accepted: false, reason: "superseded" });
+  });
 });

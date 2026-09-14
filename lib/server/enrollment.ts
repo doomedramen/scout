@@ -67,7 +67,8 @@ export class EnrollmentFailure extends Error {
       | "privilege"
       | "callback"
       | "installer"
-      | "agent-timeout",
+      | "agent-timeout"
+      | "policy",
   ) {
     super(message);
   }
@@ -91,6 +92,8 @@ type JobContextRow = {
   address: string | null;
   port: number | null;
   fingerprint: string | null;
+  segmentPaused: number;
+  excluded: number;
 };
 
 export async function processNextEnrollmentJob(
@@ -117,7 +120,9 @@ export async function processNextEnrollmentJob(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Enrollment failed.";
     const status =
-      error instanceof EnrollmentFailure && error.code === "agent-timeout" ? "blocked" : "failed";
+      error instanceof EnrollmentFailure && ["agent-timeout", "policy"].includes(error.code)
+        ? "blocked"
+        : "failed";
     failJob(
       claimed,
       stage,
@@ -136,7 +141,7 @@ export function claimNextEnrollmentJob(now = Date.now()): ClaimedJob | null {
   const claim = sqlite.transaction(() => {
     const row = sqlite
       .prepare(
-        "SELECT id, system_id AS systemId, credential_id AS credentialId FROM enrollment_job WHERE status = 'queued' OR (status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?) ORDER BY created_at ASC LIMIT 1",
+        "SELECT ej.id, ej.system_id AS systemId, ej.credential_id AS credentialId FROM enrollment_job ej INNER JOIN system s ON s.id = ej.system_id LEFT JOIN network_segment ns ON ns.id = s.segment_id WHERE (ej.status = 'queued' OR (ej.status = 'running' AND ej.lease_expires_at IS NOT NULL AND ej.lease_expires_at <= ?)) AND COALESCE(ns.paused, 0) = 0 ORDER BY ej.created_at ASC LIMIT 1",
       )
       .get(now) as { id: string; systemId: string; credentialId: string | null } | undefined;
     if (!row) return null;
@@ -165,8 +170,12 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
           cg.nonce,
           ae.address,
           ae.port,
-          tk.fingerprint
+          tk.fingerprint,
+          COALESCE(ns.paused, 0) AS segmentPaused,
+          s.excluded
         FROM enrollment_job ej
+        INNER JOIN system s ON s.id = ej.system_id
+        LEFT JOIN network_segment ns ON ns.id = s.segment_id
         LEFT JOIN credential_grant cg ON cg.id = ej.credential_id AND cg.enabled = 1
         LEFT JOIN access_evidence ae
           ON ae.system_id = ej.system_id
@@ -187,6 +196,12 @@ function buildEnrollmentContext(job: ClaimedJob, now: number): EnrollmentContext
     throw new EnrollmentFailure(
       "The system no longer has current SSH evidence.",
       "missing-evidence",
+    );
+  }
+  if (row.excluded === 1 || row.segmentPaused === 1) {
+    throw new EnrollmentFailure(
+      "Enrollment is paused because its network segment is paused.",
+      "policy",
     );
   }
   if (!row.username || !row.method || !row.secretCiphertext || !row.nonce) {
@@ -343,6 +358,18 @@ async function waitForAgent(systemId: string, timeoutMs = AGENT_WAIT_MS): Promis
 
 function updateJobStage(job: ClaimedJob, stage: EnrollmentStage, now = Date.now()): void {
   const { sqlite } = getDatabase();
+  const authority = sqlite
+    .prepare(
+      "SELECT s.excluded, COALESCE(ns.paused, 0) AS segmentPaused FROM enrollment_job ej INNER JOIN system s ON s.id = ej.system_id LEFT JOIN network_segment ns ON ns.id = s.segment_id WHERE ej.id = ? AND ej.lease_owner = ? AND ej.status = 'running'",
+    )
+    .get(job.id, job.leaseOwner) as { excluded: number; segmentPaused: number } | undefined;
+  if (!authority) throw new Error("Enrollment job lease was lost.");
+  if (authority.excluded === 1 || authority.segmentPaused === 1) {
+    throw new EnrollmentFailure(
+      "Enrollment is paused because its network segment is paused.",
+      "policy",
+    );
+  }
   const changed = sqlite
     .prepare(
       "UPDATE enrollment_job SET stage = ?, lease_expires_at = ?, updated_at = ? WHERE id = ? AND lease_owner = ? AND status = 'running'",

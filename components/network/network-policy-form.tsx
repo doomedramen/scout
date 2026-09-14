@@ -25,6 +25,7 @@ export function NetworkPolicyForm({ initial }: { initial: PolicyResponse }) {
   const [cidr, setCidr] = useState("");
   const [state, setState] = useState(initial);
   const [pending, setPending] = useState(false);
+  const [pendingSegment, setPendingSegment] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -54,6 +55,31 @@ export function NetworkPolicyForm({ initial }: { initial: PolicyResponse }) {
       setError("Scout did not respond. Try again when the server is available.");
     } finally {
       setPending(false);
+    }
+  }
+
+  async function toggleSegment(segment: Segment) {
+    setPendingSegment(segment.id);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/v1/network-policy", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ segmentId: segment.id, paused: !segment.paused }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      const payload = (await response.json().catch(() => ({}))) as PolicyResponse & {
+        error?: { message?: string };
+      };
+      if (!response.ok)
+        throw new Error(payload.error?.message ?? "The segment could not be updated.");
+      setState(payload);
+      setMessage(segment.paused ? "Discovery resumed." : "Discovery paused.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The segment could not be updated.");
+    } finally {
+      setPendingSegment(null);
     }
   }
 
@@ -147,11 +173,27 @@ export function NetworkPolicyForm({ initial }: { initial: PolicyResponse }) {
                     <span className="font-mono">{segment.cidr}</span>
                     <span className="ml-2 text-muted-foreground">{segment.source}</span>
                   </div>
-                  <span className="text-muted-foreground">
-                    {segment.lastScanAt
-                      ? `Last scan ${new Date(segment.lastScanAt).toLocaleString()}`
-                      : "Not scanned yet"}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-muted-foreground">
+                      {segment.paused
+                        ? "Paused"
+                        : segment.lastScanAt
+                          ? `Last scan ${new Date(segment.lastScanAt).toLocaleString()}`
+                          : "Not scanned yet"}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void toggleSegment(segment)}
+                      disabled={pendingSegment !== null}
+                    >
+                      {pendingSegment === segment.id ? (
+                        <LoaderCircle className="animate-spin" data-icon="inline-start" />
+                      ) : null}
+                      {segment.paused ? "Resume" : "Pause"}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

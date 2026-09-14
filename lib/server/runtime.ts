@@ -1,4 +1,5 @@
 import { getDatabase } from "@/lib/server/db";
+import { LATEST_SCHEMA_VERSION } from "@/db/migrations";
 import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys";
 import { requestDiscovery } from "@/lib/server/discovery";
 import { processNextEnrollmentJob } from "@/lib/server/enrollment";
@@ -92,7 +93,9 @@ export function stopRuntime(): void {
 export function readiness(): { ok: boolean; checks: Record<string, boolean> } {
   try {
     const { sqlite } = getDatabase();
-    const migration = sqlite.prepare("SELECT 1 FROM schema_migration WHERE version = 1").get();
+    const migration = sqlite
+      .prepare("SELECT 1 FROM schema_migration WHERE version = ?")
+      .get(LATEST_SCHEMA_VERSION);
     const heartbeat = sqlite
       .prepare("SELECT value FROM app_setting WHERE key = 'scheduler_heartbeat'")
       .get() as { value: string } | undefined;
