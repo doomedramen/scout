@@ -1,9 +1,10 @@
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum PlatformError {
@@ -80,9 +81,7 @@ impl FilesystemUpdatePlatform {
                 })?;
             write_atomic(&self.root.join("previous"), version.as_bytes())?;
         }
-        let temporary = self
-            .root
-            .join(format!("current.tmp-{}", std::process::id()));
+        let temporary = temporary_path(&current);
         let _ = fs::remove_file(&temporary);
         #[cfg(unix)]
         std::os::unix::fs::symlink(Path::new("releases").join(version), &temporary)
@@ -91,7 +90,11 @@ impl FilesystemUpdatePlatform {
         return Err(PlatformError::Unsupported(
             "atomic agent links require a Unix platform".to_string(),
         ));
-        fs::rename(&temporary, &current).map_err(io_failure)?;
+        if let Err(error) = fs::rename(&temporary, &current) {
+            let _ = fs::remove_file(&temporary);
+            return Err(io_failure(error));
+        }
+        sync_directory(&self.root)?;
         Ok(())
     }
 }
@@ -104,24 +107,32 @@ impl UpdatePlatform for FilesystemUpdatePlatform {
         }
         fs::create_dir_all(release.parent().expect("release path has a parent"))
             .map_err(io_failure)?;
-        let temporary = release.with_extension(format!("tmp-{}", std::process::id()));
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o755);
+        let temporary = temporary_path(&release);
+        let result = (|| {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o755);
+            }
+            let mut file = options.open(&temporary).map_err(io_failure)?;
+            file.write_all(executable).map_err(io_failure)?;
+            file.sync_all().map_err(io_failure)?;
+            fs::rename(&temporary, &release).map_err(io_failure)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&release, fs::Permissions::from_mode(0o755))
+                    .map_err(io_failure)?;
+            }
+            sync_directory(release.parent().expect("release path has a parent"))?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
         }
-        let mut file = options.open(&temporary).map_err(io_failure)?;
-        file.write_all(executable).map_err(io_failure)?;
-        file.sync_all().map_err(io_failure)?;
-        fs::rename(&temporary, &release).map_err(io_failure)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&release, fs::Permissions::from_mode(0o755)).map_err(io_failure)?;
-        }
-        Ok(())
+        result
     }
 
     fn activate(&self, version: &str) -> PlatformResult<()> {
@@ -172,16 +183,53 @@ fn validate_version(version: &str) -> PlatformResult<()> {
 }
 
 fn write_atomic(path: &Path, contents: &[u8]) -> PlatformResult<()> {
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&temporary)
-        .map_err(io_failure)?;
-    file.write_all(contents).map_err(io_failure)?;
-    file.sync_all().map_err(io_failure)?;
-    fs::rename(temporary, path).map_err(io_failure)
+    let parent = path
+        .parent()
+        .ok_or_else(|| PlatformError::Failed("atomic file has no parent".to_string()))?;
+    fs::create_dir_all(parent).map_err(io_failure)?;
+    let temporary = temporary_path(path);
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary).map_err(io_failure)?;
+        file.write_all(contents).map_err(io_failure)?;
+        file.sync_all().map_err(io_failure)?;
+        fs::rename(&temporary, path).map_err(io_failure)?;
+        sync_directory(parent)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("scout-agent");
+    parent.join(format!(
+        ".{name}.tmp-{}-{}",
+        std::process::id(),
+        Uuid::new_v4()
+    ))
+}
+
+fn sync_directory(path: &Path) -> PlatformResult<()> {
+    #[cfg(unix)]
+    {
+        File::open(path)
+            .map_err(io_failure)?
+            .sync_all()
+            .map_err(io_failure)?;
+    }
+    Ok(())
 }
 
 fn io_failure(error: std::io::Error) -> PlatformError {

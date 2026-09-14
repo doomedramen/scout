@@ -43,6 +43,27 @@ fn a_release_stays_rollbackable_until_the_first_healthy_heartbeat() {
 }
 
 #[test]
+fn failed_release_staging_does_not_leave_a_partial_temporary_binary() {
+    let directory = tempdir().unwrap();
+    let release_directory = directory.path().join("releases/1.0.0");
+    fs::create_dir_all(&release_directory).unwrap();
+    fs::create_dir(release_directory.join("scout-agent")).unwrap();
+    let platform = FilesystemUpdatePlatform::new(directory.path());
+
+    assert!(platform
+        .stage("1.0.0", b"cannot replace directory")
+        .is_err());
+    assert_eq!(
+        fs::read_dir(release_directory)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .count(),
+        0
+    );
+}
+
+#[test]
 fn service_descriptors_keep_runtime_configuration_in_one_place() {
     let systemd = render_systemd_unit(
         "/usr/local/lib/scout-agent/scout-agent-launcher",
