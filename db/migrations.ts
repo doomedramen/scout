@@ -276,6 +276,25 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS two_factor_user_idx ON two_factor(user_id);
     `,
   },
+  {
+    version: 8,
+    sql: `
+      CREATE TABLE IF NOT EXISTS relay_channel (
+        id TEXT PRIMARY KEY NOT NULL,
+        agent_id TEXT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+        target_system_id TEXT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
+        target_address TEXT NOT NULL,
+        target_port INTEGER NOT NULL,
+        nonce TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        upstream_signature TEXT,
+        downstream_signature TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS relay_agent_idx ON relay_channel(agent_id);
+      CREATE INDEX IF NOT EXISTS relay_expiry_idx ON relay_channel(expires_at);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -93,6 +93,24 @@ function publicKeyFromRaw(raw: Buffer) {
   });
 }
 
+export function verifyAgentMessage(agentId: string, message: string, signature: string): boolean {
+  const { sqlite } = getDatabase();
+  const agent = sqlite
+    .prepare("SELECT public_key AS publicKey, revoked_at AS revokedAt FROM agent WHERE id = ?")
+    .get(agentId) as { publicKey: string; revokedAt: number | null } | undefined;
+  if (!agent || agent.revokedAt !== null) return false;
+  try {
+    return verify(
+      null,
+      Buffer.from(message, "utf8"),
+      publicKeyFromRaw(Buffer.from(agent.publicKey, "base64url")),
+      Buffer.from(signature, "base64url"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function authenticateAgentRequest(
   request: Request,
   body: string,

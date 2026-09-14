@@ -323,6 +323,30 @@ export const scanTasks = sqliteTable(
   (table) => [uniqueIndex("scan_generation_idx").on(table.segmentId, table.generation)],
 );
 
+export const relayChannels = sqliteTable(
+  "relay_channel",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    targetSystemId: text("target_system_id")
+      .notNull()
+      .references(() => systems.id, { onDelete: "cascade" }),
+    targetAddress: text("target_address").notNull(),
+    targetPort: integer("target_port").notNull(),
+    nonce: text("nonce").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    upstreamSignature: text("upstream_signature"),
+    downstreamSignature: text("downstream_signature"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("relay_agent_idx").on(table.agentId),
+    index("relay_expiry_idx").on(table.expiresAt),
+  ],
+);
+
 export const telemetrySamples = sqliteTable(
   "telemetry_sample",
   {
@@ -405,6 +429,7 @@ export const schema = {
   enrollmentJobs,
   idempotencyReceipts,
   scanTasks,
+  relayChannels,
   telemetrySamples,
   telemetryRollups,
   auditEvents,
