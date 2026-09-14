@@ -77,6 +77,24 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e:packaged
 
+  linux-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install disposable Linux lifecycle tools
+        run: |
+          set -eu
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            cloud-image-utils \
+            netcat-openbsd \
+            qemu-system-x86 \
+            qemu-utils \
+            sshpass
+      - name: Run the real Linux lifecycle in QEMU
+        run: npm run test:acceptance:linux
+
   macos-lifecycle:
     strategy:
       fail-fast: false

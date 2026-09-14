@@ -51,6 +51,16 @@ describe("release CI", () => {
     expect(workflow).toContain("npm run test:e2e:packaged");
   });
 
+  it("runs the real Linux lifecycle in disposable QEMU", () => {
+    const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
+
+    expect(workflow).toContain("linux-qemu:");
+    expect(workflow).toContain("qemu-system-x86");
+    expect(workflow).toContain("cloud-image-utils");
+    expect(workflow).toContain("sshpass");
+    expect(workflow).toContain("npm run test:acceptance:linux");
+  });
+
   it("tests the release image before publishing its tags", () => {
     const workflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
     const packagedScript = fs.readFileSync("scripts/playwright-packaged.sh", "utf8");
