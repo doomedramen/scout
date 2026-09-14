@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { closeDatabase, getDatabase } from "@/lib/server/db";
-import { createAccessGrant, getAccessGrantReceipt } from "@/lib/server/access";
+import {
+  createAccessGrant,
+  getAccessGrantReceipt,
+  getReusableCredentialForSystem,
+} from "@/lib/server/access";
 import { decryptCredential } from "@/lib/server/credentials";
 
 describe("access grants", () => {
@@ -162,5 +166,82 @@ describe("access grants", () => {
     expect(() =>
       createAccessGrant({ ...input, systemId: "system-2", ownerId: "owner-1" }, 2_000),
     ).toThrow(/idempotency|already used|another/i);
+  });
+
+  it("requires explicit bounded-subnet acknowledgements and exposes only reusable metadata", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = `/tmp/scout-test-access-scope-${Date.now()}`;
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO network_segment (id, site_key, provenance_key, cidr, source, created_at, updated_at) VALUES ('segment-1', 'site-1', 'route-1', '192.0.2.0/24', 'default-route', 1, 1)",
+      )
+      .run();
+    for (const systemId of ["system-1", "system-2"]) {
+      sqlite
+        .prepare(
+          "INSERT INTO system (id, segment_id, display_name, status, created_at, updated_at) VALUES (?, 'segment-1', ?, 'needs-trust', 1, 1)",
+        )
+        .run(systemId, systemId);
+    }
+
+    expect(() =>
+      createAccessGrant(
+        {
+          systemId: "system-1",
+          method: "ssh",
+          username: "scout",
+          authType: "password",
+          secret: "CorrectHorse1",
+          passphrase: null,
+          fingerprint: "SHA256:scope",
+          trust: true,
+          idempotencyKey: "scope-missing-ack",
+          scope: "bounded-subnet",
+          firstSeenKeyPinning: true,
+        },
+        1_000,
+      ),
+    ).toThrow(/automatic enrollment|acknowledge/i);
+
+    createAccessGrant(
+      {
+        systemId: "system-1",
+        method: "ssh",
+        username: "scout",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:scope",
+        trust: true,
+        idempotencyKey: "scope-valid",
+        scope: "bounded-subnet",
+        automaticEnrollment: true,
+        firstSeenKeyPinning: true,
+      },
+      1_000,
+    );
+
+    expect(
+      sqlite
+        .prepare(
+          "SELECT scope, scope_segment_id AS scopeSegmentId, automatic_enrollment AS automaticEnrollment, first_seen_key_pinning AS firstSeenKeyPinning FROM credential_grant",
+        )
+        .get(),
+    ).toEqual({
+      scope: "bounded-subnet",
+      scopeSegmentId: "segment-1",
+      automaticEnrollment: 1,
+      firstSeenKeyPinning: 1,
+    });
+    expect(getReusableCredentialForSystem("system-2")).toMatchObject({
+      username: "scout",
+      method: "ssh",
+      scope: "bounded-subnet",
+      scopeSegmentId: "segment-1",
+      automaticEnrollment: true,
+      firstSeenKeyPinning: true,
+    });
+    expect(getReusableCredentialForSystem("system-2")).not.toHaveProperty("secret");
   });
 });

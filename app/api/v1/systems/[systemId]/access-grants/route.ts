@@ -21,7 +21,9 @@ const grantInput = z.object({
   privilegePassword: z.string().min(1).max(1_000).nullable().optional(),
   fingerprint: z.string().min(8).max(256),
   trust: z.boolean(),
-  scope: z.literal("exact-host").optional(),
+  scope: z.enum(["exact-host", "bounded-subnet"]).optional(),
+  automaticEnrollment: z.boolean().optional(),
+  firstSeenKeyPinning: z.boolean().optional(),
 });
 
 function accessError(error: unknown): Response {

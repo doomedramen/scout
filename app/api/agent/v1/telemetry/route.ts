@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { authenticateAgentRequest, telemetryInput } from "@/lib/server/agent-protocol";
 import { getDatabase } from "@/lib/server/db";
 import { jsonError } from "@/lib/server/http";
@@ -28,20 +30,13 @@ export async function POST(request: Request) {
       .prepare(
         "INSERT OR IGNORE INTO telemetry_sample (id, agent_id, batch_id, observed_at, payload, received_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(
-        crypto.randomUUID(),
-        identity.agentId,
-        input.batchId,
-        observedAt,
-        JSON.stringify(input),
-        now,
-      );
+      .run(randomUUID(), identity.agentId, input.batchId, observedAt, JSON.stringify(input), now);
     if (inserted.changes === 1) {
       sqlite
         .prepare(
           "UPDATE agent SET last_telemetry_at = MAX(COALESCE(last_telemetry_at, 0), ?), updated_at = ? WHERE id = ? AND revoked_at IS NULL",
         )
-        .run(observedAt, now, identity.agentId);
+        .run(now, now, identity.agentId);
       sqlite
         .prepare(
           "UPDATE system SET hostname = COALESCE(?, hostname), status = 'online', updated_at = ? WHERE id = (SELECT system_id FROM agent WHERE id = ?)",

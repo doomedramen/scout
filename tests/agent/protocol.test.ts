@@ -141,6 +141,47 @@ describe("signed agent protocol", () => {
     });
   });
 
+  it("records receipt liveness for delayed telemetry without rewriting its observation time", async () => {
+    const fixture = createAgent();
+    const receivedBefore = Date.now();
+    const observedAt = new Date(receivedBefore - 60 * 60 * 1_000).toISOString();
+    const payload = {
+      agentId: AGENT_ID,
+      batchId: "delayed-batch",
+      observedAt,
+      droppedSamples: 0,
+      host: {
+        hostname: "delayed-host",
+        operatingSystem: "Linux",
+        kernelVersion: "6.1",
+        cpuUsagePercent: null,
+        memoryUsedBytes: null,
+        memoryTotalBytes: null,
+        uptimeSeconds: null,
+        filesystems: [],
+        interfaces: [],
+      },
+    };
+
+    const response = await telemetry(
+      signedRequest(fixture, "/api/agent/v1/telemetry", payload, "delayed-telemetry"),
+    );
+
+    expect(response.status).toBe(200);
+    const sample = fixture.sqlite
+      .prepare("SELECT observed_at AS observedAt, received_at AS receivedAt FROM telemetry_sample")
+      .get() as { observedAt: number; receivedAt: number };
+    expect(sample.observedAt).toBe(Date.parse(observedAt));
+    expect(sample.receivedAt).toBeGreaterThanOrEqual(receivedBefore);
+    expect(
+      (
+        fixture.sqlite
+          .prepare("SELECT last_telemetry_at AS lastTelemetryAt FROM agent WHERE id = ?")
+          .get(AGENT_ID) as { lastTelemetryAt: number }
+      ).lastTelemetryAt,
+    ).toBeGreaterThanOrEqual(receivedBefore);
+  });
+
   it("authenticates signed release reads including their query string", async () => {
     const fixture = createAgent();
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-release-route-"));

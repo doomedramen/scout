@@ -9,6 +9,7 @@ export const user = sqliteTable("user", {
   image: text("image"),
   username: text("username").unique(),
   displayUsername: text("display_username"),
+  twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
@@ -60,6 +61,22 @@ export const verification = sqliteTable("verification", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }),
 });
+
+export const twoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    verified: integer("verified", { mode: "boolean" }).notNull().default(true),
+    failedVerificationCount: integer("failed_verification_count").notNull().default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+  },
+  (table) => [index("two_factor_user_idx").on(table.userId)],
+);
 
 export const appSettings = sqliteTable("app_setting", {
   key: text("key").primaryKey(),
@@ -210,6 +227,15 @@ export const credentials = sqliteTable(
     secretCiphertext: text("secret_ciphertext").notNull(),
     nonce: text("nonce").notNull(),
     scope: text("scope").notNull().default("exact-host"),
+    scopeSegmentId: text("scope_segment_id").references(() => networkSegments.id, {
+      onDelete: "set null",
+    }),
+    automaticEnrollment: integer("automatic_enrollment", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    firstSeenKeyPinning: integer("first_seen_key_pinning", { mode: "boolean" })
+      .notNull()
+      .default(false),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -364,6 +390,7 @@ export const schema = {
   session,
   account,
   verification,
+  twoFactor,
   appSettings,
   setupTokens,
   agentInvitations,

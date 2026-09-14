@@ -26,6 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ syst
         fingerprint: result.fingerprint,
         trustedFingerprint: result.trustedFingerprint,
         trusted: result.trusted,
+        automaticEnrollment: result.automaticEnrollment,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

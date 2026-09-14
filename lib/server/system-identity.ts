@@ -51,6 +51,9 @@ type CredentialRow = {
   secretCiphertext: string;
   nonce: string;
   scope: string;
+  scopeSegmentId: string | null;
+  automaticEnrollment: number;
+  firstSeenKeyPinning: number;
   enabled: number;
   createdAt: number;
   updatedAt: number;
@@ -461,13 +464,13 @@ function mergeTrustedKeys(sqlite: Sqlite, sourceId: string, canonicalId: string)
 function mergeCredentials(sqlite: Sqlite, sourceId: string, canonicalId: string): void {
   const credentials = sqlite
     .prepare(
-      "SELECT id, method, username, secret_ciphertext AS secretCiphertext, nonce, scope, enabled, created_at AS createdAt, updated_at AS updatedAt FROM credential_grant WHERE system_id = ?",
+      "SELECT id, method, username, secret_ciphertext AS secretCiphertext, nonce, scope, scope_segment_id AS scopeSegmentId, automatic_enrollment AS automaticEnrollment, first_seen_key_pinning AS firstSeenKeyPinning, enabled, created_at AS createdAt, updated_at AS updatedAt FROM credential_grant WHERE system_id = ?",
     )
     .all(sourceId) as CredentialRow[];
   for (const credential of credentials) {
     const existing = sqlite
       .prepare(
-        "SELECT id, method, username, secret_ciphertext AS secretCiphertext, nonce, scope, enabled, created_at AS createdAt, updated_at AS updatedAt FROM credential_grant WHERE system_id = ? AND method = ? AND username = ? ORDER BY updated_at DESC LIMIT 1",
+        "SELECT id, method, username, secret_ciphertext AS secretCiphertext, nonce, scope, scope_segment_id AS scopeSegmentId, automatic_enrollment AS automaticEnrollment, first_seen_key_pinning AS firstSeenKeyPinning, enabled, created_at AS createdAt, updated_at AS updatedAt FROM credential_grant WHERE system_id = ? AND method = ? AND username = ? ORDER BY updated_at DESC LIMIT 1",
       )
       .get(canonicalId, credential.method, credential.username) as CredentialRow | undefined;
 
@@ -495,12 +498,15 @@ function mergeCredentials(sqlite: Sqlite, sourceId: string, canonicalId: string)
         .run(existing.id, credential.id);
       sqlite
         .prepare(
-          "UPDATE credential_grant SET secret_ciphertext = ?, nonce = ?, scope = ?, enabled = ?, created_at = ?, updated_at = ? WHERE id = ?",
+          "UPDATE credential_grant SET secret_ciphertext = ?, nonce = ?, scope = ?, scope_segment_id = ?, automatic_enrollment = ?, first_seen_key_pinning = ?, enabled = ?, created_at = ?, updated_at = ? WHERE id = ?",
         )
         .run(
           encrypted.ciphertext,
           encrypted.nonce,
           credential.scope,
+          credential.scopeSegmentId,
+          credential.automaticEnrollment,
+          credential.firstSeenKeyPinning,
           credential.enabled,
           credential.createdAt,
           credential.updatedAt,
@@ -510,9 +516,17 @@ function mergeCredentials(sqlite: Sqlite, sourceId: string, canonicalId: string)
     } else {
       sqlite
         .prepare(
-          "UPDATE credential_grant SET system_id = ?, secret_ciphertext = ?, nonce = ? WHERE id = ?",
+          "UPDATE credential_grant SET system_id = ?, secret_ciphertext = ?, nonce = ?, scope_segment_id = ?, automatic_enrollment = ?, first_seen_key_pinning = ? WHERE id = ?",
         )
-        .run(canonicalId, encrypted.ciphertext, encrypted.nonce, credential.id);
+        .run(
+          canonicalId,
+          encrypted.ciphertext,
+          encrypted.nonce,
+          credential.scopeSegmentId,
+          credential.automaticEnrollment,
+          credential.firstSeenKeyPinning,
+          credential.id,
+        );
     }
   }
 }

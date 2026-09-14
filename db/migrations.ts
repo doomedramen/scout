@@ -250,6 +250,32 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS idempotency_scope_idx ON idempotency_receipt(scope_id);
     `,
   },
+  {
+    version: 6,
+    sql: `
+      ALTER TABLE credential_grant ADD COLUMN scope_segment_id TEXT REFERENCES network_segment(id) ON DELETE SET NULL;
+      ALTER TABLE credential_grant ADD COLUMN automatic_enrollment INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE credential_grant ADD COLUMN first_seen_key_pinning INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS credential_scope_idx ON credential_grant(scope, scope_segment_id, enabled);
+    `,
+  },
+  {
+    version: 7,
+    sql: `
+      ALTER TABLE user ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS two_factor (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+        secret TEXT NOT NULL,
+        backup_codes TEXT NOT NULL,
+        verified INTEGER NOT NULL DEFAULT 1,
+        failed_verification_count INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER,
+        UNIQUE(user_id)
+      );
+      CREATE INDEX IF NOT EXISTS two_factor_user_idx ON two_factor(user_id);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: Database.Database): void {

@@ -74,4 +74,63 @@ describe("SSH preflight identity reconciliation", () => {
       system_id: "system-old",
     });
   });
+
+  it("queues automatic enrollment from an acknowledged bounded-subnet credential", async () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    process.env.SCOUT_DATA_DIR = `/tmp/scout-test-preflight-auto-${Date.now()}`;
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO network_segment (id, site_key, provenance_key, cidr, source, created_at, updated_at) VALUES ('segment-1', 'site-1', 'route-1', '192.0.2.0/24', 'default-route', 1, 1)",
+      )
+      .run();
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, segment_id, display_name, status, created_at, updated_at) VALUES ('system-source', 'segment-1', 'source', 'needs-access', 1, 1), ('system-target', 'segment-1', 'target', 'needs-access', 1, 1)",
+      )
+      .run();
+    sqlite
+      .prepare(
+        "INSERT INTO access_evidence (id, system_id, method, address, port, outcome, source, observed_at, expires_at) VALUES ('target-evidence', 'system-target', 'ssh', '192.0.2.20', 22, 'open', 'server-scan', 1, 100000)",
+      )
+      .run();
+    createAccessGrant(
+      {
+        systemId: "system-source",
+        method: "ssh",
+        username: "scout",
+        authType: "password",
+        secret: "CorrectHorse1",
+        passphrase: null,
+        fingerprint: "SHA256:source",
+        trust: true,
+        idempotencyKey: "automatic-source-grant",
+        scope: "bounded-subnet",
+        automaticEnrollment: true,
+        firstSeenKeyPinning: true,
+      },
+      1_000,
+    );
+    vi.spyOn(ssh, "readSshFingerprint").mockResolvedValue("SHA256:target");
+
+    await expect(preflightSsh("system-target", 2_000)).resolves.toMatchObject({
+      systemId: "system-target",
+      trusted: true,
+      automaticEnrollment: {
+        queued: true,
+        reason: "queued",
+        jobId: expect.any(String),
+      },
+    });
+    expect(
+      sqlite
+        .prepare("SELECT COUNT(*) AS count FROM credential_grant WHERE system_id = 'system-target'")
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite
+        .prepare("SELECT status, stage FROM enrollment_job WHERE system_id = 'system-target'")
+        .get(),
+    ).toEqual({ status: "queued", stage: "queued" });
+  });
 });

@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { nextCookies } from "better-auth/next-js";
-import { username } from "better-auth/plugins";
+import { twoFactor, username } from "better-auth/plugins";
 
 import { schema } from "@/db/schema";
 import { getDatabase } from "@/lib/server/db";
@@ -31,6 +31,7 @@ export const auth = betterAuth({
       immutableUsername: true,
       displayUsername: false,
     }),
+    twoFactor({ issuer: "Scout" }),
     nextCookies(),
   ],
 });

@@ -23,6 +23,11 @@ type Preflight = {
   fingerprint: string;
   trustedFingerprint: string | null;
   trusted: boolean;
+  automaticEnrollment?: {
+    queued: boolean;
+    reason: string;
+    jobId: string | null;
+  };
 };
 
 type Job = {
@@ -107,6 +112,9 @@ export function AccessGrantForm({
   const [secret, setSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [privilegePassword, setPrivilegePassword] = useState("");
+  const [boundedScope, setBoundedScope] = useState(false);
+  const [automaticEnrollment, setAutomaticEnrollment] = useState(false);
+  const [firstSeenKeyPinning, setFirstSeenKeyPinning] = useState(false);
   const [trust, setTrust] = useState(false);
   const [job, setJob] = useState<Job | null>(initialJob);
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
@@ -128,6 +136,14 @@ export function AccessGrantForm({
         if (active) {
           setPreflight(payload);
           setTrust(payload.trusted);
+          if (payload.automaticEnrollment?.jobId) {
+            setJob({
+              jobId: payload.automaticEnrollment.jobId,
+              status: payload.automaticEnrollment.queued ? "queued" : "blocked",
+              stage: "queued",
+              target: payload.target,
+            });
+          }
         }
       })
       .catch((reason: unknown) => {
@@ -184,8 +200,10 @@ export function AccessGrantForm({
           passphrase: authType === "private-key" ? passphrase : null,
           privilegePassword: privilegePassword || null,
           fingerprint: preflight.fingerprint,
-          trust,
-          scope: "exact-host",
+          trust: trust || firstSeenKeyPinning,
+          scope: boundedScope ? "bounded-subnet" : "exact-host",
+          automaticEnrollment: boundedScope && automaticEnrollment,
+          firstSeenKeyPinning: boundedScope && automaticEnrollment && firstSeenKeyPinning,
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -322,13 +340,69 @@ export function AccessGrantForm({
                 root accounts do not need one.
               </FieldDescription>
             </Field>
+            <div className="space-y-3 rounded-lg border p-3">
+              <label className="flex items-start gap-3 text-sm">
+                <Checkbox
+                  checked={boundedScope}
+                  onCheckedChange={(checked) => {
+                    const enabled = checked === true;
+                    setBoundedScope(enabled);
+                    if (!enabled) {
+                      setAutomaticEnrollment(false);
+                      setFirstSeenKeyPinning(false);
+                    }
+                  }}
+                />
+                <span>
+                  <span className="font-medium">Reuse this credential on this bounded network</span>
+                  <span className="mt-1 block text-muted-foreground">
+                    The encrypted grant stays limited to this discovered network segment.
+                  </span>
+                </span>
+              </label>
+              {boundedScope ? (
+                <label className="ml-7 flex items-start gap-3 text-sm">
+                  <Checkbox
+                    checked={automaticEnrollment}
+                    onCheckedChange={(checked) => {
+                      const enabled = checked === true;
+                      setAutomaticEnrollment(enabled);
+                      if (!enabled) setFirstSeenKeyPinning(false);
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium">Automatically enroll matching hosts</span>
+                    <span className="mt-1 block text-muted-foreground">
+                      Scout will use this grant after SSH identity preflight succeeds.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+              {boundedScope && automaticEnrollment ? (
+                <label className="ml-7 flex items-start gap-3 text-sm">
+                  <Checkbox
+                    checked={firstSeenKeyPinning}
+                    onCheckedChange={(checked) => setFirstSeenKeyPinning(checked === true)}
+                  />
+                  <span>
+                    <span className="font-medium">Pin first-seen SSH keys automatically</span>
+                    <span className="mt-1 block text-muted-foreground">
+                      Changed keys still block installation and require review.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+            </div>
             {error ? (
               <Alert variant="destructive">
                 <AlertTitle>Installation could not be queued</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             ) : null}
-            <Button type="submit" disabled={pending || !trust || !username || !secret}>
+            <Button
+              type="submit"
+              disabled={pending || (!trust && !firstSeenKeyPinning) || !username || !secret}
+            >
               {pending ? <LoaderCircle className="animate-spin" data-icon="inline-start" /> : null}
               Store encrypted credential and install
             </Button>

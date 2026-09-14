@@ -13,7 +13,10 @@ export default async function SettingsPage() {
       title="Settings"
       description="Owner and operational settings for this Scout instance."
     >
-      <SettingsForm initialPaused={getSettings().authorityPaused} />
+      <SettingsForm
+        initialPaused={getSettings(session.user.id).authorityPaused}
+        initialTwoFactorEnabled={getSettings(session.user.id).twoFactorEnabled}
+      />
     </AppShell>
   );
 }

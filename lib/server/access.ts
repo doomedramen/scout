@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getDatabase } from "@/lib/server/db";
-import { encryptCredential } from "@/lib/server/credentials";
+import { decryptCredential, encryptCredential } from "@/lib/server/credentials";
 import { readSshFingerprint, type SshEndpoint } from "@/lib/server/ssh";
 import { recordVerifiedSshIdentity, resolveSystemId } from "@/lib/server/system-identity";
 
@@ -17,7 +17,9 @@ export type AccessGrantInput = {
   fingerprint: string;
   trust: boolean;
   idempotencyKey: string;
-  scope?: "exact-host";
+  scope?: "exact-host" | "bounded-subnet";
+  automaticEnrollment?: boolean;
+  firstSeenKeyPinning?: boolean;
 };
 
 export class AccessError extends Error {
@@ -39,6 +41,76 @@ export type EnrollmentJobReceipt = {
   updatedAt: string;
   leaseExpiresAt: string | null;
 };
+
+export type AutomaticEnrollmentResult = {
+  queued: boolean;
+  reason: "queued" | "already-queued" | "awaiting-trust" | "needs-review" | "none";
+  jobId: string | null;
+};
+
+export type ReusableCredentialMetadata = {
+  id: string;
+  sourceSystemId: string;
+  method: string;
+  username: string;
+  scope: "bounded-subnet";
+  scopeSegmentId: string;
+  automaticEnrollment: boolean;
+  firstSeenKeyPinning: boolean;
+};
+
+export function getReusableCredentialForSystem(
+  requestedSystemId: string,
+): ReusableCredentialMetadata | null {
+  const { sqlite } = getDatabase();
+  const systemId = resolveSystemId(sqlite, requestedSystemId);
+  const row = sqlite
+    .prepare(
+      `
+        SELECT
+          cg.id,
+          cg.system_id AS sourceSystemId,
+          cg.method,
+          cg.username,
+          cg.scope,
+          cg.scope_segment_id AS scopeSegmentId,
+          cg.automatic_enrollment AS automaticEnrollment,
+          cg.first_seen_key_pinning AS firstSeenKeyPinning
+        FROM credential_grant cg
+        INNER JOIN system target ON target.id = ?
+        INNER JOIN system source ON source.id = cg.system_id
+        WHERE target.segment_id = cg.scope_segment_id
+          AND cg.scope = 'bounded-subnet'
+          AND cg.enabled = 1
+          AND source.excluded = 0
+        ORDER BY cg.updated_at DESC
+        LIMIT 1
+      `,
+    )
+    .get(systemId) as
+    | {
+        id: string;
+        sourceSystemId: string;
+        method: string;
+        username: string;
+        scope: string;
+        scopeSegmentId: string | null;
+        automaticEnrollment: number;
+        firstSeenKeyPinning: number;
+      }
+    | undefined;
+  if (!row || row.scopeSegmentId === null || row.scope !== "bounded-subnet") return null;
+  return {
+    id: row.id,
+    sourceSystemId: row.sourceSystemId,
+    method: row.method,
+    username: row.username,
+    scope: "bounded-subnet",
+    scopeSegmentId: row.scopeSegmentId,
+    automaticEnrollment: row.automaticEnrollment === 1,
+    firstSeenKeyPinning: row.firstSeenKeyPinning === 1,
+  };
+}
 
 export function getAccessGrantReceipt(
   idempotencyKey: string,
@@ -77,6 +149,7 @@ export async function preflightSsh(systemId: string, now = Date.now()) {
   const canonicalId = sqlite.transaction(() =>
     recordVerifiedSshIdentity(sqlite, requestedId, endpoint, fingerprint, now),
   )();
+  const automaticEnrollment = queueAutomaticEnrollment(canonicalId, fingerprint, now);
   const trusted = sqlite
     .prepare(
       "SELECT fingerprint FROM trusted_host_key WHERE system_id = ? AND method = 'ssh' AND revoked_at IS NULL ORDER BY accepted_at DESC LIMIT 1",
@@ -88,13 +161,174 @@ export async function preflightSsh(systemId: string, now = Date.now()) {
     fingerprint,
     trustedFingerprint: trusted?.fingerprint ?? null,
     trusted: trusted?.fingerprint === fingerprint,
+    automaticEnrollment,
   };
+}
+
+function queueAutomaticEnrollment(
+  requestedSystemId: string,
+  fingerprint: string,
+  now: number,
+): AutomaticEnrollmentResult {
+  const { sqlite } = getDatabase();
+  return sqlite.transaction((): AutomaticEnrollmentResult => {
+    const systemId = resolveSystemId(sqlite, requestedSystemId);
+    const target = sqlite
+      .prepare("SELECT id, segment_id AS segmentId FROM system WHERE id = ? AND excluded = 0")
+      .get(systemId) as { id: string; segmentId: string | null } | undefined;
+    if (!target?.segmentId) return { queued: false, reason: "none", jobId: null };
+
+    if (
+      sqlite
+        .prepare("SELECT 1 FROM agent WHERE system_id = ? AND revoked_at IS NULL LIMIT 1")
+        .get(systemId)
+    ) {
+      return { queued: false, reason: "none", jobId: null };
+    }
+
+    const latestJob = sqlite
+      .prepare(
+        "SELECT id, status FROM enrollment_job WHERE system_id = ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(systemId) as { id: string; status: string } | undefined;
+    if (latestJob && ["queued", "running"].includes(latestJob.status)) {
+      return { queued: true, reason: "already-queued", jobId: latestJob.id };
+    }
+    if (latestJob && ["failed", "blocked"].includes(latestJob.status)) {
+      return { queued: false, reason: "needs-review", jobId: latestJob.id };
+    }
+
+    const reusable = sqlite
+      .prepare(
+        `
+          SELECT
+            cg.id,
+            cg.system_id AS sourceSystemId,
+            cg.method,
+            cg.username,
+            cg.secret_ciphertext AS secretCiphertext,
+            cg.nonce,
+            cg.scope,
+            cg.scope_segment_id AS scopeSegmentId,
+            cg.automatic_enrollment AS automaticEnrollment,
+            cg.first_seen_key_pinning AS firstSeenKeyPinning
+          FROM credential_grant cg
+          INNER JOIN system source ON source.id = cg.system_id
+          WHERE cg.scope = 'bounded-subnet'
+            AND cg.scope_segment_id = ?
+            AND cg.automatic_enrollment = 1
+            AND cg.enabled = 1
+            AND source.excluded = 0
+          ORDER BY cg.updated_at DESC
+          LIMIT 1
+        `,
+      )
+      .get(target.segmentId) as
+      | {
+          id: string;
+          sourceSystemId: string;
+          method: string;
+          username: string;
+          secretCiphertext: string;
+          nonce: string;
+          scope: string;
+          scopeSegmentId: string | null;
+          automaticEnrollment: number;
+          firstSeenKeyPinning: number;
+        }
+      | undefined;
+    if (!reusable || reusable.scopeSegmentId === null) {
+      return { queued: false, reason: "none", jobId: null };
+    }
+
+    const trusted = sqlite
+      .prepare(
+        "SELECT fingerprint FROM trusted_host_key WHERE system_id = ? AND method = 'ssh' AND revoked_at IS NULL ORDER BY accepted_at DESC LIMIT 1",
+      )
+      .get(systemId) as { fingerprint: string } | undefined;
+    if (trusted && trusted.fingerprint !== fingerprint) {
+      throw new AccessError(
+        "The SSH host fingerprint changed. Review the new identity before continuing.",
+        "fingerprint_changed",
+      );
+    }
+    if (!trusted && reusable.firstSeenKeyPinning !== 1) {
+      return { queued: false, reason: "awaiting-trust", jobId: null };
+    }
+    if (!trusted) {
+      sqlite
+        .prepare(
+          "INSERT INTO trusted_host_key (id, system_id, method, fingerprint, accepted_at) VALUES (?, ?, 'ssh', ?, ?)",
+        )
+        .run(randomUUID(), systemId, fingerprint, now);
+    }
+
+    const existingCredential = sqlite
+      .prepare(
+        "SELECT id FROM credential_grant WHERE system_id = ? AND method = ? AND username = ? AND enabled = 1 ORDER BY updated_at DESC LIMIT 1",
+      )
+      .get(systemId, reusable.method, reusable.username) as { id: string } | undefined;
+    const credentialId = existingCredential?.id ?? randomUUID();
+    if (!existingCredential) {
+      const secret = decryptCredential(
+        { ciphertext: reusable.secretCiphertext, nonce: reusable.nonce },
+        { systemId: reusable.sourceSystemId, method: reusable.method, username: reusable.username },
+      );
+      const encrypted = encryptCredential(secret, {
+        systemId,
+        method: reusable.method,
+        username: reusable.username,
+      });
+      sqlite
+        .prepare(
+          "INSERT INTO credential_grant (id, system_id, method, username, secret_ciphertext, nonce, scope, scope_segment_id, automatic_enrollment, first_seen_key_pinning, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'bounded-subnet', ?, 1, ?, ?, ?)",
+        )
+        .run(
+          credentialId,
+          systemId,
+          reusable.method,
+          reusable.username,
+          encrypted.ciphertext,
+          encrypted.nonce,
+          reusable.scopeSegmentId,
+          reusable.firstSeenKeyPinning,
+          now,
+          now,
+        );
+    }
+
+    const jobId = randomUUID();
+    sqlite
+      .prepare(
+        "INSERT INTO enrollment_job (id, system_id, credential_id, status, stage, created_at, updated_at) VALUES (?, ?, ?, 'queued', 'queued', ?, ?)",
+      )
+      .run(jobId, systemId, credentialId, now, now);
+    sqlite
+      .prepare("UPDATE system SET status = 'installing', updated_at = ? WHERE id = ?")
+      .run(now, systemId);
+    return { queued: true, reason: "queued", jobId };
+  })();
 }
 
 export function createAccessGrant(input: AccessGrantInput, now = Date.now()): EnrollmentJobReceipt {
   const { sqlite } = getDatabase();
   const create = sqlite.transaction(() => {
     const systemId = resolveSystemId(sqlite, input.systemId);
+    const scope = input.scope ?? "exact-host";
+    const automaticEnrollment = input.automaticEnrollment === true;
+    const firstSeenKeyPinning = input.firstSeenKeyPinning === true;
+    if (scope === "exact-host" && (automaticEnrollment || firstSeenKeyPinning)) {
+      throw new AccessError(
+        "Automatic enrollment and first-seen key pinning require bounded-subnet scope.",
+        "invalid",
+      );
+    }
+    if (firstSeenKeyPinning && !automaticEnrollment) {
+      throw new AccessError(
+        "Acknowledge automatic enrollment before enabling first-seen key pinning.",
+        "invalid",
+      );
+    }
     const prior = sqlite
       .prepare(
         "SELECT operation, scope_id AS scopeId, resource_id AS resourceId FROM idempotency_receipt WHERE key = ?",
@@ -113,9 +347,16 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
     }
 
     const system = sqlite
-      .prepare("SELECT id FROM system WHERE id = ? AND excluded = 0")
+      .prepare("SELECT id, segment_id AS segmentId FROM system WHERE id = ? AND excluded = 0")
       .get(systemId);
     if (!system) throw new AccessError("System not found.", "not_found");
+    const segmentId = (system as { id: string; segmentId: string | null }).segmentId;
+    if (scope === "bounded-subnet" && !segmentId) {
+      throw new AccessError(
+        "This system is not attached to a bounded network segment yet.",
+        "invalid",
+      );
+    }
     const trusted = sqlite
       .prepare(
         "SELECT fingerprint FROM trusted_host_key WHERE system_id = ? AND method = 'ssh' AND revoked_at IS NULL ORDER BY accepted_at DESC LIMIT 1",
@@ -127,7 +368,7 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
         "fingerprint_changed",
       );
     }
-    if (!trusted && !input.trust)
+    if (!trusted && !input.trust && !firstSeenKeyPinning)
       throw new AccessError(
         "Confirm the first-seen SSH host fingerprint before continuing.",
         "trust_required",
@@ -154,7 +395,7 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
     const credentialId = randomUUID();
     sqlite
       .prepare(
-        "INSERT INTO credential_grant (id, system_id, method, username, secret_ciphertext, nonce, scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO credential_grant (id, system_id, method, username, secret_ciphertext, nonce, scope, scope_segment_id, automatic_enrollment, first_seen_key_pinning, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         credentialId,
@@ -163,7 +404,10 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
         input.username,
         encrypted.ciphertext,
         encrypted.nonce,
-        input.scope ?? "exact-host",
+        scope,
+        scope === "bounded-subnet" ? segmentId : null,
+        automaticEnrollment ? 1 : 0,
+        firstSeenKeyPinning ? 1 : 0,
         now,
         now,
       );
