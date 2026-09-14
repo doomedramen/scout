@@ -32,7 +32,26 @@ fn telemetry_buffer_reports_drops_when_size_is_exceeded() {
     );
     assert_eq!(buffer.enqueue(sample("first", 1), 100).unwrap(), 0);
     assert!(buffer.enqueue(sample("second", 2), 101).unwrap() >= 1);
-    assert_eq!(buffer.pending(102).unwrap().len(), 1);
+    let pending = buffer.pending(102).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].batch_id, "second");
+    assert_eq!(pending[0].dropped_samples, 1);
+}
+
+#[test]
+fn telemetry_buffer_reports_expired_samples_after_restart() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("queue");
+    let buffer = TelemetryBuffer::new_with_limits(&path, 10_000, Duration::from_secs(60));
+
+    assert_eq!(buffer.enqueue(sample("expired", 1), 100_000).unwrap(), 0);
+    let restarted = TelemetryBuffer::new_with_limits(&path, 10_000, Duration::from_secs(60));
+    assert_eq!(restarted.enqueue(sample("current", 2), 160_001).unwrap(), 1);
+
+    let pending = restarted.pending(160_002).unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].batch_id, "current");
+    assert_eq!(pending[0].dropped_samples, 1);
 }
 
 fn sample(batch_id: &str, value: u64) -> TelemetryPayload {

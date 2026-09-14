@@ -42,10 +42,23 @@ impl TelemetryBuffer {
     /// Append a sample and return the number of older samples discarded.
     pub fn enqueue(&self, payload: TelemetryPayload, now: i64) -> Result<u64> {
         let mut entries = self.read()?;
+        let mut reported_drops = self.read_reported_drops()?;
         let cutoff = now.saturating_sub(self.max_age.as_millis() as i64);
         let before = entries.len();
-        entries.retain(|entry| entry.queued_at > cutoff);
-        let mut dropped = (before - entries.len()) as u64;
+        let mut retained = Vec::with_capacity(entries.len());
+        let mut dropped = 0;
+        for entry in entries.drain(..) {
+            if entry.queued_at > cutoff {
+                retained.push(entry);
+            } else {
+                dropped += 1;
+                reported_drops = reported_drops
+                    .saturating_add(1)
+                    .saturating_add(entry.payload.dropped_samples);
+            }
+        }
+        entries = retained;
+        debug_assert_eq!(before - entries.len(), dropped as usize);
         entries.push(QueuedSample {
             queued_at: now,
             payload,
@@ -55,10 +68,22 @@ impl TelemetryBuffer {
             if entries.is_empty() {
                 break;
             }
-            entries.remove(0);
+            let removed = entries.remove(0);
             dropped += 1;
+            reported_drops = reported_drops
+                .saturating_add(1)
+                .saturating_add(removed.payload.dropped_samples);
+        }
+
+        if let Some(current) = entries.last_mut() {
+            current.payload.dropped_samples = current
+                .payload
+                .dropped_samples
+                .saturating_add(reported_drops);
+            reported_drops = 0;
         }
         self.write(&entries)?;
+        self.write_reported_drops(reported_drops)?;
         Ok(dropped)
     }
 
@@ -121,6 +146,57 @@ impl TelemetryBuffer {
         }
         file.sync_all()?;
         fs::rename(temporary, &self.path)?;
+        Ok(())
+    }
+
+    fn reported_drops_path(&self) -> PathBuf {
+        let mut path = self.path.clone();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("telemetry.queue");
+        path.set_file_name(format!("{name}.dropped"));
+        path
+    }
+
+    fn read_reported_drops(&self) -> Result<u64> {
+        let path = self.reported_drops_path();
+        match fs::read_to_string(path) {
+            Ok(contents) => contents
+                .trim()
+                .parse()
+                .context("decode dropped telemetry count"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+            Err(error) => Err(error).context("read dropped telemetry count"),
+        }
+    }
+
+    fn write_reported_drops(&self, count: u64) -> Result<()> {
+        let path = self.reported_drops_path();
+        if count == 0 {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error).context("clear dropped telemetry count"),
+            }
+            return Ok(());
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+            set_private_directory(parent)?;
+        }
+        let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        write!(file, "{count}")?;
+        file.sync_all()?;
+        fs::rename(temporary, path)?;
         Ok(())
     }
 }
