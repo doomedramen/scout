@@ -27,7 +27,12 @@ export default defineConfig({
         timeout: 120_000,
         env: {
           SCOUT_DATA_DIR: e2eDataDirectory,
-          SCOUT_DISABLE_DISCOVERY: "true",
+          SCOUT_DISCOVERY_CIDR: "127.0.0.0/30",
+          SCOUT_DISCOVERY_SOURCE_ADDRESS: "127.0.0.1",
+          SCOUT_DISCOVERY_INTERFACE: "playwright-fixture",
+          SCOUT_SSH_PORT: "18022",
+          SCOUT_E2E_TARGET_ADDRESS: "127.0.0.1",
+          SCOUT_E2E_TARGET_PORT: "18022",
           SCOUT_PUBLIC_URL: e2eBaseUrl,
           PORT: e2ePort,
         },

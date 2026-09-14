@@ -53,9 +53,28 @@ docker run --detach \
   --env SCOUT_PORT=8080 \
   --env SCOUT_DATA_DIR=/data \
   --env SCOUT_PUBLIC_URL="http://127.0.0.1:$server_port" \
-  --env SCOUT_DISABLE_DISCOVERY=true \
+  --env SCOUT_DISCOVERY_CIDR=127.0.0.0/30 \
+  --env SCOUT_DISCOVERY_SOURCE_ADDRESS=127.0.0.1 \
+  --env SCOUT_DISCOVERY_INTERFACE=packaged-e2e \
+  --env SCOUT_SSH_PORT=18022 \
   --volume "$volume:/data" \
   "$image" >/dev/null
+
+docker exec --detach --user 0 "$container" node --input-type=commonjs -e \
+  'const net = require("node:net"); net.createServer((socket) => socket.end()).listen(18022, "127.0.0.1");' \
+  >/dev/null || fail "the disposable discovery target could not start"
+
+target_attempt=1
+while [ "$target_attempt" -le 30 ]; do
+  if docker exec "$container" node --input-type=commonjs -e \
+    'const net = require("node:net"); const socket = net.createConnection({ host: "127.0.0.1", port: 18022 }); socket.once("connect", () => { socket.destroy(); process.exit(0); }); socket.once("error", () => process.exit(1)); setTimeout(() => process.exit(1), 1000);' \
+    >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+  target_attempt=$((target_attempt + 1))
+done
+[ "$target_attempt" -le 30 ] || fail "the disposable discovery target did not become reachable"
 
 attempt=1
 while [ "$attempt" -le 90 ]; do

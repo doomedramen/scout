@@ -128,6 +128,9 @@ describe("agent packaging", () => {
     expect(runner).toContain("docker build");
     expect(runner).toContain("docker run");
     expect(runner).toContain("SCOUT_E2E_SETUP_TOKEN_FILE");
+    expect(runner).toContain("SCOUT_DISCOVERY_CIDR=127.0.0.0/30");
+    expect(runner).toContain("disposable discovery target");
+    expect(runner).not.toContain("SCOUT_DISABLE_DISCOVERY=true");
     expect(runner).toContain("npm run test:e2e");
     expect(packageJson.scripts["test:e2e:packaged"]).toBe("./scripts/playwright-packaged.sh");
   });

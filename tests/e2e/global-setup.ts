@@ -13,7 +13,6 @@ export default function globalSetup() {
   )
     return;
   process.env.SCOUT_DATA_DIR = e2eDataDirectory;
-  process.env.SCOUT_DISABLE_DISCOVERY = "true";
   fs.rmSync(e2eDataDirectory, { recursive: true, force: true });
   authSecret();
   credentialKey();

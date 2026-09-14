@@ -27,7 +27,30 @@ test("owner setup lands on Systems and future visits use sign-in", async ({ page
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/systems$/);
   await expect(page.getByRole("heading", { name: "Systems", exact: true })).toBeVisible();
-  await expect(page.getByText("No systems found yet")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(async () => {
+          const response = await fetch("/api/v1/systems");
+          if (!response.ok) return false;
+          const snapshot = (await response.json()) as {
+            systems?: Array<{ addresses?: string[]; accessMethods?: string[] }>;
+          };
+          return (
+            snapshot.systems?.filter(
+              (system) =>
+                system.addresses?.some((address) => address.startsWith("127.0.0.1:")) &&
+                system.accessMethods?.includes("ssh"),
+            ).length === 1
+          );
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  await page.reload();
+  const discoveredSystem = page.getByRole("link", { name: /127\.0\.0\.1/ });
+  await expect(discoveredSystem).toHaveCount(1);
+  await expect(discoveredSystem.getByText("Needs access", { exact: true })).toBeVisible();
   await expect
     .poll(() => page.locator("html").evaluate((element) => getComputedStyle(element).fontFamily))
     .not.toBe("Times");
