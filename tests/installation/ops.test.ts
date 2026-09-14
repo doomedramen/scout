@@ -30,6 +30,12 @@ describe("packaged operational safeguards", () => {
     expect(hostHelper).toContain("set-authority");
   });
 
+  it("starts a successful update from the exact pulled image digest", () => {
+    expect(hostHelper).toContain("image_repository");
+    expect(hostHelper).toContain("@sha256:");
+    expect(hostHelper).toContain('SCOUT_IMAGE="$image_digest" compose up -d --wait');
+  });
+
   it("provides an image-side snapshot and authority operator", () => {
     expect(ops).toContain('"snapshot"');
     expect(ops).toContain('"restore-snapshot"');

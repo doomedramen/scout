@@ -80,6 +80,34 @@ compose_image() {
   compose config --images | tail -n 1
 }
 
+image_repository() {
+  image_ref=$1
+  case "$image_ref" in
+    *@*) image_ref=${image_ref%%@*} ;;
+  esac
+  case "$image_ref" in
+    *:*) image_ref=${image_ref%:*} ;;
+  esac
+  printf '%s' "$image_ref"
+}
+
+find_image_digest() {
+  image_ref=$1
+  repository=$(image_repository "$image_ref")
+  digests=$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image_ref" 2>/dev/null) || return 1
+  while IFS= read -r digest; do
+    case "$digest" in
+      "$repository"@sha256:*)
+        printf '%s' "$digest"
+        return 0
+        ;;
+    esac
+  done <<EOF
+$digests
+EOF
+  return 1
+}
+
 write_rollback_override() {
   rollback_override=$SCOUT_DIR/.scout-rollback-compose.$$
   printf 'services:\n  scout:\n    image: %s\n' "$rollback_tag" >"$rollback_override"
@@ -128,11 +156,15 @@ case "$command" in
     compose pull scout || rollback_update
     new_image_id=$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || true)
     [ -n "$new_image_id" ] || rollback_update
-    image_digest=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$image_ref" 2>/dev/null | tail -n 1 || true)
+    image_digest=$(find_image_digest "$image_ref" || true)
     if [ -z "$image_digest" ] && [ "${SCOUT_ALLOW_UNDIGESTED_IMAGE:-false}" != "true" ]; then
       rollback_update
     fi
-    compose up -d --wait || rollback_update
+    if [ -n "$image_digest" ]; then
+      SCOUT_IMAGE="$image_digest" compose up -d --wait || rollback_update
+    else
+      compose up -d --wait || rollback_update
+    fi
     run_data_op set-authority "$previous_authority" >/dev/null || rollback_update
     rm -f "$previous"
     rm -rf "$update_snapshot"
