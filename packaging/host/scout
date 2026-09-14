@@ -63,6 +63,46 @@ run_ops() {
     --entrypoint node scout /usr/local/bin/scout-ops.mjs "$operation" "/backup/$archive_name"
 }
 
+run_data_op() {
+  operation=$1
+  if [ "$operation" = snapshot ] || [ "$operation" = restore-snapshot ]; then
+    target=$2
+    [ -n "$target" ] || die "An update snapshot directory is required."
+    [ "$operation" = snapshot ] && mkdir -p "$target"
+    compose run --rm --no-deps --user 0 -v "$target:/update" --entrypoint node scout \
+      /usr/local/bin/scout-ops.mjs "$operation" /update
+  else
+    compose run --rm --no-deps --user 0 --entrypoint node scout /usr/local/bin/scout-ops.mjs "$@"
+  fi
+}
+
+compose_image() {
+  compose config --images | tail -n 1
+}
+
+write_rollback_override() {
+  rollback_override=$SCOUT_DIR/.scout-rollback-compose.$$
+  printf 'services:\n  scout:\n    image: %s\n' "$rollback_tag" > "$rollback_override"
+}
+
+rollback_update() {
+  if [ -f "$previous" ]; then mv -f "$previous" "$COMPOSE_FILE"; fi
+  compose stop scout >/dev/null 2>&1 || true
+  run_data_op restore-snapshot "$update_snapshot" >/dev/null 2>&1 || true
+  if [ -n "${rollback_tag:-}" ]; then
+    write_rollback_override
+    docker compose -f "$COMPOSE_FILE" -f "$rollback_override" up -d --wait >/dev/null 2>&1 || true
+    rm -f "$rollback_override"
+  else
+    compose up -d --wait >/dev/null 2>&1 || true
+  fi
+  run_data_op set-authority "$previous_authority" >/dev/null 2>&1 || true
+  rm -rf "$update_snapshot"
+  rm -f "$previous"
+  if [ -n "${rollback_tag:-}" ]; then docker image rm "$rollback_tag" >/dev/null 2>&1 || true; fi
+  die "Update failed; the previous Compose definition, image, and database were restored."
+}
+
 require_docker
 command=${1:-status}
 
@@ -73,15 +113,30 @@ case "$command" in
     ;;
   update)
     ensure_compose
+    update_snapshot=$SCOUT_DIR/.scout-update-snapshot.$$
     previous=$COMPOSE_FILE.previous.$$
+    image_ref=$(compose_image)
+    old_image_id=$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || true)
+    rollback_tag="scout:rollback-$$"
+    if [ -n "$old_image_id" ]; then docker tag "$old_image_id" "$rollback_tag"; else rollback_tag=''; fi
+    previous_authority=$(run_data_op authority 2>/dev/null || printf 'false')
+    run_data_op snapshot "$update_snapshot" >/dev/null || rollback_update
+    run_data_op pause >/dev/null || rollback_update
     cp "$COMPOSE_FILE" "$previous"
     download_compose
-    if ! compose pull scout || ! compose up -d --wait; then
-      mv "$previous" "$COMPOSE_FILE"
-      compose up -d --wait || true
-      die "Update failed; the previous Compose definition was restored."
+    image_ref=$(compose_image)
+    compose pull scout || rollback_update
+    new_image_id=$(docker image inspect --format '{{.Id}}' "$image_ref" 2>/dev/null || true)
+    [ -n "$new_image_id" ] || rollback_update
+    image_digest=$(docker image inspect --format '{{join .RepoDigests "\n"}}' "$image_ref" 2>/dev/null | tail -n 1 || true)
+    if [ -z "$image_digest" ] && [ "${SCOUT_ALLOW_UNDIGESTED_IMAGE:-false}" != "true" ]; then
+      rollback_update
     fi
+    compose up -d --wait || rollback_update
+    run_data_op set-authority "$previous_authority" >/dev/null || rollback_update
     rm -f "$previous"
+    rm -rf "$update_snapshot"
+    if [ -n "${rollback_tag:-}" ]; then docker image rm "$rollback_tag" >/dev/null 2>&1 || true; fi
     ;;
   backup)
     ensure_compose

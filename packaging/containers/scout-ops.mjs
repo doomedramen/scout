@@ -8,24 +8,54 @@ import Database from "better-sqlite3";
 const dataDirectory = process.env.SCOUT_DATA_DIR || "/data";
 const keyFiles = ["auth.secret", "credentials.key", "control-signing.key"];
 
-const [operation, archive] = process.argv.slice(2);
+const [operation, target] = process.argv.slice(2);
 
-if (!operation || !archive || !["backup", "restore"].includes(operation)) {
-  console.error("Usage: scout-ops.mjs {backup|restore} /backup/archive.scoutbak");
+if (
+  !operation ||
+  ![
+    "backup",
+    "restore",
+    "snapshot",
+    "restore-snapshot",
+    "authority",
+    "set-authority",
+    "pause",
+    "resume",
+  ].includes(operation)
+) {
+  console.error(
+    "Usage: scout-ops.mjs {backup|restore|snapshot|restore-snapshot} TARGET | {authority|pause|resume|set-authority VALUE}",
+  );
   process.exit(2);
 }
 
-const passphrase = fs.readFileSync(0, "utf8").split(/\r?\n/, 1)[0];
-if (!passphrase) {
-  console.error("A non-empty backup passphrase is required.");
-  process.exit(2);
+if (["backup", "restore"].includes(operation)) {
+  const passphrase = fs.readFileSync(0, "utf8").split(/\r?\n/, 1)[0];
+  if (!passphrase) {
+    console.error("A non-empty backup passphrase is required.");
+    process.exit(2);
+  }
+  if (operation === "backup") await backup(target, passphrase);
+  else await restore(target, passphrase);
+} else if (operation === "snapshot") await snapshot(target);
+else if (operation === "restore-snapshot") await restoreSnapshot(target);
+else if (operation === "authority") process.stdout.write(`${readAuthority()}\n`);
+else if (operation === "pause") setAuthority(true);
+else if (operation === "resume") setAuthority(false);
+else if (operation === "set-authority") {
+  if (target !== "true" && target !== "false") {
+    console.error("Authority value must be true or false.");
+    process.exit(2);
+  }
+  setAuthority(target === "true");
 }
 
-if (operation === "backup") await backup(archive, passphrase);
-else await restore(archive, passphrase);
+function databasePath() {
+  return path.join(dataDirectory, "scout.sqlite");
+}
 
 async function backup(output, secret) {
-  const source = path.join(dataDirectory, "scout.sqlite");
+  const source = databasePath();
   if (!fs.existsSync(source)) throw new Error("Scout database does not exist.");
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-"));
   const snapshot = path.join(temporaryDirectory, "scout.sqlite");
@@ -49,6 +79,74 @@ async function backup(output, secret) {
   writeAtomically(output, JSON.stringify(encrypted));
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   process.stdout.write(`Scout backup written to ${output}\n`);
+}
+
+async function snapshot(output) {
+  if (!output) throw new Error("Update snapshot directory is required.");
+  fs.mkdirSync(output, { recursive: true, mode: 0o700 });
+  const source = databasePath();
+  if (!fs.existsSync(source)) throw new Error("Scout database does not exist.");
+  const snapshotPath = path.join(output, "scout.sqlite");
+  const database = new Database(source, { readonly: true, fileMustExist: true });
+  try {
+    await database.backup(snapshotPath);
+  } finally {
+    database.close();
+  }
+  for (const name of keyFiles) {
+    const sourceKey = path.join(dataDirectory, name);
+    if (!fs.existsSync(sourceKey)) throw new Error(`Scout key does not exist: ${name}`);
+    fs.copyFileSync(sourceKey, path.join(output, name));
+    fs.chmodSync(path.join(output, name), 0o600);
+  }
+  writeAtomically(path.join(output, "snapshot.json"), JSON.stringify({ version: 1 }));
+  process.stdout.write(`Scout update snapshot written to ${output}\n`);
+}
+
+async function restoreSnapshot(input) {
+  if (!input || !fs.existsSync(input)) throw new Error("Update snapshot directory does not exist.");
+  const marker = JSON.parse(fs.readFileSync(path.join(input, "snapshot.json"), "utf8"));
+  if (marker.version !== 1) throw new Error("Update snapshot format is unsupported.");
+  const database = fs.readFileSync(path.join(input, "scout.sqlite"));
+  const keys = Object.fromEntries(
+    keyFiles.map((name) => {
+      const value = fs.readFileSync(path.join(input, name));
+      if (value.length !== 32) throw new Error(`Update snapshot key is invalid: ${name}`);
+      return [name, value];
+    }),
+  );
+  fs.mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
+  writeAtomically(databasePath(), database);
+  for (const [name, value] of Object.entries(keys))
+    writeAtomically(path.join(dataDirectory, name), value);
+  process.stdout.write("Scout update snapshot restored\n");
+}
+
+function readAuthority() {
+  if (!fs.existsSync(databasePath())) return false;
+  const database = new Database(databasePath(), { readonly: true, fileMustExist: true });
+  try {
+    const row = database
+      .prepare("SELECT value FROM app_setting WHERE key = 'authority_paused'")
+      .get();
+    return row?.value === "true";
+  } finally {
+    database.close();
+  }
+}
+
+function setAuthority(paused) {
+  const database = new Database(databasePath(), { fileMustExist: true });
+  try {
+    database
+      .prepare(
+        "INSERT INTO app_setting (key, value, updated_at) VALUES ('authority_paused', ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+      )
+      .run(String(paused), Date.now());
+  } finally {
+    database.close();
+  }
+  process.stdout.write(`Scout authority ${paused ? "paused" : "resumed"}\n`);
 }
 
 async function restore(input, secret) {
