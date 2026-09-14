@@ -140,6 +140,24 @@ describe("encrypted backup and restore", () => {
     expect(() => restoreEncryptedBackup(archive, destination, "correct horse")).toThrow(/clean/i);
   });
 
+  it("cleans the temporary archive when the final destination cannot be replaced", async () => {
+    const source = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-atomic-source-"));
+    const outputParent = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-atomic-output-"));
+    const archiveDirectory = path.join(outputParent, "archive-directory");
+    directories.push(source, outputParent);
+    process.env.SCOUT_DATABASE_URL = `file:${path.join(source, "scout.sqlite")}`;
+    process.env.SCOUT_DATA_DIR = source;
+    getDatabase();
+    for (const name of ["auth.secret", "credentials.key", "control-signing.key"])
+      fs.writeFileSync(path.join(source, name), Buffer.alloc(32, 7), { mode: 0o600 });
+    fs.mkdirSync(archiveDirectory);
+
+    await expect(
+      createEncryptedBackup(archiveDirectory, "correct horse", source),
+    ).rejects.toThrow();
+    expect(fs.readdirSync(outputParent).filter((name) => name.includes(".tmp-"))).toEqual([]);
+  });
+
   it("rejects a corrupt SQLite snapshot without leaving a partial restore", () => {
     const destination = fs.mkdtempSync(path.join(os.tmpdir(), "scout-backup-corrupt-destination-"));
     const archive = path.join(os.tmpdir(), `scout-${Date.now()}-corrupt.scoutbak`);

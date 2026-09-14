@@ -296,8 +296,37 @@ function decrypt(envelope, secret) {
 }
 
 function writeAtomically(destination, value) {
-  const temporary = `${destination}.tmp-${process.pid}`;
-  fs.writeFileSync(temporary, value, { mode: 0o600 });
-  fs.renameSync(temporary, destination);
-  fs.chmodSync(destination, 0o600);
+  const parent = path.dirname(destination);
+  fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+  const temporary = path.join(
+    parent,
+    `.${path.basename(destination)}.tmp-${process.pid}-${crypto.randomUUID()}`,
+  );
+  let descriptor;
+  try {
+    descriptor = fs.openSync(
+      temporary,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
+      0o600,
+    );
+    fs.writeFileSync(descriptor, value);
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporary, destination);
+    fs.chmodSync(destination, 0o600);
+    syncDirectory(parent);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function syncDirectory(directory) {
+  const descriptor = fs.openSync(directory, fs.constants.O_RDONLY);
+  try {
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
 }
