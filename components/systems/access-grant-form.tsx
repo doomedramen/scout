@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { createIdempotencyKey } from "@/lib/client/idempotency";
 
 type Preflight = {
   target: string;
@@ -186,7 +187,14 @@ export function AccessGrantForm({
     if (!preflight) return;
     setPending(true);
     setError("");
-    const requestKey = idempotencyKey ?? crypto.randomUUID();
+    let requestKey: string;
+    try {
+      requestKey = idempotencyKey ?? createIdempotencyKey();
+    } catch {
+      setError("This browser cannot create a secure retry key. Use HTTPS or a current browser.");
+      setPending(false);
+      return;
+    }
     if (!idempotencyKey) setIdempotencyKey(requestKey);
     try {
       const response = await fetch(`/api/v1/systems/${systemId}/access-grants`, {
