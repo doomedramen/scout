@@ -28,10 +28,12 @@ describe("agent installer", () => {
     expect(script).toContain("https://scout.example.test:18443");
     expect(script).toContain("SCOUT_OTI=${SCOUT_OTI:-'oti-with-'\\''-quote'}");
     expect(script).toContain("systemctl enable --now scout-agent.service");
+    expect(script).toContain('runuser -u scout-agent -- env SCOUT_SERVER_URL="$SCOUT_SERVER_URL"');
     expect(script).toContain("launchctl bootstrap system");
     expect(script).toContain("SCOUT_TRUST_PIN");
     expect(script).toContain("SCOUT_REQUIRE_TRUST_PIN=1");
     expect(script).toContain("Scout callback is unreachable at $SCOUT_CALLBACK_URL");
+    expect(script).toContain("run_linux_agent_once()");
   });
 
   it("requires the out-of-band server pin before an HTTP manual bootstrap", () => {
