@@ -185,8 +185,9 @@ pub async fn run(config: AgentConfig) -> Result<()> {
         eprintln!("scout-agent telemetry failed: {error:#}");
     }
     if let Some(task) = response.and_then(|response| response.task) {
-        record_task_watermark(&state_path, &mut enrollment, task.generation)?;
-        if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
+        if let Err(error) =
+            process_task(&client, &identity, &mut enrollment, &state_path, task).await
+        {
             eprintln!("scout-agent task failed: {error:#}");
         }
     }
@@ -211,10 +212,7 @@ pub async fn run(config: AgentConfig) -> Result<()> {
                             eprintln!("scout-agent release health save failed: {error}");
                         }
                         if let Some(task) = response.task {
-                            if let Err(error) = record_task_watermark(&state_path, &mut enrollment, task.generation) {
-                                eprintln!("scout-agent task watermark save failed: {error:#}");
-                            }
-                            if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
+                            if let Err(error) = process_task(&client, &identity, &mut enrollment, &state_path, task).await {
                                 eprintln!("scout-agent task failed: {error:#}");
                             }
                         }
@@ -448,7 +446,8 @@ async fn send_telemetry(
 async fn process_task(
     client: &Client,
     identity: &Identity,
-    enrollment: &EnrollmentState,
+    enrollment: &mut EnrollmentState,
+    state_path: &std::path::Path,
     task: TaskEnvelope,
 ) -> Result<()> {
     let control_key = enrollment
@@ -458,6 +457,7 @@ async fn process_task(
     if task.agent_id != enrollment.agent_id || !verify_task(&task, control_key, Utc::now()) {
         return Err(anyhow!("server task envelope is invalid or expired"));
     }
+    record_task_watermark(state_path, enrollment, task.generation)?;
 
     let payload = task.payload.clone();
     match (task.kind.as_str(), payload) {

@@ -124,6 +124,65 @@ async fn an_agent_bridges_a_signed_relay_task_without_buffering_the_target_conne
 }
 
 #[tokio::test]
+async fn an_invalid_task_does_not_advance_the_persisted_task_watermark() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let control_key = SigningKey::generate(&mut OsRng);
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let server_address = listener.local_addr()?;
+    let mut task = relay_task("33333333-3333-4333-8333-333333333333", &control_key, 22);
+    task.signature = "not-a-valid-signature".to_string();
+    let heartbeat = serde_json::to_vec(&HeartbeatResponse {
+        ok: true,
+        server_time: Utc::now().to_rfc3339(),
+        control_public_key: URL_SAFE_NO_PAD.encode(control_key.verifying_key().to_bytes()),
+        task: Some(task),
+    })?;
+
+    let server = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await?;
+            let request = read_full_http_request(&mut stream).await?;
+            let body = if request.path == "/api/agent/v1/heartbeat" {
+                heartbeat.clone()
+            } else {
+                br#"{}"#.to_vec()
+            };
+            write_http_response(&mut stream, "application/json", &body).await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    fs::write(
+        directory.path().join("enrollment.json"),
+        serde_json::json!({
+            "serverUrl": format!("http://{server_address}"),
+            "agentId": "agent-1",
+            "systemId": "system-1",
+            "controlPublicKey": URL_SAFE_NO_PAD.encode(control_key.verifying_key().to_bytes()),
+            "taskGeneration": 0
+        })
+        .to_string(),
+    )?;
+
+    run(AgentConfig {
+        server_url: format!("http://{server_address}"),
+        invitation: None,
+        publisher_public_key: None,
+        data_dir: directory.path().to_path_buf(),
+        once: true,
+        version: "0.1.0".to_string(),
+    })
+    .await?;
+
+    server.await??;
+    let enrollment: serde_json::Value = serde_json::from_str(&fs::read_to_string(
+        directory.path().join("enrollment.json"),
+    )?)?;
+    assert_eq!(enrollment["taskGeneration"], 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_enrolled_agent_starts_and_buffers_telemetry_when_scout_is_unavailable() {
     let directory = tempfile::tempdir().expect("temporary agent directory");
     fs::write(
