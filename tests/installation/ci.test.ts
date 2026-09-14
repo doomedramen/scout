@@ -12,6 +12,14 @@ describe("release CI", () => {
     expect(workflow).toContain("hadolint");
   });
 
+  it("cancels superseded quality runs on the same ref", () => {
+    const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
+
+    expect(workflow).toContain("concurrency:");
+    expect(workflow).toContain("group: quality-${{ github.ref }}");
+    expect(workflow).toContain("cancel-in-progress: true");
+  });
+
   it("builds the complete native release and publishes only the server image", () => {
     const workflow = fs.readFileSync(".github/workflows/release.yml", "utf8");
 
