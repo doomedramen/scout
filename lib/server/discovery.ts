@@ -5,6 +5,12 @@ import { inferDefaultRoute, type NetworkBoundary } from "@/lib/discovery/network
 import { scanSegment, type ProbeResult } from "@/lib/discovery/scanner";
 import { ownerExists } from "@/lib/server/setup";
 import { authorityPaused } from "@/lib/server/settings";
+import {
+  equivalentSegmentProvenance,
+  mergeSystems,
+  resolveSystemId,
+  segmentMetadata,
+} from "@/lib/server/system-identity";
 
 const EVIDENCE_TTL_MS = 30 * 60 * 1000;
 const SCAN_INTERVAL_MS = 10 * 60 * 1000;
@@ -87,11 +93,21 @@ export function ensureNetworkSegment(
     )
     .get(key, boundary.provenanceKey) as SegmentRecord | undefined;
 
-  if (existing) {
+  const equivalent = existing
+    ? undefined
+    : (sqlite
+        .prepare(
+          "SELECT id, cidr, provenance_key AS provenanceKey, last_scan_at AS lastScanAt FROM network_segment WHERE site_key = ? AND cidr = ? AND source = ? ORDER BY created_at ASC LIMIT 1",
+        )
+        .get(key, boundary.cidr, source === "manual" ? "default-route" : "manual") as
+        SegmentRecord | undefined);
+
+  if (existing || equivalent) {
+    const segment = existing ?? equivalent!;
     sqlite
       .prepare("UPDATE network_segment SET cidr = ?, updated_at = ? WHERE id = ?")
-      .run(boundary.cidr, now, existing.id);
-    return { ...existing, cidr: boundary.cidr };
+      .run(boundary.cidr, now, segment.id);
+    return { ...segment, cidr: boundary.cidr };
   }
 
   const id = randomUUID();
@@ -110,74 +126,46 @@ function reconcileOne(
   now: number,
   source: "server-scan" | "agent-scan",
 ): void {
-  let existing = sqlite
-    .prepare(
-      `
-        SELECT s.id, ae.fingerprint AS fingerprint
-        FROM system s
-        INNER JOIN system_address sa ON sa.system_id = s.id
-        LEFT JOIN access_evidence ae
-          ON ae.system_id = s.id
-          AND ae.method = 'ssh'
-          AND ae.address = sa.address
-          AND ae.port = sa.port
-        WHERE s.segment_id = ? AND sa.address = ? AND sa.port = ?
-        LIMIT 1
-      `,
-    )
-    .get(segmentId, result.address, result.port) as
-    { id: string; fingerprint: string | null } | undefined;
+  const candidates = endpointCandidates(sqlite, result.address, result.port);
+  const compatible = candidates.filter((candidate) =>
+    isCompatibleCandidate(sqlite, candidate, segmentId, result),
+  );
 
-  if (
-    existing &&
-    result.outcome === "open" &&
-    result.fingerprint &&
-    existing.fingerprint &&
-    existing.fingerprint !== result.fingerprint
-  ) {
-    // An address can be reused. Preserve the old record as a quarantine
-    // blocker, but never attach a new host key to it.
-    sqlite
-      .prepare(
-        "UPDATE access_evidence SET outcome = 'quarantined', expires_at = ?, observed_at = ? WHERE system_id = ? AND method = 'ssh' AND address = ? AND port = ?",
-      )
-      .run(now, now, existing.id, result.address, result.port);
-    sqlite
-      .prepare("UPDATE system SET status = 'blocked', updated_at = ? WHERE id = ?")
-      .run(now, existing.id);
-    existing = undefined;
-  }
-
-  if (!existing && result.outcome === "open" && result.macAddress) {
-    const sameMac = sqlite
-      .prepare(
-        `
-          SELECT s.id, ae.fingerprint AS fingerprint
-          FROM system s
-          INNER JOIN access_evidence ae ON ae.system_id = s.id
-          WHERE s.segment_id = ?
-            AND ae.method = 'ssh'
-            AND ae.mac_address = ?
-            AND ae.outcome = 'open'
-            AND ae.expires_at > ?
-          ORDER BY ae.observed_at DESC
-          LIMIT 1
-        `,
-      )
-      .get(segmentId, result.macAddress, now) as
-      { id: string; fingerprint: string | null } | undefined;
-    if (
-      sameMac &&
-      (!result.fingerprint || !sameMac.fingerprint || sameMac.fingerprint === result.fingerprint)
-    ) {
-      existing = sameMac;
+  if (result.outcome === "open" && result.fingerprint) {
+    for (const candidate of candidates) {
+      if (hasConflictingFingerprint(candidate, result.fingerprint)) {
+        quarantineEndpoint(sqlite, candidate.id, result.address, result.port, now);
+      }
     }
   }
 
-  if (!existing && result.outcome !== "open") return;
+  let selected = compatible;
+  if (result.outcome === "open" && selected.length === 0 && result.macAddress) {
+    selected = sameMacCandidates(sqlite, segmentId, result.macAddress, now).filter((candidate) =>
+      isCompatibleCandidate(sqlite, candidate, segmentId, result),
+    );
+  }
 
-  const systemId = existing?.id ?? randomUUID();
-  if (!existing) {
+  if (result.outcome !== "open") {
+    selected = candidates.filter((candidate) => candidate.segmentId === segmentId);
+  }
+  if (selected.length === 0 && result.outcome !== "open") return;
+
+  const canonical = [...selected].sort(compareCandidates)[0];
+  const systemId = canonical?.id ?? randomUUID();
+  if (canonical) {
+    for (const candidate of selected) {
+      if (candidate.id !== canonical.id) {
+        mergeSystems(
+          sqlite,
+          candidate.id,
+          canonical.id,
+          result.fingerprint ? "verified-ssh-identity" : "equivalent-network-provenance",
+          now,
+        );
+      }
+    }
+  } else {
     sqlite
       .prepare(
         "INSERT INTO system (id, segment_id, display_name, status, created_at, updated_at, last_seen_at) VALUES (?, ?, ?, 'needs-access', ?, ?, ?)",
@@ -199,8 +187,8 @@ function reconcileOne(
         VALUES (?, ?, 'ssh', ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(system_id, method, address, port) DO UPDATE SET
           outcome = excluded.outcome,
-          fingerprint = excluded.fingerprint,
-          mac_address = excluded.mac_address,
+          fingerprint = COALESCE(excluded.fingerprint, access_evidence.fingerprint),
+          mac_address = COALESCE(excluded.mac_address, access_evidence.mac_address),
           source = excluded.source,
           observed_at = excluded.observed_at,
           expires_at = excluded.expires_at
@@ -226,6 +214,162 @@ function reconcileOne(
       )
       .run(now, now, systemId);
   }
+}
+
+type EndpointCandidate = {
+  id: string;
+  segmentId: string | null;
+  createdAt: number;
+  hasAgent: number;
+  hasCredential: number;
+  hasTrustedKey: number;
+  fingerprint: string | null;
+  trustedFingerprint: string | null;
+};
+
+function endpointCandidates(
+  sqlite: ReturnType<typeof getDatabase>["sqlite"],
+  address: string,
+  port: number,
+): EndpointCandidate[] {
+  return sqlite
+    .prepare(
+      `
+        SELECT
+          s.id,
+          s.segment_id AS segmentId,
+          s.created_at AS createdAt,
+          EXISTS (SELECT 1 FROM agent a WHERE a.system_id = s.id AND a.revoked_at IS NULL) AS hasAgent,
+          EXISTS (SELECT 1 FROM credential_grant cg WHERE cg.system_id = s.id AND cg.enabled = 1) AS hasCredential,
+          EXISTS (SELECT 1 FROM trusted_host_key tk WHERE tk.system_id = s.id AND tk.revoked_at IS NULL) AS hasTrustedKey,
+          (
+            SELECT ae.fingerprint
+            FROM access_evidence ae
+            WHERE ae.system_id = s.id AND ae.method = 'ssh' AND ae.address = ? AND ae.port = ?
+            ORDER BY ae.observed_at DESC
+            LIMIT 1
+          ) AS fingerprint,
+          (
+            SELECT tk.fingerprint
+            FROM trusted_host_key tk
+            WHERE tk.system_id = s.id AND tk.method = 'ssh' AND tk.revoked_at IS NULL
+            ORDER BY tk.accepted_at DESC
+            LIMIT 1
+          ) AS trustedFingerprint
+        FROM system s
+        INNER JOIN system_address sa ON sa.system_id = s.id
+        WHERE s.excluded = 0
+          AND sa.address = ?
+          AND sa.port = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM system_alias alias WHERE alias.source_system_id = s.id
+          )
+      `,
+    )
+    .all(address, port, address, port) as EndpointCandidate[];
+}
+
+function sameMacCandidates(
+  sqlite: ReturnType<typeof getDatabase>["sqlite"],
+  segmentId: string,
+  macAddress: string,
+  now: number,
+): EndpointCandidate[] {
+  return sqlite
+    .prepare(
+      `
+        SELECT DISTINCT
+          s.id,
+          s.segment_id AS segmentId,
+          s.created_at AS createdAt,
+          EXISTS (SELECT 1 FROM agent a WHERE a.system_id = s.id AND a.revoked_at IS NULL) AS hasAgent,
+          EXISTS (SELECT 1 FROM credential_grant cg WHERE cg.system_id = s.id AND cg.enabled = 1) AS hasCredential,
+          EXISTS (SELECT 1 FROM trusted_host_key tk WHERE tk.system_id = s.id AND tk.revoked_at IS NULL) AS hasTrustedKey,
+          (
+            SELECT ae2.fingerprint
+            FROM access_evidence ae2
+            WHERE ae2.system_id = s.id AND ae2.method = 'ssh'
+            ORDER BY ae2.observed_at DESC
+            LIMIT 1
+          ) AS fingerprint,
+          (
+            SELECT tk.fingerprint
+            FROM trusted_host_key tk
+            WHERE tk.system_id = s.id AND tk.method = 'ssh' AND tk.revoked_at IS NULL
+            ORDER BY tk.accepted_at DESC
+            LIMIT 1
+          ) AS trustedFingerprint
+        FROM system s
+        INNER JOIN access_evidence ae ON ae.system_id = s.id
+        WHERE s.segment_id = ?
+          AND s.excluded = 0
+          AND ae.method = 'ssh'
+          AND ae.mac_address = ?
+          AND ae.outcome = 'open'
+          AND ae.expires_at > ?
+          AND NOT EXISTS (
+            SELECT 1 FROM system_alias alias WHERE alias.source_system_id = s.id
+          )
+      `,
+    )
+    .all(segmentId, macAddress, now) as EndpointCandidate[];
+}
+
+function hasConflictingFingerprint(candidate: EndpointCandidate, fingerprint: string): boolean {
+  return (
+    (candidate.fingerprint !== null && candidate.fingerprint !== fingerprint) ||
+    (candidate.trustedFingerprint !== null && candidate.trustedFingerprint !== fingerprint)
+  );
+}
+
+function isCompatibleCandidate(
+  sqlite: ReturnType<typeof getDatabase>["sqlite"],
+  candidate: EndpointCandidate,
+  segmentId: string,
+  result: ProbeResult,
+): boolean {
+  if (result.outcome !== "open") return candidate.segmentId === segmentId;
+  if (result.fingerprint && hasConflictingFingerprint(candidate, result.fingerprint)) return false;
+  if (candidate.segmentId === segmentId) return true;
+  if (equivalentSegmentProvenance(sqlite, candidate.segmentId, segmentId)) return true;
+  if (!result.fingerprint) return false;
+
+  const currentSegment = segmentMetadata(sqlite, segmentId);
+  const candidateSegment = candidate.segmentId
+    ? segmentMetadata(sqlite, candidate.segmentId)
+    : undefined;
+  if (!currentSegment || !candidateSegment || currentSegment.siteKey !== candidateSegment.siteKey)
+    return false;
+  return (
+    candidate.fingerprint === result.fingerprint ||
+    candidate.trustedFingerprint === result.fingerprint
+  );
+}
+
+function compareCandidates(left: EndpointCandidate, right: EndpointCandidate): number {
+  for (const field of ["hasAgent", "hasCredential", "hasTrustedKey"] as const) {
+    if (left[field] !== right[field]) return right[field] - left[field];
+  }
+  if (left.createdAt !== right.createdAt) return left.createdAt - right.createdAt;
+  return left.id.localeCompare(right.id);
+}
+
+function quarantineEndpoint(
+  sqlite: ReturnType<typeof getDatabase>["sqlite"],
+  systemId: string,
+  address: string,
+  port: number,
+  now: number,
+): void {
+  const canonicalId = resolveSystemId(sqlite, systemId);
+  sqlite
+    .prepare(
+      "UPDATE access_evidence SET outcome = 'quarantined', expires_at = ?, observed_at = ? WHERE system_id = ? AND method = 'ssh' AND address = ? AND port = ?",
+    )
+    .run(now, now, canonicalId, address, port);
+  sqlite
+    .prepare("UPDATE system SET status = 'blocked', updated_at = ? WHERE id = ?")
+    .run(now, canonicalId);
 }
 
 export function reconcileScanResults(

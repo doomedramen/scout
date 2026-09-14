@@ -78,4 +78,40 @@ describe("fleet snapshot", () => {
       leaseExpiresAt: new Date(30_000).toISOString(),
     });
   });
+
+  it("serves an old system URL from its canonical identity after a merge", () => {
+    process.env.SCOUT_DATABASE_URL = "file::memory:";
+    const { sqlite } = getDatabase();
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, display_name, status, excluded, created_at, updated_at) VALUES (?, ?, 'needs-access', 0, ?, ?)",
+      )
+      .run("system-canonical", "192.0.2.10", 1_000, 1_000);
+    sqlite
+      .prepare(
+        "INSERT INTO system (id, display_name, status, excluded, created_at, updated_at) VALUES (?, ?, 'needs-access', 1, ?, ?)",
+      )
+      .run("system-old", "192.0.2.10", 900, 900);
+    sqlite
+      .prepare(
+        "INSERT INTO system_alias (source_system_id, canonical_system_id, reason, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run("system-old", "system-canonical", "verified-ssh-identity", 1_000);
+    sqlite
+      .prepare(
+        "INSERT INTO access_evidence (id, system_id, method, address, port, outcome, source, observed_at, expires_at) VALUES (?, ?, 'ssh', ?, ?, 'open', 'test', ?, ?)",
+      )
+      .run("evidence-canonical", "system-canonical", "192.0.2.10", 22, 1_000, 2_000);
+    sqlite
+      .prepare(
+        "INSERT INTO system_address (id, system_id, address, port, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("address-canonical", "system-canonical", "192.0.2.10", 22, 1_000);
+
+    expect(getFleetSnapshot(1_500).systems).toHaveLength(1);
+    expect(getSystemDetails("system-old", 1_500)).toMatchObject({
+      id: "system-canonical",
+      addresses: ["192.0.2.10:22"],
+    });
+  });
 });

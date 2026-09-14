@@ -111,6 +111,21 @@ export const systems = sqliteTable(
   ],
 );
 
+export const systemAliases = sqliteTable(
+  "system_alias",
+  {
+    sourceSystemId: text("source_system_id")
+      .primaryKey()
+      .references(() => systems.id, { onDelete: "cascade" }),
+    canonicalSystemId: text("canonical_system_id")
+      .notNull()
+      .references(() => systems.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("system_alias_canonical_idx").on(table.canonicalSystemId)],
+);
+
 export const agentInvitations = sqliteTable(
   "agent_invitation",
   {
@@ -353,6 +368,7 @@ export const schema = {
   agentInvitations,
   networkSegments,
   systems,
+  systemAliases,
   systemAddresses,
   accessEvidence,
   trustedHostKeys,

@@ -1,6 +1,7 @@
 import type { Database as SqliteDatabase } from "better-sqlite3";
 
 import { getDatabase } from "@/lib/server/db";
+import { resolveSystemId } from "@/lib/server/system-identity";
 
 export const SYSTEM_STATES = [
   "needs-access",
@@ -143,6 +144,9 @@ function fleetRows(sqlite: SqliteDatabase, now: number): SystemRow[] {
         LEFT JOIN access_evidence ae ON ae.system_id = s.id
         LEFT JOIN agent a ON a.system_id = s.id AND a.revoked_at IS NULL
         WHERE s.excluded = 0
+          AND NOT EXISTS (
+            SELECT 1 FROM system_alias alias WHERE alias.source_system_id = s.id
+          )
           AND (
             a.id IS NOT NULL
             OR EXISTS (
@@ -210,6 +214,7 @@ export type SystemDetails = SystemSummary & {
 
 export function getSystemDetails(systemId: string, now = Date.now()): SystemDetails | null {
   const { sqlite } = getDatabase();
+  const canonicalId = resolveSystemId(sqlite, systemId);
   const row = sqlite
     .prepare(
       `
@@ -238,7 +243,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
         GROUP BY s.id
       `,
     )
-    .get(now, systemId) as DetailRow | undefined;
+    .get(now, canonicalId) as DetailRow | undefined;
   if (!row) return null;
 
   const evidence = sqlite
@@ -251,7 +256,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
         ORDER BY observed_at DESC
       `,
     )
-    .all(systemId) as Array<{
+    .all(canonicalId) as Array<{
     method: string;
     address: string;
     port: number;
@@ -265,12 +270,12 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
     .prepare(
       "SELECT method, fingerprint, accepted_at AS acceptedAt FROM trusted_host_key WHERE system_id = ? AND revoked_at IS NULL ORDER BY accepted_at DESC",
     )
-    .all(systemId) as Array<{ method: string; fingerprint: string; acceptedAt: number }>;
+    .all(canonicalId) as Array<{ method: string; fingerprint: string; acceptedAt: number }>;
   const credentialMethods = sqlite
     .prepare(
       "SELECT DISTINCT method FROM credential_grant WHERE system_id = ? AND enabled = 1 ORDER BY method",
     )
-    .all(systemId) as Array<{ method: string }>;
+    .all(canonicalId) as Array<{ method: string }>;
   const enrollment = sqlite
     .prepare(
       `
@@ -282,7 +287,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
         LIMIT 1
       `,
     )
-    .get(systemId) as
+    .get(canonicalId) as
     | {
         id: string;
         status: string;
@@ -300,7 +305,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
         .prepare(
           "SELECT address, port FROM access_evidence WHERE system_id = ? AND method = 'ssh' AND outcome = 'open' ORDER BY observed_at DESC LIMIT 1",
         )
-        .get(systemId) as { address: string; port: number } | undefined)
+        .get(canonicalId) as { address: string; port: number } | undefined)
     : undefined;
   const summary = toSummary(row, now);
 
@@ -337,6 +342,7 @@ export function getSystemDetails(systemId: string, now = Date.now()): SystemDeta
 
 export function getSystemMetrics(systemId: string, now = Date.now()) {
   const { sqlite } = getDatabase();
+  const canonicalId = resolveSystemId(sqlite, systemId);
   const samples = sqlite
     .prepare(
       `
@@ -347,9 +353,9 @@ export function getSystemMetrics(systemId: string, now = Date.now()) {
         ORDER BY ts.observed_at ASC
       `,
     )
-    .all(systemId, now - 24 * 60 * 60 * 1000) as Array<{ observedAt: number; payload: string }>;
+    .all(canonicalId, now - 24 * 60 * 60 * 1000) as Array<{ observedAt: number; payload: string }>;
   return {
-    systemId,
+    systemId: canonicalId,
     samples: samples.map((sample) => ({
       observedAt: new Date(sample.observedAt).toISOString(),
       payload: JSON.parse(sample.payload),

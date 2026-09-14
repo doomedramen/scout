@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { getDatabase } from "@/lib/server/db";
 import { encryptCredential } from "@/lib/server/credentials";
 import { readSshFingerprint, type SshEndpoint } from "@/lib/server/ssh";
+import { recordVerifiedSshIdentity, resolveSystemId } from "@/lib/server/system-identity";
 
 export type AccessGrantInput = {
   systemId: string;
@@ -39,25 +40,31 @@ export type EnrollmentJobReceipt = {
 
 export function sshEndpointForSystem(systemId: string, now = Date.now()): SshEndpoint {
   const { sqlite } = getDatabase();
+  const canonicalId = resolveSystemId(sqlite, systemId);
   const row = sqlite
     .prepare(
       "SELECT address, port FROM access_evidence WHERE system_id = ? AND method = 'ssh' AND outcome = 'open' AND expires_at > ? ORDER BY observed_at DESC LIMIT 1",
     )
-    .get(systemId, now) as SshEndpoint | undefined;
+    .get(canonicalId, now) as SshEndpoint | undefined;
   if (!row) throw new AccessError("This system has no current open SSH evidence.", "not_found");
   return row;
 }
 
 export async function preflightSsh(systemId: string, now = Date.now()) {
-  const endpoint = sshEndpointForSystem(systemId, now);
-  const fingerprint = await readSshFingerprint(endpoint);
   const { sqlite } = getDatabase();
+  const requestedId = resolveSystemId(sqlite, systemId);
+  const endpoint = sshEndpointForSystem(requestedId, now);
+  const fingerprint = await readSshFingerprint(endpoint);
+  const canonicalId = sqlite.transaction(() =>
+    recordVerifiedSshIdentity(sqlite, requestedId, endpoint, fingerprint, now),
+  )();
   const trusted = sqlite
     .prepare(
       "SELECT fingerprint FROM trusted_host_key WHERE system_id = ? AND method = 'ssh' AND revoked_at IS NULL ORDER BY accepted_at DESC LIMIT 1",
     )
-    .get(systemId) as { fingerprint: string } | undefined;
+    .get(canonicalId) as { fingerprint: string } | undefined;
   return {
+    systemId: canonicalId,
     endpoint,
     fingerprint,
     trustedFingerprint: trusted?.fingerprint ?? null,
@@ -68,6 +75,7 @@ export async function preflightSsh(systemId: string, now = Date.now()) {
 export function createAccessGrant(input: AccessGrantInput, now = Date.now()): EnrollmentJobReceipt {
   const { sqlite } = getDatabase();
   const create = sqlite.transaction(() => {
+    const systemId = resolveSystemId(sqlite, input.systemId);
     const prior = sqlite
       .prepare("SELECT operation, resource_id AS resourceId FROM idempotency_receipt WHERE key = ?")
       .get(input.idempotencyKey) as { operation: string; resourceId: string } | undefined;
@@ -83,13 +91,13 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
 
     const system = sqlite
       .prepare("SELECT id FROM system WHERE id = ? AND excluded = 0")
-      .get(input.systemId);
+      .get(systemId);
     if (!system) throw new AccessError("System not found.", "not_found");
     const trusted = sqlite
       .prepare(
         "SELECT fingerprint FROM trusted_host_key WHERE system_id = ? AND method = 'ssh' AND revoked_at IS NULL ORDER BY accepted_at DESC LIMIT 1",
       )
-      .get(input.systemId) as { fingerprint: string } | undefined;
+      .get(systemId) as { fingerprint: string } | undefined;
     if (trusted && trusted.fingerprint !== input.fingerprint) {
       throw new AccessError(
         "The SSH host fingerprint changed. Review the new identity before continuing.",
@@ -107,12 +115,12 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
         .prepare(
           "INSERT INTO trusted_host_key (id, system_id, method, fingerprint, accepted_at) VALUES (?, ?, 'ssh', ?, ?)",
         )
-        .run(randomUUID(), input.systemId, input.fingerprint, now);
+        .run(randomUUID(), systemId, input.fingerprint, now);
     }
 
     const encrypted = encryptCredential(
       { authType: input.authType, secret: input.secret, passphrase: input.passphrase },
-      { systemId: input.systemId, method: input.method, username: input.username },
+      { systemId, method: input.method, username: input.username },
     );
     const credentialId = randomUUID();
     sqlite
@@ -121,7 +129,7 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
       )
       .run(
         credentialId,
-        input.systemId,
+        systemId,
         input.method,
         input.username,
         encrypted.ciphertext,
@@ -135,7 +143,7 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
       .prepare(
         "SELECT id, status, stage FROM enrollment_job WHERE system_id = ? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1",
       )
-      .get(input.systemId) as { id: string; status: string; stage: string } | undefined;
+      .get(systemId) as { id: string; status: string; stage: string } | undefined;
     const job = active ?? { id: randomUUID(), status: "queued", stage: "queued" };
     if (active) {
       sqlite
@@ -146,11 +154,11 @@ export function createAccessGrant(input: AccessGrantInput, now = Date.now()): En
         .prepare(
           "INSERT INTO enrollment_job (id, system_id, credential_id, status, stage, created_at, updated_at) VALUES (?, ?, ?, 'queued', 'queued', ?, ?)",
         )
-        .run(job.id, input.systemId, credentialId, now, now);
+        .run(job.id, systemId, credentialId, now, now);
     }
     sqlite
       .prepare("UPDATE system SET status = 'installing', updated_at = ? WHERE id = ?")
-      .run(now, input.systemId);
+      .run(now, systemId);
     sqlite
       .prepare(
         "INSERT INTO idempotency_receipt (key, operation, resource_id, created_at) VALUES (?, 'access-grant', ?, ?)",

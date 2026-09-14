@@ -230,6 +230,19 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       ALTER TABLE scan_task ADD COLUMN issued_at INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 4,
+    sql: `
+      CREATE TABLE IF NOT EXISTS system_alias (
+        source_system_id TEXT PRIMARY KEY NOT NULL REFERENCES system(id) ON DELETE CASCADE,
+        canonical_system_id TEXT NOT NULL REFERENCES system(id) ON DELETE CASCADE,
+        reason TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        CHECK (source_system_id <> canonical_system_id)
+      );
+      CREATE INDEX IF NOT EXISTS system_alias_canonical_idx ON system_alias(canonical_system_id);
+    `,
+  },
 ];
 
 export function migrateDatabase(sqlite: Database.Database): void {

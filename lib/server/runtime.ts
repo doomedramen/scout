@@ -3,6 +3,7 @@ import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys"
 import { requestDiscovery } from "@/lib/server/discovery";
 import { processNextEnrollmentJob } from "@/lib/server/enrollment";
 import { authorityPaused } from "@/lib/server/settings";
+import { repairDuplicateSystems } from "@/lib/server/system-identity";
 import { runTelemetryRetention } from "@/lib/server/telemetry";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -58,6 +59,7 @@ export function startRuntime(): void {
   authSecret();
   credentialKey();
   controlSigningKey();
+  repairDuplicateSystems(getDatabase().sqlite);
   recoverExpiredLeases();
   writeHeartbeat();
   requestDiscovery();
