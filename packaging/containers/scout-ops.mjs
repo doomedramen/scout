@@ -10,44 +10,55 @@ const keyFiles = ["auth.secret", "credentials.key", "control-signing.key"];
 
 const [operation, target] = process.argv.slice(2);
 
-if (
-  !operation ||
-  ![
-    "backup",
-    "restore",
-    "snapshot",
-    "restore-snapshot",
-    "authority",
-    "set-authority",
-    "pause",
-    "resume",
-  ].includes(operation)
-) {
-  console.error(
-    "Usage: scout-ops.mjs {backup|restore|snapshot|restore-snapshot} TARGET | {authority|pause|resume|set-authority VALUE}",
-  );
-  process.exit(2);
-}
+main().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`scout-ops: ${message}`);
+  process.exitCode = 1;
+});
 
-if (["backup", "restore"].includes(operation)) {
-  const passphrase = fs.readFileSync(0, "utf8").split(/\r?\n/, 1)[0];
-  if (!passphrase) {
-    console.error("A non-empty backup passphrase is required.");
-    process.exit(2);
+async function main() {
+  if (
+    !operation ||
+    ![
+      "backup",
+      "restore",
+      "snapshot",
+      "restore-snapshot",
+      "authority",
+      "set-authority",
+      "pause",
+      "resume",
+    ].includes(operation)
+  ) {
+    console.error(
+      "Usage: scout-ops.mjs {backup|restore|snapshot|restore-snapshot} TARGET | {authority|pause|resume|set-authority VALUE}",
+    );
+    process.exitCode = 2;
+    return;
   }
-  if (operation === "backup") await backup(target, passphrase);
-  else await restore(target, passphrase);
-} else if (operation === "snapshot") await snapshot(target);
-else if (operation === "restore-snapshot") await restoreSnapshot(target);
-else if (operation === "authority") process.stdout.write(`${readAuthority()}\n`);
-else if (operation === "pause") setAuthority(true);
-else if (operation === "resume") setAuthority(false);
-else if (operation === "set-authority") {
-  if (target !== "true" && target !== "false") {
-    console.error("Authority value must be true or false.");
-    process.exit(2);
+
+  if (["backup", "restore"].includes(operation)) {
+    const passphrase = fs.readFileSync(0, "utf8").split(/\r?\n/, 1)[0];
+    if (!passphrase) {
+      console.error("A non-empty backup passphrase is required.");
+      process.exitCode = 2;
+      return;
+    }
+    if (operation === "backup") await backup(target, passphrase);
+    else await restore(target, passphrase);
+  } else if (operation === "snapshot") await snapshot(target);
+  else if (operation === "restore-snapshot") await restoreSnapshot(target);
+  else if (operation === "authority") process.stdout.write(`${readAuthority()}\n`);
+  else if (operation === "pause") setAuthority(true);
+  else if (operation === "resume") setAuthority(false);
+  else if (operation === "set-authority") {
+    if (target !== "true" && target !== "false") {
+      console.error("Authority value must be true or false.");
+      process.exitCode = 2;
+      return;
+    }
+    setAuthority(target === "true");
   }
-  setAuthority(target === "true");
 }
 
 function databasePath() {

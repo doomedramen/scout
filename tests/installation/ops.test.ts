@@ -92,7 +92,17 @@ describe("packaged operational safeguards", () => {
       for (const name of ["auth.secret", "credentials.key", "control-signing.key"])
         fs.writeFileSync(path.join(snapshot, name), Buffer.alloc(32, 7), { mode: 0o600 });
 
-      expect(() => runOps(data, "restore-snapshot", snapshot)).toThrow(/sqlite|integrity/i);
+      let failure: unknown;
+      try {
+        runOps(data, "restore-snapshot", snapshot);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeDefined();
+      const stderr = String((failure as { stderr?: string | Buffer }).stderr ?? "");
+      expect(stderr).toContain("scout-ops:");
+      expect(stderr).toMatch(/sqlite|integrity|database/i);
+      expect(stderr).not.toContain("at validateSQLite");
       const unchanged = new Database(path.join(data, "scout.sqlite"), { readonly: true });
       expect(
         unchanged.prepare("SELECT value FROM app_setting WHERE key = 'example'").get(),
