@@ -46,4 +46,11 @@ describe("release CI", () => {
 
     expect(workflow).toContain("SCOUT_AGENT_TARGET: x86_64-unknown-linux-gnu");
   });
+
+  it("keeps the native SSH dependency external to the Next server bundle", () => {
+    const nextConfig = fs.readFileSync("next.config.ts", "utf8");
+
+    expect(nextConfig).toContain("serverExternalPackages");
+    expect(nextConfig).toContain('"ssh2"');
+  });
 });
