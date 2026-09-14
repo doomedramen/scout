@@ -40,11 +40,35 @@ describe("agent packaging", () => {
       env: {
         ...process.env,
         SCOUT_AGENT_BINARY: binary,
+        SCOUT_AGENT_PLATFORM: "linux",
+        SCOUT_AGENT_ARCHITECTURE: "x86_64",
       },
     });
 
     expect(fs.readFileSync(path.join(output, "scout-agent-linux-x86_64"), "utf8")).toBe(
       "verified-agent-binary",
+    );
+  });
+
+  it("stages a prebuilt agent for the requested macOS architecture", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-packaging-macos-"));
+    temporaryDirectories.push(directory);
+    const binary = path.join(directory, `scout-agent-${randomUUID()}`);
+    const output = path.join(directory, "agent-artifacts");
+    fs.writeFileSync(binary, "verified-macos-agent-binary");
+
+    execFileSync("sh", [path.resolve("scripts/build-local-agent.sh")], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        SCOUT_AGENT_BINARY: binary,
+        SCOUT_AGENT_PLATFORM: "macos",
+        SCOUT_AGENT_ARCHITECTURE: "aarch64",
+      },
+    });
+
+    expect(fs.readFileSync(path.join(output, "scout-agent-macos-aarch64"), "utf8")).toBe(
+      "verified-macos-agent-binary",
     );
   });
 

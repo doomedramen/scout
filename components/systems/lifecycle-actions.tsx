@@ -36,7 +36,11 @@ export function LifecycleActions({ systemId, canRetry }: { systemId: string; can
           ? "Installation was queued again."
           : `The agent was revoked; uninstall is ${payload.uninstall ?? "pending/manual"}.`,
       );
-      router.refresh();
+      if (action === "retry") {
+        window.location.reload();
+      } else {
+        router.refresh();
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The action failed.");
     } finally {
