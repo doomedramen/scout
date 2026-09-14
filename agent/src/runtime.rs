@@ -19,7 +19,7 @@ use crate::protocol::{
     HeartbeatPayload, HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope,
     TelemetryPayload,
 };
-use crate::release::verify_release_manifest;
+use crate::release::{inspect_release_manifest, verify_release_manifest};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
 const TELEMETRY_INTERVAL: Duration = Duration::from_secs(30);
@@ -306,6 +306,16 @@ async fn check_for_update(
     .bytes()
     .await
     .context("read signed release manifest")?;
+    let Some(_) = inspect_release_manifest(
+        &manifest,
+        publisher_public_key,
+        platform_name(),
+        architecture_name(),
+        enrollment.release_sequence,
+    )?
+    else {
+        return Ok(false);
+    };
     let artifact_path = format!(
         "/api/agent/v1/releases/artifact?platform={}&architecture={}",
         platform_name(),

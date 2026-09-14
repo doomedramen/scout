@@ -173,6 +173,119 @@ async fn an_enrolled_agent_applies_a_verified_release_before_reporting_telemetry
     Ok(())
 }
 
+#[tokio::test]
+async fn an_enrolled_agent_does_not_download_an_already_installed_release() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir().expect("temporary agent directory");
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let platform = if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    };
+    let architecture = if cfg!(target_arch = "aarch64") {
+        "aarch64"
+    } else {
+        "x86_64"
+    };
+    let artifact = b"already-installed-agent";
+    let payload = ReleaseManifestPayload {
+        schema_version: 1,
+        release_sequence: 2,
+        artifacts: vec![ReleaseArtifact {
+            platform: platform.to_string(),
+            architecture: architecture.to_string(),
+            version: "0.2.0".to_string(),
+            sequence: 2,
+            sha256: sha256_hex(artifact),
+            size: artifact.len() as u64,
+            minimum_protocol: 1,
+        }],
+    };
+    let manifest = serde_json::to_vec(&SignedReleaseManifest {
+        schema_version: payload.schema_version,
+        release_sequence: payload.release_sequence,
+        artifacts: payload.artifacts.clone(),
+        signature: URL_SAFE_NO_PAD.encode(
+            signing_key
+                .sign(release_manifest_message(&payload).as_bytes())
+                .to_bytes(),
+        ),
+    })?;
+    let publisher_public_key = URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes());
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let server_address = listener.local_addr()?;
+    let server = tokio::spawn(async move {
+        let mut paths = Vec::new();
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().await?;
+            let request = read_http_request(&mut stream).await?;
+            let path = request
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or_default()
+                .to_string();
+            paths.push(path.clone());
+            let (content_type, body) = match path.as_str() {
+                "/api/agent/v1/heartbeat" => (
+                    "application/json",
+                    br#"{"ok":true,"serverTime":"2026-09-14T00:00:00Z","controlPublicKey":"","task":null}"#.to_vec(),
+                ),
+                "/api/agent/v1/releases/manifest" => ("application/json", manifest.clone()),
+                "/api/agent/v1/telemetry" => ("application/json", br#"{}"#.to_vec()),
+                _ => ("text/plain", b"not found".to_vec()),
+            };
+            let status = if content_type == "text/plain" {
+                "404 Not Found"
+            } else {
+                "200 OK"
+            };
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await?;
+            stream.write_all(&body).await?;
+        }
+        Ok::<Vec<String>, std::io::Error>(paths)
+    });
+
+    fs::write(
+        directory.path().join("enrollment.json"),
+        serde_json::json!({
+            "serverUrl": format!("http://{server_address}"),
+            "agentId": "agent-1",
+            "systemId": "system-1",
+            "controlPublicKey": "",
+            "publisherPublicKey": publisher_public_key,
+            "releaseSequence": 2
+        })
+        .to_string(),
+    )?;
+
+    run(AgentConfig {
+        server_url: format!("http://{server_address}"),
+        invitation: None,
+        publisher_public_key: Some(publisher_public_key),
+        data_dir: directory.path().to_path_buf(),
+        once: true,
+        version: "0.2.0".to_string(),
+    })
+    .await?;
+
+    let paths = server.await??;
+    assert_eq!(
+        paths,
+        vec![
+            "/api/agent/v1/heartbeat".to_string(),
+            "/api/agent/v1/releases/manifest".to_string(),
+            "/api/agent/v1/telemetry".to_string(),
+        ]
+    );
+    assert!(!directory.path().join("current/scout-agent").exists());
+    Ok(())
+}
+
 async fn read_http_request(stream: &mut tokio::net::TcpStream) -> std::io::Result<String> {
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 4096];

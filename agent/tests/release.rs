@@ -2,8 +2,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signer, SigningKey};
 use rand::rngs::OsRng;
 use scout_agent::release::{
-    release_manifest_message, verify_release_manifest, ReleaseArtifact, ReleaseManifestPayload,
-    SignedReleaseManifest,
+    inspect_release_manifest, release_manifest_message, verify_release_manifest, ReleaseArtifact,
+    ReleaseManifestPayload, SignedReleaseManifest,
 };
 
 #[test]
@@ -46,6 +46,11 @@ fn signed_release_requires_matching_platform_bytes_and_newer_sequence() {
     );
     assert!(
         verify_release_manifest(&manifest, &public_key, "linux", "x86_64", 3, artifact).is_err()
+    );
+    assert!(
+        inspect_release_manifest(&manifest, &public_key, "linux", "x86_64", 3)
+            .unwrap()
+            .is_none()
     );
 }
 

@@ -38,6 +38,8 @@ pub struct VerifiedRelease {
     pub version: String,
     pub sequence: u64,
     pub minimum_protocol: u64,
+    pub sha256: String,
+    pub size: u64,
 }
 
 pub fn release_manifest_message(payload: &ReleaseManifestPayload) -> String {
@@ -49,14 +51,13 @@ pub fn release_manifest_message(payload: &ReleaseManifestPayload) -> String {
     serde_json::to_string(&payload).expect("release manifest contains serializable fields")
 }
 
-pub fn verify_release_manifest(
+pub fn inspect_release_manifest(
     manifest_bytes: &[u8],
     publisher_public_key: &str,
     platform: &str,
     architecture: &str,
     current_sequence: u64,
-    artifact: &[u8],
-) -> Result<VerifiedRelease> {
+) -> Result<Option<VerifiedRelease>> {
     let manifest: SignedReleaseManifest = serde_json::from_slice(manifest_bytes)
         .map_err(|error| anyhow!("decode release manifest: {error}"))?;
     if manifest.schema_version != 1 {
@@ -93,22 +94,43 @@ pub fn verify_release_manifest(
         return Err(anyhow!("artifact sequence exceeds release sequence"));
     }
     if metadata.sequence <= current_sequence {
-        return Err(anyhow!("release is not newer than installed sequence"));
-    }
-    if metadata.size != artifact.len() as u64 {
-        return Err(anyhow!("release artifact size does not match manifest"));
-    }
-    if sha256_hex(artifact) != metadata.sha256 {
-        return Err(anyhow!("release artifact digest does not match manifest"));
+        return Ok(None);
     }
     if metadata.minimum_protocol > 1 {
         return Err(anyhow!("release requires an unsupported agent protocol"));
     }
-    Ok(VerifiedRelease {
+    Ok(Some(VerifiedRelease {
         version: metadata.version.clone(),
         sequence: metadata.sequence,
         minimum_protocol: metadata.minimum_protocol,
-    })
+        sha256: metadata.sha256.clone(),
+        size: metadata.size,
+    }))
+}
+
+pub fn verify_release_manifest(
+    manifest_bytes: &[u8],
+    publisher_public_key: &str,
+    platform: &str,
+    architecture: &str,
+    current_sequence: u64,
+    artifact: &[u8],
+) -> Result<VerifiedRelease> {
+    let verified = inspect_release_manifest(
+        manifest_bytes,
+        publisher_public_key,
+        platform,
+        architecture,
+        current_sequence,
+    )?
+    .ok_or_else(|| anyhow!("release is not newer than installed sequence"))?;
+    if verified.size != artifact.len() as u64 {
+        return Err(anyhow!("release artifact size does not match manifest"));
+    }
+    if sha256_hex(artifact) != verified.sha256 {
+        return Err(anyhow!("release artifact digest does not match manifest"));
+    }
+    Ok(verified)
 }
 
 fn sha256_hex(value: &[u8]) -> String {
