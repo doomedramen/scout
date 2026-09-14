@@ -457,6 +457,11 @@ async fn process_task(
     if task.agent_id != enrollment.agent_id || !verify_task(&task, control_key, Utc::now()) {
         return Err(anyhow!("server task envelope is invalid or expired"));
     }
+    if task.generation <= enrollment.task_generation {
+        return Err(anyhow!(
+            "server task envelope is stale or already processed"
+        ));
+    }
     record_task_watermark(state_path, enrollment, task.generation)?;
 
     let payload = task.payload.clone();
@@ -906,4 +911,68 @@ fn architecture_name() -> &'static str {
 
 fn usage() -> &'static str {
     "Usage: scout-agent --server URL --invitation TOKEN [--data-dir PATH] [--once]"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{body_digest, task_message};
+    use ed25519_dalek::{Signer, SigningKey};
+    use rand::rngs::OsRng;
+
+    #[tokio::test]
+    async fn a_signed_replayed_task_is_rejected_before_side_effects() -> Result<()> {
+        let directory = tempfile::tempdir()?;
+        let control_key = SigningKey::generate(&mut OsRng);
+        let now = Utc::now();
+        let payload = TaskPayload::Scan(ScanTaskPayload {
+            cidr: "127.0.0.0/8".to_string(),
+            port: 22,
+            addresses: Vec::new(),
+        });
+        let mut task = TaskEnvelope {
+            task_id: "44444444-4444-4444-8444-444444444444".to_string(),
+            agent_id: "agent-1".to_string(),
+            kind: "network-scan".to_string(),
+            generation: 1,
+            policy_version: 1,
+            payload_digest: body_digest(&serde_json::to_string(&payload)?),
+            issued_at: now.to_rfc3339(),
+            expires_at: (now + chrono::Duration::minutes(2)).to_rfc3339(),
+            deadline_at: (now + chrono::Duration::minutes(1)).to_rfc3339(),
+            payload,
+            signature: String::new(),
+        };
+        task.signature =
+            URL_SAFE_NO_PAD.encode(control_key.sign(task_message(&task).as_bytes()).to_bytes());
+        let mut enrollment = EnrollmentState {
+            server_url: "http://127.0.0.1:1".to_string(),
+            agent_id: "agent-1".to_string(),
+            system_id: "system-1".to_string(),
+            control_public_key: Some(
+                URL_SAFE_NO_PAD.encode(control_key.verifying_key().to_bytes()),
+            ),
+            publisher_public_key: None,
+            task_generation: 1,
+            release_sequence: 0,
+        };
+
+        let error = process_task(
+            &Client::new(),
+            &load_or_create(&directory.path().join("identity.json"))?,
+            &mut enrollment,
+            &directory.path().join("enrollment.json"),
+            task,
+        )
+        .await
+        .expect_err("a replayed task must be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "server task envelope is stale or already processed"
+        );
+        assert_eq!(enrollment.task_generation, 1);
+        assert!(!directory.path().join("enrollment.json").exists());
+        Ok(())
+    }
 }
