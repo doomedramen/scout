@@ -27,6 +27,7 @@ test("owner setup lands on Systems and future visits use sign-in", async ({ page
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/systems$/);
   await expect(page.getByRole("heading", { name: "Systems", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Notifications" })).toHaveCount(0);
   await expect
     .poll(
       async () =>
@@ -51,6 +52,10 @@ test("owner setup lands on Systems and future visits use sign-in", async ({ page
   const discoveredSystem = page.getByRole("link", { name: /127\.0\.0\.1/ });
   await expect(discoveredSystem).toHaveCount(1);
   await expect(discoveredSystem.getByText("Needs access", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Manual installation" }).click();
+  await expect(page).toHaveURL(/\/systems\?manual=1$/);
+  await page.getByRole("button", { name: "Generate installer command" }).click();
+  await expect(page.getByText(/SCOUT_OTI=/)).toBeVisible();
   await expect
     .poll(() => page.locator("html").evaluate((element) => getComputedStyle(element).fontFamily))
     .not.toBe("Times");

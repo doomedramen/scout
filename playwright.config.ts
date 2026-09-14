@@ -21,7 +21,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "npm run e2e:server",
+        command: "npm run build && npm run e2e:server",
         url: `${e2eBaseUrl}/api/health/live`,
         reuseExistingServer: false,
         timeout: 120_000,

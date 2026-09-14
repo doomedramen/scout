@@ -135,6 +135,12 @@ describe("agent packaging", () => {
     expect(packageJson.scripts["test:e2e:packaged"]).toBe("./scripts/playwright-packaged.sh");
   });
 
+  it("builds a fresh standalone server before the in-process browser journey", () => {
+    const playwrightConfig = fs.readFileSync("playwright.config.ts", "utf8");
+
+    expect(playwrightConfig).toContain('command: "npm run build && npm run e2e:server"');
+  });
+
   it("reads the packaged artifact when the server runs outside the repository root", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-agent-runtime-"));
     temporaryDirectories.push(directory);

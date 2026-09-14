@@ -4,6 +4,7 @@ import { Activity, ArrowRight, CircleAlert, Laptop, Radar, Server, WifiOff } fro
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ManualInstallPanel } from "@/components/systems/manual-install-panel";
 import type { FleetSnapshot, SystemState } from "@/lib/server/systems";
 
 const stateLabels: Record<SystemState, string> = {
@@ -64,20 +65,7 @@ export function SystemsView({ snapshot, manual }: { snapshot: FleetSnapshot; man
       </section>
 
       {manual ? (
-        <Card id="manual-installation">
-          <CardHeader>
-            <CardTitle>Manual installation</CardTitle>
-            <CardDescription>
-              Use this fallback when automatic SSH installation is not available.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Select a discovered system for the normal flow. Manual bootstrap artifacts and the
-              one-line command will be available here when a Scout invitation is ready.
-            </p>
-          </CardContent>
-        </Card>
+        <ManualInstallPanel systems={snapshot.systems.filter((system) => system.agent === null)} />
       ) : null}
 
       <section aria-label="Fleet summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, ChevronRight, CircleUserRound, Plus, ShieldCheck } from "lucide-react";
+import { ChevronRight, CircleUserRound, Plus, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -53,9 +53,6 @@ export function AppShell({ children, username, title, description }: AppShellPro
               render={<Link href="/systems?manual=1" />}
             >
               <Plus aria-hidden="true" />
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="Notifications" title="Notifications">
-              <Bell aria-hidden="true" />
             </Button>
             <div
               className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm"
