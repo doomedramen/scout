@@ -3,7 +3,7 @@ import { createHash, createPrivateKey, createPublicKey, randomUUID, sign } from 
 import { z } from "zod";
 
 import type { ProbeResult } from "@/lib/discovery/scanner";
-import { hostAddresses } from "@/lib/discovery/network";
+import { configuredSshPort, hostAddresses } from "@/lib/discovery/network";
 import { reconcileScanResults } from "@/lib/server/discovery";
 import { getDatabase } from "@/lib/server/db";
 import { controlSigningKey } from "@/lib/server/keys";
@@ -94,7 +94,11 @@ export function createSignedScanTask(
         .prepare("SELECT MAX(generation) AS generation FROM scan_task WHERE segment_id = ?")
         .get(segmentId) as { generation: number | null }
     ).generation ?? 0) + 1;
-  const payload = { cidr: segment.cidr, port: 22, addresses: hostAddresses(segment.cidr) };
+  const payload = {
+    cidr: segment.cidr,
+    port: configuredSshPort(),
+    addresses: hostAddresses(segment.cidr),
+  };
   const payloadDigest = createHash("sha256")
     .update(JSON.stringify(payload), "utf8")
     .digest("base64url");

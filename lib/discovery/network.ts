@@ -19,6 +19,15 @@ export type NetworkBoundary = {
 export type RouteInference =
   { kind: "ready"; boundary: NetworkBoundary } | { kind: "needs-input"; reason: string };
 
+export function configuredSshPort(): number {
+  const value = process.env.SCOUT_SSH_PORT?.trim();
+  if (!value) return 22;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new Error("SCOUT_SSH_PORT must be between 1 and 65535.");
+  return port;
+}
+
 function ipv4ToNumber(address: string): number | null {
   const parts = address.split(".");
   if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return null;
@@ -141,6 +150,22 @@ export function hostAddresses(cidr: string): string[] {
   const last = network + size - 2;
   const count = Math.min(last - first + 1, 256);
   return Array.from({ length: count }, (_, index) => numberToIpv4(first + index));
+}
+
+export function configuredDiscoveryBoundary(): NetworkBoundary | null {
+  const cidr = process.env.SCOUT_DISCOVERY_CIDR?.trim();
+  if (!cidr) return null;
+  const addresses = hostAddresses(cidr);
+  const sourceAddress = process.env.SCOUT_DISCOVERY_SOURCE_ADDRESS?.trim() || addresses[0];
+  if (!sourceAddress) throw new Error("SCOUT_DISCOVERY_CIDR contains no usable address.");
+  const interfaceName = process.env.SCOUT_DISCOVERY_INTERFACE?.trim() || "configured";
+  return {
+    cidr,
+    interfaceName,
+    gateway: null,
+    sourceAddress,
+    provenanceKey: `configured|${interfaceName}|${cidr}`,
+  };
 }
 
 function interfaceLooksNonRoutable(name: string): boolean {

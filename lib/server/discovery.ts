@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { getDatabase } from "@/lib/server/db";
-import { inferDefaultRoute, type NetworkBoundary } from "@/lib/discovery/network";
+import {
+  configuredDiscoveryBoundary,
+  configuredSshPort,
+  inferDefaultRoute,
+  type NetworkBoundary,
+} from "@/lib/discovery/network";
 import { scanSegment, type ProbeResult } from "@/lib/discovery/scanner";
 import { ownerExists } from "@/lib/server/setup";
 import { authorityPaused } from "@/lib/server/settings";
@@ -400,7 +405,9 @@ export async function discoverNow(
 
   const inference = options.boundary
     ? { kind: "ready" as const, boundary: options.boundary }
-    : inferDefaultRoute();
+    : configuredDiscoveryBoundary()
+      ? { kind: "ready" as const, boundary: configuredDiscoveryBoundary()! }
+      : inferDefaultRoute();
   if (inference.kind === "needs-input") {
     const next = {
       status: "needs-input" as const,
@@ -450,7 +457,10 @@ export async function discoverNow(
     startedAt,
   );
   try {
-    const results = await scanSegment(segment.cidr, 22, { timeoutMs: 800, concurrency: 64 });
+    const results = await scanSegment(segment.cidr, configuredSshPort(), {
+      timeoutMs: 800,
+      concurrency: 64,
+    });
     const completedAt = Date.now();
     reconcileScanResults(segment.id, results, completedAt);
     const next = {

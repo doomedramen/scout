@@ -8,10 +8,19 @@ import {
   parseDarwinDefaultRoute,
   parseLinuxDefaultRoute,
   parseLinuxProcRoute,
+  configuredDiscoveryBoundary,
+  configuredSshPort,
 } from "@/lib/discovery/network";
 import { scanHosts } from "@/lib/discovery/scanner";
 
 describe("default-route discovery", () => {
+  afterAll(() => {
+    delete process.env.SCOUT_DISCOVERY_CIDR;
+    delete process.env.SCOUT_DISCOVERY_SOURCE_ADDRESS;
+    delete process.env.SCOUT_DISCOVERY_INTERFACE;
+    delete process.env.SCOUT_SSH_PORT;
+  });
+
   it("parses a Linux private default route", () => {
     expect(
       parseLinuxDefaultRoute(
@@ -47,6 +56,22 @@ describe("default-route discovery", () => {
     expect(hostAddresses("192.0.2.0/30")).toEqual(["192.0.2.1", "192.0.2.2"]);
     expect(hostAddresses("192.0.2.10/32")).toEqual(["192.0.2.10"]);
     expect(hostAddresses("10.0.0.0/16")).toHaveLength(256);
+  });
+
+  it("accepts an explicit bounded test or operator CIDR and SSH port", () => {
+    process.env.SCOUT_DISCOVERY_CIDR = "127.0.0.1/32";
+    process.env.SCOUT_DISCOVERY_SOURCE_ADDRESS = "127.0.0.1";
+    process.env.SCOUT_DISCOVERY_INTERFACE = "test-loopback";
+    process.env.SCOUT_SSH_PORT = "2222";
+
+    expect(configuredDiscoveryBoundary()).toEqual({
+      cidr: "127.0.0.1/32",
+      interfaceName: "test-loopback",
+      gateway: null,
+      sourceAddress: "127.0.0.1",
+      provenanceKey: "configured|test-loopback|127.0.0.1/32",
+    });
+    expect(configuredSshPort()).toBe(2222);
   });
 });
 
