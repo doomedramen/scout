@@ -11,6 +11,7 @@ case "$_cs_core_url" in
   */build.func) ;;
   *) _cs_core_url="${_cs_core_url%/}/misc/build.func" ;;
 esac
+# shellcheck disable=SC1090
 source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "$_cs_core_url")
 
 # Copyright (c) 2021-2026 community-scripts ORG
@@ -19,6 +20,8 @@ source "$_cs_boot" 2>/dev/null || source <(curl -fsSL "$_cs_core_url")
 # Source: https://github.com/doomedramen/scout
 
 APP="Scout"
+# Consumed by the community-scripts functions sourced above.
+# shellcheck disable=SC2034
 SCRIPT_SLUG="scout"
 var_tags="${var_tags:-monitoring;network;docker}"
 var_cpu="${var_cpu:-2}"
@@ -29,6 +32,7 @@ var_version="${var_version:-13}"
 # Keep unset until the published image has an arm64 manifest; the core then
 # rejects ARM64 hosts clearly instead of creating an LXC that cannot start.
 var_unprivileged="${var_unprivileged:-1}"
+var_install="${var_install:-}"
 
 # The current community build engine still uses its own repository URL when it
 # fetches the container installer. Intercept only that one request so this

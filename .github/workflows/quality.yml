@@ -40,8 +40,8 @@ jobs:
           TOOL_BIN: ${{ runner.temp }}/scout-tools
         run: |
           set -eu
-          shellcheck scripts/*.sh packaging/host/scout
-          "$TOOL_BIN/shfmt" -d -i 2 -ci scripts/*.sh packaging/host/scout
+          shellcheck ct/*.sh install/*.sh scripts/*.sh packaging/host/scout
+          "$TOOL_BIN/shfmt" -d -i 2 -ci ct/*.sh install/*.sh scripts/*.sh packaging/host/scout
       - name: Check workflows
         run: ${{ runner.temp }}/scout-tools/actionlint .github/workflows/*.yml
       - name: Check container files

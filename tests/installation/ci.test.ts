@@ -7,6 +7,8 @@ describe("release CI", () => {
     const workflow = fs.readFileSync(".github/workflows/quality.yml", "utf8");
 
     expect(workflow).toContain("shellcheck");
+    expect(workflow).toContain("ct/*.sh");
+    expect(workflow).toContain("install/*.sh");
     expect(workflow).toContain("shfmt");
     expect(workflow).toContain("actionlint");
     expect(workflow).toContain("hadolint");

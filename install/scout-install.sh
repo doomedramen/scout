@@ -5,6 +5,7 @@
 # License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
 # Source: https://github.com/doomedramen/scout
 
+# shellcheck disable=SC1091
 source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
 color
 verb_ip6
@@ -117,7 +118,7 @@ install_scout_helper() {
 
 start_scout() {
   msg_info "Starting Scout"
-  cd "$SCOUT_DIR"
+  cd "$SCOUT_DIR" || exit 1
   SCOUT_DIR="$SCOUT_DIR" SCOUT_COMPOSE_URL="$SCOUT_COMPOSE_URL" /usr/local/bin/scout up
   msg_ok "Started Scout"
 }
