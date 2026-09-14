@@ -170,9 +170,11 @@ async function restore(input, secret) {
   );
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "scout-restore-"));
   const temporaryDatabase = path.join(temporaryDirectory, "scout.sqlite");
+  let preparedDatabase;
   fs.writeFileSync(temporaryDatabase, database, { mode: 0o600 });
   try {
-    validateSQLite(temporaryDatabase);
+    prepareRestoredDatabase(temporaryDatabase);
+    preparedDatabase = fs.readFileSync(temporaryDatabase);
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
@@ -183,16 +185,46 @@ async function restore(input, secret) {
     const current = path.join(dataDirectory, name);
     if (fs.existsSync(current)) fs.renameSync(current, path.join(previous, name));
   }
-  writeAtomically(path.join(dataDirectory, "scout.sqlite"), database);
+  writeAtomically(path.join(dataDirectory, "scout.sqlite"), preparedDatabase);
   for (const [name, value] of Object.entries(keys))
     writeAtomically(path.join(dataDirectory, name), value);
-  const restored = new Database(path.join(dataDirectory, "scout.sqlite"));
-  try {
-    markRestoredAuthorityForReview(restored);
-  } finally {
-    restored.close();
-  }
   process.stdout.write(`Scout backup restored. Previous files are retained in ${previous}\n`);
+}
+
+function prepareRestoredDatabase(filename) {
+  validateSQLite(filename);
+  const database = new Database(filename);
+  try {
+    ensureReconciliationSchema(database);
+    markRestoredAuthorityForReview(database);
+    const integrity = database.pragma("integrity_check", { simple: true });
+    if (integrity !== "ok")
+      throw new Error(`Restored SQLite integrity check failed: ${String(integrity)}`);
+  } finally {
+    database.close();
+  }
+}
+
+function ensureReconciliationSchema(database) {
+  const columns = new Set(
+    database
+      .prepare("PRAGMA table_info(agent)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (columns.size === 0) throw new Error("SQLite snapshot has no Scout agent schema.");
+  if (!columns.has("reconciliation_required"))
+    database.exec(
+      "ALTER TABLE agent ADD COLUMN reconciliation_required INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!columns.has("reconciled_at"))
+    database.exec("ALTER TABLE agent ADD COLUMN reconciled_at INTEGER");
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS agent_reconciliation_idx ON agent(reconciliation_required, revoked_at)",
+  );
+  database
+    .prepare("INSERT OR IGNORE INTO schema_migration (version, applied_at) VALUES (10, ?)")
+    .run(Date.now());
 }
 
 function markRestoredAuthorityForReview(database) {
