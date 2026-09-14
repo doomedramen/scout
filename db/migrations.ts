@@ -295,6 +295,13 @@ const MIGRATIONS: ReadonlyArray<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS relay_expiry_idx ON relay_channel(expires_at);
     `,
   },
+  {
+    version: 9,
+    sql: `
+      ALTER TABLE scan_task ADD COLUMN kind TEXT NOT NULL DEFAULT 'network-scan';
+      CREATE INDEX IF NOT EXISTS scan_kind_idx ON scan_task(kind, status);
+    `,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

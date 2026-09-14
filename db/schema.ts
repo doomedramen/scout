@@ -309,6 +309,7 @@ export const scanTasks = sqliteTable(
       .notNull()
       .references(() => networkSegments.id, { onDelete: "cascade" }),
     scannerAgentId: text("scanner_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    kind: text("kind").notNull().default("network-scan"),
     generation: integer("generation").notNull(),
     policyVersion: integer("policy_version").notNull(),
     payload: text("payload").notNull().default("{}"),

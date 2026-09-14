@@ -1,13 +1,15 @@
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{SecondsFormat, Utc};
+use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{Client, Method};
+use reqwest::{Body, Client, Method};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::Semaphore;
+use tokio::sync::{mpsc, Semaphore};
 use uuid::Uuid;
 
 use crate::buffer::TelemetryBuffer;
@@ -16,8 +18,8 @@ use crate::identity::{load_or_create, Identity};
 use crate::platform::{FilesystemUpdatePlatform, UpdatePlatform};
 use crate::protocol::{
     enrollment_message, sign_request, verify_task, EnrollmentRequest, EnrollmentResponse,
-    HeartbeatPayload, HeartbeatResponse, ScanResult, ScanTaskResult, TaskEnvelope,
-    TelemetryPayload,
+    HeartbeatPayload, HeartbeatResponse, RelayTaskPayload, RelayTaskResult, ScanResult,
+    ScanTaskPayload, ScanTaskResult, TaskEnvelope, TaskPayload, TelemetryPayload,
 };
 use crate::release::{inspect_release_manifest, verify_release_manifest};
 
@@ -446,12 +448,31 @@ async fn process_task(
         return Err(anyhow!("server task envelope is invalid or expired"));
     }
 
+    let payload = task.payload.clone();
+    match (task.kind.as_str(), payload) {
+        ("network-scan", TaskPayload::Scan(payload)) => {
+            process_scan_task(client, identity, enrollment, task, payload).await
+        }
+        ("relay-connect", TaskPayload::Relay(payload)) => {
+            process_relay_task(client, identity, enrollment, task, payload).await
+        }
+        _ => Err(anyhow!("server task kind and payload do not match")),
+    }
+}
+
+async fn process_scan_task(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &EnrollmentState,
+    task: TaskEnvelope,
+    payload: ScanTaskPayload,
+) -> Result<()> {
     let semaphore = Arc::new(Semaphore::new(64));
-    let mut handles = Vec::with_capacity(task.payload.addresses.len());
-    for address in &task.payload.addresses {
+    let mut handles = Vec::with_capacity(payload.addresses.len());
+    for address in &payload.addresses {
         let address = address.clone();
         let permit = semaphore.clone().acquire_owned().await?;
-        let port = task.payload.port;
+        let port = payload.port;
         handles.push(tokio::spawn(async move {
             let outcome = match tokio::time::timeout(
                 Duration::from_millis(800),
@@ -498,6 +519,254 @@ async fn process_task(
     )
     .await?;
     Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RelayChannelOpenRequest {
+    relay_id: String,
+    agent_id: String,
+    target_system_id: String,
+    target_address: String,
+    target_port: u16,
+    direction: String,
+    nonce: String,
+    expires_at: String,
+    signature: String,
+}
+
+fn relay_channel_message(input: &RelayChannelOpenRequest) -> String {
+    [
+        input.relay_id.as_str(),
+        input.agent_id.as_str(),
+        input.target_system_id.as_str(),
+        input.target_address.as_str(),
+        &input.target_port.to_string(),
+        input.direction.as_str(),
+        input.nonce.as_str(),
+        input.expires_at.as_str(),
+    ]
+    .join("\n")
+}
+
+async fn process_relay_task(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &EnrollmentState,
+    task: TaskEnvelope,
+    payload: RelayTaskPayload,
+) -> Result<()> {
+    let target = tokio::time::timeout(
+        Duration::from_secs(5),
+        TcpStream::connect((payload.target_address.as_str(), payload.port)),
+    )
+    .await
+    .context("connect to the relay target")??;
+
+    let upstream_signature =
+        open_relay_channel(client, identity, enrollment, &payload, "upstream").await?;
+    let downstream_signature =
+        open_relay_channel(client, identity, enrollment, &payload, "downstream").await?;
+    bridge_relay(
+        identity,
+        enrollment,
+        &payload.relay_id,
+        &upstream_signature,
+        &downstream_signature,
+        target,
+    )
+    .await?;
+
+    let result = RelayTaskResult {
+        task_id: task.task_id.clone(),
+        agent_id: enrollment.agent_id.clone(),
+        generation: task.generation,
+        payload_digest: task.payload_digest,
+        kind: "relay-connect".to_string(),
+    };
+    let path = format!("/api/agent/v1/tasks/{}/result", task.task_id);
+    send_signed(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        &path,
+        serde_json::to_string(&result)?,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn open_relay_channel(
+    client: &Client,
+    identity: &Identity,
+    enrollment: &EnrollmentState,
+    payload: &RelayTaskPayload,
+    direction: &str,
+) -> Result<String> {
+    let mut unsigned = RelayChannelOpenRequest {
+        relay_id: payload.relay_id.clone(),
+        agent_id: enrollment.agent_id.clone(),
+        target_system_id: payload.target_system_id.clone(),
+        target_address: payload.target_address.clone(),
+        target_port: payload.port,
+        direction: direction.to_string(),
+        nonce: payload.nonce.clone(),
+        expires_at: payload.expires_at.clone(),
+        signature: String::new(),
+    };
+    unsigned.signature =
+        URL_SAFE_NO_PAD.encode(identity.sign(relay_channel_message(&unsigned).as_bytes()));
+    let signature = unsigned.signature.clone();
+    send_signed(
+        client,
+        identity,
+        &enrollment.server_url,
+        &enrollment.agent_id,
+        "/api/agent/v1/relay/open",
+        serde_json::to_string(&unsigned)?,
+    )
+    .await?;
+    Ok(signature)
+}
+
+async fn bridge_relay(
+    identity: &Identity,
+    enrollment: &EnrollmentState,
+    relay_id: &str,
+    upstream_signature: &str,
+    downstream_signature: &str,
+    target: TcpStream,
+) -> Result<()> {
+    let streaming_client = Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .context("build relay HTTP client")?;
+    let (mut target_reader, mut target_writer) = target.into_split();
+    let (sender, receiver) = mpsc::channel::<std::result::Result<Vec<u8>, std::io::Error>>(16);
+    let upstream_path = format!("/api/agent/v1/relay/{relay_id}/upstream");
+    let downstream_path = format!("/api/agent/v1/relay/{relay_id}/downstream");
+    let upstream_headers = signed_stream_headers(
+        identity,
+        &enrollment.agent_id,
+        "POST",
+        &upstream_path,
+        upstream_signature,
+    )?;
+    let downstream_headers = signed_stream_headers(
+        identity,
+        &enrollment.agent_id,
+        "GET",
+        &downstream_path,
+        downstream_signature,
+    )?;
+    let upstream_url = format!("{}{upstream_path}", enrollment.server_url);
+    let downstream_url = format!("{}{downstream_path}", enrollment.server_url);
+    let body_stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+        receiver.recv().await.map(|chunk| (chunk, receiver))
+    });
+
+    let upstream_client = streaming_client.clone();
+    let upstream = async move {
+        let response = upstream_client
+            .post(upstream_url)
+            .headers(upstream_headers)
+            .header("content-type", "application/octet-stream")
+            .body(Body::wrap_stream(body_stream))
+            .send()
+            .await
+            .context("send relay upstream stream")?;
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "relay upstream stream was rejected with {}",
+                response.status()
+            ));
+        }
+        Ok::<(), anyhow::Error>(())
+    };
+
+    let read_target = async move {
+        let mut buffer = [0_u8; 16 * 1024];
+        loop {
+            let count = target_reader
+                .read(&mut buffer)
+                .await
+                .context("read relay target")?;
+            if count == 0 {
+                break;
+            }
+            sender
+                .send(Ok(buffer[..count].to_vec()))
+                .await
+                .map_err(|_| anyhow!("relay upstream stream closed while target was readable"))?;
+        }
+        Ok::<(), anyhow::Error>(())
+    };
+
+    let downstream_client = streaming_client;
+    let downstream = async move {
+        let response = downstream_client
+            .get(downstream_url)
+            .headers(downstream_headers)
+            .send()
+            .await
+            .context("open relay downstream stream")?;
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "relay downstream stream was rejected with {}",
+                response.status()
+            ));
+        }
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.context("read relay downstream stream")?;
+            target_writer
+                .write_all(&chunk)
+                .await
+                .context("write relay target")?;
+        }
+        target_writer
+            .shutdown()
+            .await
+            .context("close relay target write side")?;
+        Ok::<(), anyhow::Error>(())
+    };
+
+    let (read_result, upstream_result, downstream_result) =
+        tokio::join!(read_target, upstream, downstream);
+    read_result?;
+    upstream_result?;
+    downstream_result?;
+    Ok(())
+}
+
+fn signed_stream_headers(
+    identity: &Identity,
+    agent_id: &str,
+    method: &str,
+    path: &str,
+    relay_signature: &str,
+) -> Result<HeaderMap> {
+    let timestamp = Utc::now().timestamp().to_string();
+    let request_id = Uuid::new_v4().to_string();
+    let signature = sign_request(
+        identity.signing_key(),
+        method,
+        path,
+        &timestamp,
+        &request_id,
+        "",
+    );
+    let mut headers = HeaderMap::new();
+    headers.insert("x-scout-agent-id", HeaderValue::from_str(agent_id)?);
+    headers.insert("x-scout-timestamp", HeaderValue::from_str(&timestamp)?);
+    headers.insert("x-scout-request-id", HeaderValue::from_str(&request_id)?);
+    headers.insert("x-scout-signature", HeaderValue::from_str(&signature)?);
+    headers.insert(
+        "x-scout-relay-signature",
+        HeaderValue::from_str(relay_signature)?,
+    );
+    Ok(headers)
 }
 
 async fn send_signed(

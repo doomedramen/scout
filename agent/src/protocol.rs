@@ -96,6 +96,26 @@ pub struct ScanTaskPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RelayTaskPayload {
+    pub cidr: String,
+    pub port: u16,
+    pub addresses: Vec<String>,
+    pub relay_id: String,
+    pub target_system_id: String,
+    pub target_address: String,
+    pub nonce: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TaskPayload {
+    Relay(RelayTaskPayload),
+    Scan(ScanTaskPayload),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TaskEnvelope {
     pub task_id: String,
     pub agent_id: String,
@@ -106,7 +126,7 @@ pub struct TaskEnvelope {
     pub issued_at: String,
     pub expires_at: String,
     pub deadline_at: String,
-    pub payload: ScanTaskPayload,
+    pub payload: TaskPayload,
     pub signature: String,
 }
 
@@ -137,6 +157,16 @@ pub struct ScanTaskResult {
     pub generation: u64,
     pub payload_digest: String,
     pub results: Vec<ScanResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayTaskResult {
+    pub task_id: String,
+    pub agent_id: String,
+    pub generation: u64,
+    pub payload_digest: String,
+    pub kind: String,
 }
 
 pub fn body_digest(body: &str) -> String {
@@ -197,7 +227,11 @@ pub fn verify_task(
     control_public_key: &str,
     now: chrono::DateTime<chrono::Utc>,
 ) -> bool {
-    if task.kind != "network-scan" || task.agent_id.is_empty() {
+    let payload_matches_kind = matches!(
+        (&task.kind[..], &task.payload),
+        ("network-scan", TaskPayload::Scan(_)) | ("relay-connect", TaskPayload::Relay(_))
+    );
+    if !payload_matches_kind || task.agent_id.is_empty() {
         return false;
     }
     let public_bytes = match URL_SAFE_NO_PAD.decode(control_public_key) {
