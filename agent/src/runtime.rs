@@ -111,19 +111,34 @@ pub async fn run(config: AgentConfig) -> Result<()> {
 
     let mut collector = SysinfoHostCollector::new();
     let telemetry_buffer = TelemetryBuffer::new(config.data_dir.join("telemetry.queue"));
-    let response = send_heartbeat(&client, &identity, &enrollment, 0, 0).await?;
-    apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
-    send_telemetry(
+    let mut dropped_samples = 0;
+    let response = match send_heartbeat(&client, &identity, &enrollment, 0, 0).await {
+        Ok(response) => {
+            apply_heartbeat_response(&state_path, &mut enrollment, &response)?;
+            Some(response)
+        }
+        Err(error) => {
+            eprintln!("scout-agent heartbeat failed: {error:#}");
+            None
+        }
+    };
+    if let Err(error) = send_telemetry(
         &client,
         &identity,
         &enrollment,
         &mut collector,
         &telemetry_buffer,
-        0,
+        dropped_samples,
     )
-    .await?;
-    if let Some(task) = response.task {
-        process_task(&client, &identity, &enrollment, task).await?;
+    .await
+    {
+        dropped_samples = dropped_samples.saturating_add(1);
+        eprintln!("scout-agent telemetry failed: {error:#}");
+    }
+    if let Some(task) = response.and_then(|response| response.task) {
+        if let Err(error) = process_task(&client, &identity, &enrollment, task).await {
+            eprintln!("scout-agent task failed: {error:#}");
+        }
     }
     if config.once {
         return Ok(());
@@ -133,7 +148,6 @@ pub async fn run(config: AgentConfig) -> Result<()> {
     let mut telemetry = tokio::time::interval(TELEMETRY_INTERVAL);
     heartbeat.tick().await;
     telemetry.tick().await;
-    let mut dropped_samples = 0;
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => return Ok(()),
