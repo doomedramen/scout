@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { hostAddresses } from "@/lib/discovery/network";
-import { jsonError, sameOrigin } from "@/lib/server/http";
+import { jsonError, readRequestBody, sameOrigin } from "@/lib/server/http";
 import { requireApiSession } from "@/lib/server/session";
 import { discoverNow, getDiscoveryState, ensureNetworkSegment } from "@/lib/server/discovery";
 import { getDatabase } from "@/lib/server/db";
@@ -52,8 +52,10 @@ export async function PUT(request: Request) {
   if (!sameOrigin(request)) return jsonError("Request origin is not allowed.", 403);
 
   let input: z.infer<typeof policyInput>;
+  const body = await readRequestBody(request, 16 * 1024);
+  if (body instanceof Response) return body;
   try {
-    input = policyInput.parse(await request.json());
+    input = policyInput.parse(JSON.parse(body));
     hostAddresses(input.cidr);
   } catch {
     return jsonError("Enter a valid IPv4 network between /24 and /32.", 400);

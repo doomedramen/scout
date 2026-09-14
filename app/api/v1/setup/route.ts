@@ -3,7 +3,7 @@ import { z } from "zod";
 import { validateOwnerPassword } from "@/lib/auth/password";
 import { auth } from "@/lib/server/auth";
 import { requestDiscovery } from "@/lib/server/discovery";
-import { jsonError, sameOrigin } from "@/lib/server/http";
+import { jsonError, rateLimit, readRequestBody, sameOrigin } from "@/lib/server/http";
 import {
   consumeSetupToken,
   ensureSetupToken,
@@ -37,9 +37,11 @@ async function createOwner(request: Request): Promise<Response> {
   if (!sameOrigin(request)) return jsonError("Request origin is not allowed.", 403);
   if (ownerExists()) return jsonError("Scout already has an owner. Sign in instead.", 409);
 
+  const body = await readRequestBody(request, 32 * 1024);
+  if (body instanceof Response) return body;
   let input: z.infer<typeof ownerInput>;
   try {
-    input = ownerInput.parse(await request.json());
+    input = ownerInput.parse(JSON.parse(body));
   } catch {
     return jsonError("Enter a username, setup token, and valid password.", 400);
   }
@@ -82,6 +84,8 @@ async function createOwner(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request) {
+  const limited = rateLimit(request, "owner-setup", 10, 60_000);
+  if (limited) return limited;
   if (ownerCreation) return ownerCreation;
   ownerCreation = createOwner(request).finally(() => {
     ownerCreation = undefined;

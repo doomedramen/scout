@@ -3,7 +3,7 @@ import { createHash, createPublicKey, verify } from "node:crypto";
 import { z } from "zod";
 
 import { getDatabase } from "@/lib/server/db";
-import { jsonError } from "@/lib/server/http";
+import { jsonError, rateLimit } from "@/lib/server/http";
 
 export const enrollInput = z.object({
   invitation: z.string().min(32).max(256),
@@ -105,6 +105,12 @@ export async function authenticateAgentRequest(
   const signature = request.headers.get("x-scout-signature");
   if (!agentId || !timestamp || !requestId || !signature)
     return jsonError("Agent authentication is incomplete.", 401);
+  const limited = rateLimit(request, "agent-request", 120, 60_000);
+  if (limited) return limited;
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(agentId) || !/^[A-Za-z0-9._:-]{1,128}$/.test(requestId))
+    return jsonError("Agent authentication is invalid.", 401);
+  if (!/^[A-Za-z0-9_-]{86}$/.test(signature))
+    return jsonError("Agent request signature is invalid.", 401);
 
   const timestampSeconds = Number(timestamp);
   if (

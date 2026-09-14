@@ -6,7 +6,7 @@ import {
   getAccessGrantReceipt,
   preflightSsh,
 } from "@/lib/server/access";
-import { jsonError, sameOrigin } from "@/lib/server/http";
+import { jsonError, rateLimit, readRequestBody, sameOrigin } from "@/lib/server/http";
 import { requireApiSession } from "@/lib/server/session";
 
 export const runtime = "nodejs";
@@ -39,6 +39,8 @@ export async function POST(
   const session = await requireApiSession(request);
   if (session instanceof Response) return session;
   if (!sameOrigin(request)) return jsonError("Request origin is not allowed.", 403);
+  const limited = rateLimit(request, `access-grant:${session.user.id}`, 30, 60_000);
+  if (limited) return limited;
 
   const idempotencyKey = request.headers.get("idempotency-key");
   if (!idempotencyKey || idempotencyKey.length > 128)
@@ -54,8 +56,10 @@ export async function POST(
   }
 
   let input: z.infer<typeof grantInput>;
+  const body = await readRequestBody(request, 256 * 1024);
+  if (body instanceof Response) return body;
   try {
-    input = grantInput.parse(await request.json());
+    input = grantInput.parse(JSON.parse(body));
   } catch {
     return jsonError("Enter the SSH username, credential, and confirmed fingerprint.", 400);
   }

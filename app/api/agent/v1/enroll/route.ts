@@ -1,15 +1,19 @@
 import { enrollInput } from "@/lib/server/agent-protocol";
 import { EnrollmentError, enrollAgent } from "@/lib/server/invitations";
-import { jsonError } from "@/lib/server/http";
+import { jsonError, rateLimit, readRequestBody } from "@/lib/server/http";
 import { controlPublicKey } from "@/lib/server/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const limited = rateLimit(request, "agent-enroll", 20, 60_000);
+  if (limited) return limited;
+  const body = await readRequestBody(request, 32 * 1024);
+  if (body instanceof Response) return body;
   let input;
   try {
-    input = enrollInput.parse(await request.json());
+    input = enrollInput.parse(JSON.parse(body));
   } catch {
     return jsonError("Agent enrollment payload is invalid.", 400);
   }
