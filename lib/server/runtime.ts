@@ -3,6 +3,7 @@ import { LATEST_SCHEMA_VERSION } from "@/db/migrations";
 import { authSecret, controlSigningKey, credentialKey } from "@/lib/server/keys";
 import { requestDiscovery } from "@/lib/server/discovery";
 import { processNextEnrollmentJob } from "@/lib/server/enrollment";
+import { readVerifiedAgentArtifact, readVerifiedReleaseManifest } from "@/lib/server/releases";
 import { authorityPaused } from "@/lib/server/settings";
 import { repairDuplicateSystems } from "@/lib/server/system-identity";
 import { runTelemetryRetention } from "@/lib/server/telemetry";
@@ -107,16 +108,27 @@ export function readiness(): { ok: boolean; checks: Record<string, boolean> } {
       migrations: Boolean(migration),
       keys: false,
       scheduler: heartbeatFresh,
+      embeddedArtifacts: false,
     };
     authSecret();
     credentialKey();
     controlSigningKey();
     checks.keys = true;
+    const manifest = readVerifiedReleaseManifest();
+    checks.embeddedArtifacts = manifest.artifacts.every(
+      (artifact) => readVerifiedAgentArtifact(artifact.platform, artifact.architecture) !== null,
+    );
     return { ok: Object.values(checks).every(Boolean), checks };
   } catch {
     return {
       ok: false,
-      checks: { database: false, migrations: false, keys: false, scheduler: false },
+      checks: {
+        database: false,
+        migrations: false,
+        keys: false,
+        scheduler: false,
+        embeddedArtifacts: false,
+      },
     };
   }
 }
